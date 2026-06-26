@@ -1,0 +1,13 @@
+# docker-compose.yml — Round 01 Placeholder
+#
+# This file is a placeholder for Round 01: Repository Foundation v1.
+# Real service definitions will be added in later rounds once
+# business code is implemented.
+#
+# Planned services (to be defined in later rounds):
+#   - backend-java   (Spring Boot 3, port 8080)
+#   - ai-service     (FastAPI, port 8000)
+#   - frontend       (Vue 3 / React, port 3000)
+#   - mysql          (MySQL 8, port 3306)
+
+services: {}

@@ -1,0 +1,3 @@
+# Local development profile placeholder.
+# Round 07 database settings live in application.yml and use file-based H2.
+# No external services are configured.
