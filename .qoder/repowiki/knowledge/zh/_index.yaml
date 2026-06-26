@@ -1,0 +1,22 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: Q0DeR-MaG1C-BrAnCh-Fo2-NoN-GiT-Or-No-C0MmIt
+exported_at: "2026-06-22T06:47:26Z"
+modules:
+    "":
+        dir_name: CodeReviewX 项目基础架构与多智能体协作规范
+        title: CodeReviewX 项目基础架构与多智能体协作规范
+        scope:
+            - README.md
+            - .gitignore
+            - docker-compose.yml
+            - docs/
+            - handoff/
+            - tasks/
+            - .github/
+            - .env.example
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

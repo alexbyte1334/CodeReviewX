@@ -1,0 +1,57 @@
+name: CI
+
+# Round 01 Placeholder Workflow
+# This workflow validates repository structure only.
+# Real build, test, and lint jobs will be added in later rounds
+# once backend-java, ai-service, and frontend source code exist.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  repository-structure:
+    name: Repository Foundation v1 — Structure Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify repository structure
+        run: |
+          echo "Round 01: Repository Foundation v1"
+          echo "Checking required files..."
+          test -f README.md
+          test -f docs/PRD.md
+          test -f docs/ARCHITECTURE.md
+          test -f docs/API.md
+          test -f docs/DATABASE.md
+          test -f docs/AGENT_RULES.md
+          test -f docs/HANDOFF_TEMPLATE.md
+          test -f backend-java/README.md
+          test -f ai-service/README.md
+          test -f frontend/README.md
+          test -f .env.example
+          test -f .gitignore
+          test -f docker-compose.yml
+          echo "All required files exist. Repository structure check passed."
+
+      - name: Confirm no business source code in Round 01
+        run: |
+          echo "Checking that no business source code was added in Round 01..."
+          if find backend-java -name "*.java" | grep -q .; then
+            echo "ERROR: Java source files found in Round 01. This is out of scope."
+            exit 1
+          fi
+          if find ai-service -name "*.py" | grep -q .; then
+            echo "ERROR: Python source files found in Round 01. This is out of scope."
+            exit 1
+          fi
+          if find frontend/src -type f 2>/dev/null | grep -q .; then
+            echo "ERROR: Frontend source files found in Round 01. This is out of scope."
+            exit 1
+          fi
+          echo "Scope check passed. No business source code present."

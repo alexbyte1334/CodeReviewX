@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: ""
+title: CodeReviewX 项目基础架构与多智能体协作规范
+scope:
+    - README.md
+    - .gitignore
+    - docker-compose.yml
+    - docs/
+    - handoff/
+    - tasks/
+    - .github/
+    - .env.example
+source_files: []
+depends_on: []
+related_to: []

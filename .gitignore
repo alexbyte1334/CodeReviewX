@@ -1,0 +1,39 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Java / Maven / Gradle
+target/
+build/
+.gradle/
+out/
+
+# H2 file-based database (local runtime persistence)
+backend-java/data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node / Frontend
+node_modules/
+dist/
+coverage/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
