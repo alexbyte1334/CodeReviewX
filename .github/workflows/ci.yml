@@ -1,10 +1,5 @@
 name: CI
 
-# Round 01 Placeholder Workflow
-# This workflow validates repository structure only.
-# Real build, test, and lint jobs will be added in later rounds
-# once backend-java, ai-service, and frontend source code exist.
-
 on:
   push:
     branches:
@@ -13,7 +8,7 @@ on:
 
 jobs:
   repository-structure:
-    name: Repository Foundation v1 — Structure Check
+    name: Repository Structure
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +17,6 @@ jobs:
 
       - name: Verify repository structure
         run: |
-          echo "Round 01: Repository Foundation v1"
           echo "Checking required files..."
           test -f README.md
           test -f docs/PRD.md
@@ -39,19 +33,52 @@ jobs:
           test -f docker-compose.yml
           echo "All required files exist. Repository structure check passed."
 
-      - name: Confirm no business source code in Round 01
-        run: |
-          echo "Checking that no business source code was added in Round 01..."
-          if find backend-java -name "*.java" | grep -q .; then
-            echo "ERROR: Java source files found in Round 01. This is out of scope."
-            exit 1
-          fi
-          if find ai-service -name "*.py" | grep -q .; then
-            echo "ERROR: Python source files found in Round 01. This is out of scope."
-            exit 1
-          fi
-          if find frontend/src -type f 2>/dev/null | grep -q .; then
-            echo "ERROR: Frontend source files found in Round 01. This is out of scope."
-            exit 1
-          fi
-          echo "Scope check passed. No business source code present."
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Run backend tests
+        working-directory: backend-java
+        run: mvn test
+
+  frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
