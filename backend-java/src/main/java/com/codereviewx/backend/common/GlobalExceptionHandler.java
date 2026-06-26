@@ -1,5 +1,6 @@
 package com.codereviewx.backend.common;
 
+import com.codereviewx.backend.review.exception.ReviewRunNotFoundException;
 import com.codereviewx.backend.review.exception.ReviewTaskNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -16,6 +17,12 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleReviewTaskNotFound(ReviewTaskNotFoundException ex) {
         return ApiResponse.failure("Review task not found");
+    }
+
+    @ExceptionHandler(ReviewRunNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleReviewRunNotFound(ReviewRunNotFoundException ex) {
+        return ApiResponse.failure("Review run not found");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

@@ -30,6 +30,9 @@ public class ReviewIssueEntity {
     @JoinColumn(name = "review_task_id", nullable = false)
     private ReviewTaskEntity reviewTask;
 
+    @Column(name = "review_run_id")
+    private Long reviewRunId;
+
     /**
      * Public API issue id (e.g. "ISSUE-1"). Distinct from the internal database id.
      */
@@ -92,6 +95,14 @@ public class ReviewIssueEntity {
 
     public void setReviewTask(ReviewTaskEntity reviewTask) {
         this.reviewTask = reviewTask;
+    }
+
+    public Long getReviewRunId() {
+        return reviewRunId;
+    }
+
+    public void setReviewRunId(Long reviewRunId) {
+        this.reviewRunId = reviewRunId;
     }
 
     public String getIssueKey() {

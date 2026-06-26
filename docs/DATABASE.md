@@ -291,3 +291,77 @@ public class ReviewTask {
 2. 所有外键约束目前使用级联检查，MVP 阶段不启用 `ON DELETE CASCADE`，避免误删。
 3. 时间字段统一使用数据库服务器时区（UTC 或本地时区需在 `docker-compose.yml` 中统一）。
 4. MVP 阶段不需要分区表或分库分表。
+
+---
+
+## 7. Stage 2 数据库基础（Round 16）
+
+### 7.1 Flyway Migration
+
+backend-java 使用 Flyway 管理 schema，migration 位于：
+
+```text
+backend-java/src/main/resources/db/migration/
+```
+
+当前 migration：
+
+| 版本 | 文件 | 说明 |
+|---|---|---|
+| V1 | `V1__baseline_schema.sql` | `review_task`、`review_issue` 基线表 |
+| V2 | `V2__stage2_run_trace_schema.sql` | Stage 2 run/trace/snapshot/comment preview 表及 `review_task` / `review_issue` 扩展列 |
+
+本地 H2 文件库若已有 Hibernate 创建的表，Flyway 使用 `baseline-on-migrate`（baseline version 1）后仅执行 V2 增量 migration。
+
+JPA `ddl-auto` 设为 `validate`，不再由 Hibernate 自动改表。
+
+### 7.2 Stage 2 新增表
+
+| 表 | 用途 |
+|---|---|
+| `review_run` | 一次 review 执行尝试 |
+| `review_input_snapshot` | 单次 run 的 sanitized 输入快照（不含 token、raw diff、raw prompt） |
+| `review_tool_trace` | loader/tool 步骤时间线 |
+| `review_provider_trace` | provider 调用摘要（不含 API key、Authorization、raw prompt/output） |
+| `review_comment_preview` | 草稿 PR 评论预览，`publish_status` 当前仅 `NOT_PUBLISHED` |
+
+### 7.3 review_task 扩展列
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `review_mode` | VARCHAR(32) nullable | `MANUAL_DIFF` 或 `GITHUB_PR` |
+| `latest_run_id` | BIGINT nullable | 最近一次 run 的 ID |
+
+`diff_text` 保留，供 `MANUAL_DIFF` 模式使用。
+
+### 7.4 review_issue 扩展列
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `review_run_id` | BIGINT nullable | 关联产生该 issue 的 run |
+
+### 7.5 默认 diff 边界（Stage 2 规划）
+
+后续 GitHub ingestion 实现将默认限制：
+
+```text
+最多 50 个变更文件
+总 diff 大小最多 500KB
+```
+
+raw prompt / model output 默认不持久化。
+
+### 7.6 Task/Run 编排（Round 17-18）
+
+```text
+POST /api/review-tasks 每次创建 review_task 与 review_run（run_number=1）。
+review_task.latest_run_id 在 run 持久化后设置。
+MANUAL_DIFF 产生的 review_issue 同时写入 review_task_id 与 review_run_id。
+GITHUB_PR 缺少本地 GITHUB_TOKEN 时写入一条 FAILED metadata tool trace，
+并产生 FAILED run（error_code=GITHUB_AUTH_MISSING），无 input snapshot、无 issues。
+GITHUB_PR metadata 加载成功时写入 sanitized review_input_snapshot 和 SUCCESS metadata tool trace，
+随后执行现有 mock/MiMo fallback provider pipeline，写入 provider issues、provider trace
+和本地 comment previews，最终产生 SUCCESS run。
+```
+
+Round 18 的 `review_input_snapshot.snapshot_json` 只保存 bounded PR metadata 摘要，不保存 token、Authorization header、raw diff、raw prompt 或 raw model output。`review_tool_trace.input_summary` 只能出现 `tokenConfigured=true/false` 等安全摘要。

@@ -1,5 +1,6 @@
 package com.codereviewx.backend.review.dto;
 
+import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.enums.ReviewTaskStatus;
 import com.codereviewx.backend.review.enums.RiskLevel;
 
@@ -15,6 +16,7 @@ public class ReviewTaskResponse {
     private String summary;
     private RiskLevel riskLevel;
     private String errorMessage;
+    private String errorCode;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<ReviewIssueResponse> issues;
@@ -22,6 +24,11 @@ public class ReviewTaskResponse {
     private String requestedProvider;
     private String providerUsed;
     private Boolean providerHit;
+    private Long latestRunId;
+    private ReviewMode reviewMode;
+    private IngestionSummaryResponse ingestionSummary;
+    private TraceSummaryResponse traceSummary;
+    private Integer commentPreviewCount;
 
     public ReviewTaskResponse() {
     }
@@ -82,6 +89,14 @@ public class ReviewTaskResponse {
         this.errorMessage = errorMessage;
     }
 
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public void setErrorCode(String errorCode) {
+        this.errorCode = errorCode;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -136,5 +151,45 @@ public class ReviewTaskResponse {
 
     public void setProviderHit(Boolean providerHit) {
         this.providerHit = providerHit;
+    }
+
+    public Long getLatestRunId() {
+        return latestRunId;
+    }
+
+    public void setLatestRunId(Long latestRunId) {
+        this.latestRunId = latestRunId;
+    }
+
+    public ReviewMode getReviewMode() {
+        return reviewMode;
+    }
+
+    public void setReviewMode(ReviewMode reviewMode) {
+        this.reviewMode = reviewMode;
+    }
+
+    public IngestionSummaryResponse getIngestionSummary() {
+        return ingestionSummary;
+    }
+
+    public void setIngestionSummary(IngestionSummaryResponse ingestionSummary) {
+        this.ingestionSummary = ingestionSummary;
+    }
+
+    public TraceSummaryResponse getTraceSummary() {
+        return traceSummary;
+    }
+
+    public void setTraceSummary(TraceSummaryResponse traceSummary) {
+        this.traceSummary = traceSummary;
+    }
+
+    public Integer getCommentPreviewCount() {
+        return commentPreviewCount;
+    }
+
+    public void setCommentPreviewCount(Integer commentPreviewCount) {
+        this.commentPreviewCount = commentPreviewCount;
     }
 }

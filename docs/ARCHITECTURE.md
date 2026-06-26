@@ -414,3 +414,80 @@ VITE_API_BASE_URL=http://localhost:8080
 | 向量数据库 | 当前场景是 PR diff 分析，不需要 RAG |
 | 多模型路由 | 增加配置和调试成本，mock + 单模型即可 |
 | 用户系统 | 第一阶段聚焦主链路，不需要账号体系 |
+
+---
+
+## 14. Stage 2 架构扩展（Round 16-18）
+
+Stage 2 在 Stage 1.5 基线上增加 run/trace 持久化层，并在 Round 18 为 `GITHUB_PR` 增加第一个 bounded agent ingestion 步骤：GitHub PR metadata loader。
+
+```text
+review_task (shell)
+  └── review_run (execution attempt)
+        ├── review_input_snapshot
+        ├── review_tool_trace
+        ├── review_provider_trace
+        ├── review_issue (optional review_run_id)
+        └── review_comment_preview (NOT_PUBLISHED only)
+```
+
+### 14.1 数据库 Migration
+
+- Flyway 管理 schema（`backend-java/src/main/resources/db/migration/`）
+- JPA `ddl-auto=validate`，Hibernate 不再自动改表
+- 本地 file-backed H2 通过 Flyway baseline 兼容已有数据
+
+### 14.2 新增 Read API
+
+```text
+GET /api/review-runs/{runId}
+GET /api/review-runs/{runId}/trace
+GET /api/review-runs/{runId}/comment-previews
+```
+
+Review task 响应增加 `latestRunId`、`reviewMode`、`ingestionSummary`、`traceSummary`、`commentPreviewCount`。
+
+### 14.3 安全与 Redaction
+
+- GitHub token 不入库、不出 API、不写 trace
+- API 不返回 raw prompt、raw model output、未截断 diff、`snapshotJson`
+- Comment preview 仅 `NOT_PUBLISHED`，无 PR comment 写回
+
+### 14.4 GitHub Token 策略
+
+单用户本地 token（`GITHUB_TOKEN`），最低权限：`repo read` + `pull request read`。无 OAuth / GitHub App / 多租户。
+
+本地配置：
+
+```text
+codereviewx.github.api-base-url=${GITHUB_API_BASE_URL:https://api.github.com}
+codereviewx.github.token=${GITHUB_TOKEN:}
+codereviewx.github.timeout-seconds=${GITHUB_TIMEOUT_SECONDS:20}
+```
+
+应用启动不要求 token。缺 token 是一次可恢复的 failed run（`GITHUB_AUTH_MISSING`），并会写入 sanitized `github.pr.metadata.load` tool trace。
+
+### 14.5 Round 18 GITHUB_PR Metadata Path
+
+```text
+POST /api/review-tasks (reviewMode=GITHUB_PR)
+  -> create review_task + review_run
+  -> run.status=INGESTING
+  -> github.pr.metadata.load
+  -> persist review_tool_trace
+  -> on metadata success: persist sanitized review_input_snapshot
+  -> run.status=REVIEWING
+  -> execute existing mock/MiMo fallback provider pipeline with bounded PR context
+  -> persist review_issue, review_provider_trace, and local review_comment_preview rows
+  -> run.status=SUCCESS
+```
+
+当前 `GITHUB_PR` MVP 不拉取 PR diff，不读取 repository context，不写回 GitHub；它只使用 bounded PR metadata 启动现有 provider fallback review，并生成本地 comment preview。
+
+### 14.6 默认边界
+
+- 最多 50 个变更文件
+- 总 diff 500KB
+- raw prompt / model output 默认不持久化
+
+仍未实现：GitHub PR diff loader、repository context loader、RAG、MCP、Memory、PR write-back、OAuth。

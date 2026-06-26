@@ -24,17 +24,30 @@ class ReviewPipelineFallbackIntegrationTest {
     private ReviewTaskService reviewTaskService;
 
     @BeforeEach
-    void setUp(@Autowired com.codereviewx.backend.review.persistence.repository.ReviewIssueRepository issueRepository,
+    void setUp(@Autowired com.codereviewx.backend.review.persistence.repository.ReviewCommentPreviewRepository commentPreviewRepository,
+               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository toolTraceRepository,
+               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository providerTraceRepository,
+               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository inputSnapshotRepository,
+               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewIssueRepository issueRepository,
+               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewRunRepository runRepository,
                @Autowired com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository taskRepository) {
+        commentPreviewRepository.deleteAll();
+        toolTraceRepository.deleteAll();
+        providerTraceRepository.deleteAll();
+        inputSnapshotRepository.deleteAll();
         issueRepository.deleteAll();
+        runRepository.deleteAll();
         taskRepository.deleteAll();
     }
+
+    private static final String SAMPLE_DIFF = "diff --git a/a.txt b/a.txt\n";
 
     @Test
     void createTask_mimoModeWithoutKeyFallsBackToMockAndSucceeds() {
         CreateReviewTaskRequest request = new CreateReviewTaskRequest();
         request.setRepoUrl("https://github.com/example/fallback");
         request.setPrNumber(9);
+        request.setDiffText(SAMPLE_DIFF);
 
         ReviewTaskResponse response = reviewTaskService.createTask(request);
 
