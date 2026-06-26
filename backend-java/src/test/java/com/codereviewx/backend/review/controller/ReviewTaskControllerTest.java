@@ -1,7 +1,12 @@
 package com.codereviewx.backend.review.controller;
 
+import com.codereviewx.backend.review.persistence.repository.ReviewCommentPreviewRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewIssueRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,21 +42,49 @@ class ReviewTaskControllerTest {
     @Autowired
     private ReviewTaskRepository reviewTaskRepository;
 
+    @Autowired
+    private ReviewCommentPreviewRepository commentPreviewRepository;
+
+    @Autowired
+    private ReviewToolTraceRepository toolTraceRepository;
+
+    @Autowired
+    private ReviewProviderTraceRepository providerTraceRepository;
+
+    @Autowired
+    private ReviewInputSnapshotRepository inputSnapshotRepository;
+
+    @Autowired
+    private ReviewRunRepository reviewRunRepository;
+
     private static final String BASE_URL = "/api/review-tasks";
+
+    private static final String SAMPLE_DIFF = "diff --git a/a.txt b/a.txt\\n";
+
+    private static String manualDiffBody(int prNumber) {
+        return "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":" + prNumber
+                + ",\"diffText\":\"" + SAMPLE_DIFF + "\"}";
+    }
+
+    private static final String GITHUB_PR_BODY =
+            "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123}";
 
     @BeforeEach
     void setUp() {
+        commentPreviewRepository.deleteAll();
+        toolTraceRepository.deleteAll();
+        providerTraceRepository.deleteAll();
+        inputSnapshotRepository.deleteAll();
+        reviewRunRepository.deleteAll();
         reviewIssueRepository.deleteAll();
         reviewTaskRepository.deleteAll();
     }
 
     @Test
-    void createTask_success() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123}";
-
+    void createTask_manualDiff_success() throws Exception {
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(manualDiffBody(123)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success", is(true)))
                 .andExpect(jsonPath("$.message", is("OK")))
@@ -59,6 +92,8 @@ class ReviewTaskControllerTest {
                 .andExpect(jsonPath("$.data.repoUrl", is("https://github.com/example/repo")))
                 .andExpect(jsonPath("$.data.prNumber", is(123)))
                 .andExpect(jsonPath("$.data.status", is("SUCCESS")))
+                .andExpect(jsonPath("$.data.reviewMode", is("MANUAL_DIFF")))
+                .andExpect(jsonPath("$.data.latestRunId", notNullValue()))
                 .andExpect(jsonPath("$.data.riskLevel", is("HIGH")))
                 .andExpect(jsonPath("$.data.summary", containsString("Review completed for PR #123")))
                 .andExpect(jsonPath("$.data.summary", not(containsString("Mock"))))
@@ -66,12 +101,27 @@ class ReviewTaskControllerTest {
     }
 
     @Test
-    void createTask_issuesHaveTypedFields() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123}";
-
+    void createTask_githubPr_withoutDiff_returnsAuthMissing() throws Exception {
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(GITHUB_PR_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success", is(true)))
+                .andExpect(jsonPath("$.data.status", is("FAILED")))
+                .andExpect(jsonPath("$.data.reviewMode", is("GITHUB_PR")))
+                .andExpect(jsonPath("$.data.latestRunId", notNullValue()))
+                .andExpect(jsonPath("$.data.errorCode", is("GITHUB_AUTH_MISSING")))
+                .andExpect(jsonPath("$.data.errorMessage", containsString("GITHUB_TOKEN")))
+                .andExpect(jsonPath("$.data.traceSummary.toolCount", is(1)))
+                .andExpect(jsonPath("$.data.traceSummary.failedToolCount", is(1)))
+                .andExpect(jsonPath("$.data.issues", hasSize(0)));
+    }
+
+    @Test
+    void createTask_issuesHaveTypedFields() throws Exception {
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(manualDiffBody(123)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.issues[0].id", is("ISSUE-1")))
                 .andExpect(jsonPath("$.data.issues[0].severity", is("HIGH")))
@@ -86,11 +136,9 @@ class ReviewTaskControllerTest {
 
     @Test
     void createTask_issuesHaveSourceAndStatus() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123}";
-
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(manualDiffBody(123)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.issues[0].source", is("MOCK")))
                 .andExpect(jsonPath("$.data.issues[0].status", is("OPEN")))
@@ -102,11 +150,9 @@ class ReviewTaskControllerTest {
 
     @Test
     void createTask_hasIssueSummary() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123}";
-
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(manualDiffBody(123)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.issueSummary", notNullValue()))
                 .andExpect(jsonPath("$.data.issueSummary.totalIssues", is(3)))
@@ -118,7 +164,8 @@ class ReviewTaskControllerTest {
 
     @Test
     void createTask_returnsProviderHitFields() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mock\"}";
+        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mock\",\"diffText\":\""
+                + SAMPLE_DIFF + "\"}";
 
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -131,7 +178,8 @@ class ReviewTaskControllerTest {
 
     @Test
     void createTask_mimoWithoutKey_returnsProviderMiss() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mimo\"}";
+        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mimo\",\"diffText\":\""
+                + SAMPLE_DIFF + "\"}";
 
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -144,11 +192,9 @@ class ReviewTaskControllerTest {
 
     @Test
     void createTask_riskLevelConsistentWithIssueSummary() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123}";
-
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(manualDiffBody(123)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.riskLevel", is("HIGH")))
                 .andExpect(jsonPath("$.data.issueSummary.riskLevel", is("HIGH")));
@@ -164,10 +210,9 @@ class ReviewTaskControllerTest {
 
     @Test
     void listTasks_containsIssueSummary() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":200}";
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(manualDiffBody(200)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get(BASE_URL))
@@ -179,11 +224,9 @@ class ReviewTaskControllerTest {
 
     @Test
     void getTask_success() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":99}";
-
         String createResult = mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(manualDiffBody(99)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -201,11 +244,9 @@ class ReviewTaskControllerTest {
 
     @Test
     void getTask_containsIssueSummary() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":77}";
-
         String createResult = mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(manualDiffBody(77)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -268,11 +309,12 @@ class ReviewTaskControllerTest {
                 .andExpect(jsonPath("$.data.issues", hasSize(3)))
                 .andExpect(jsonPath("$.data.riskLevel", is("HIGH")))
                 .andExpect(jsonPath("$.data.issueSummary.riskLevel", is("HIGH")))
+                .andExpect(jsonPath("$.data.latestRunId", notNullValue()))
                 .andExpect(jsonPath("$.data.diffText").doesNotExist());
     }
 
     @Test
-    void createTask_blankDiffText_treatedAsAbsent() throws Exception {
+    void createTask_blankDiffText_treatedAsGithubPrFailed() throws Exception {
         String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":10,\"diffText\":\"\"}";
 
         mockMvc.perform(post(BASE_URL)
@@ -280,11 +322,14 @@ class ReviewTaskControllerTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success", is(true)))
-                .andExpect(jsonPath("$.data.issues", hasSize(3)));
+                .andExpect(jsonPath("$.data.status", is("FAILED")))
+                .andExpect(jsonPath("$.data.reviewMode", is("GITHUB_PR")))
+                .andExpect(jsonPath("$.data.errorCode", is("GITHUB_AUTH_MISSING")))
+                .andExpect(jsonPath("$.data.issues", hasSize(0)));
     }
 
     @Test
-    void createTask_whitespaceDiffText_treatedAsAbsent() throws Exception {
+    void createTask_whitespaceDiffText_treatedAsGithubPrFailed() throws Exception {
         String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":10,\"diffText\":\"   \\n\\t  \"}";
 
         mockMvc.perform(post(BASE_URL)
@@ -292,7 +337,22 @@ class ReviewTaskControllerTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success", is(true)))
-                .andExpect(jsonPath("$.data.issues", hasSize(3)));
+                .andExpect(jsonPath("$.data.status", is("FAILED")))
+                .andExpect(jsonPath("$.data.reviewMode", is("GITHUB_PR")))
+                .andExpect(jsonPath("$.data.errorCode", is("GITHUB_AUTH_MISSING")))
+                .andExpect(jsonPath("$.data.issues", hasSize(0)));
+    }
+
+    @Test
+    void createTask_explicitManualDiffWithoutDiffText_returnsValidationError() throws Exception {
+        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":10,\"reviewMode\":\"MANUAL_DIFF\"}";
+
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.message", containsString("MANUAL_DIFF requires non-blank diffText")));
     }
 
     @Test

@@ -238,9 +238,109 @@ GET /api/review-tasks/{id}
 }
 ```
 
+| `SEMGREP` | 来自 Semgrep 静态分析 |
+
 ---
 
-## 3. ai-service API（供 backend-java 调用）
+## 5. Stage 2 Read API（Round 16）
+
+### 5.1 Review Task 响应扩展字段
+
+`GET /api/review-tasks` 与 `GET /api/review-tasks/{id}` 在原有字段基础上增加（均为向后兼容 additive）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `latestRunId` | long / null | 最近一次 run ID，无 run 时为 null |
+| `reviewMode` | string | `MANUAL_DIFF` 或 `GITHUB_PR` |
+| `errorCode` | string / null | 失败时来自 latest run 的错误码（如 `GITHUB_AUTH_MISSING`） |
+| `ingestionSummary` | object / null | 来自 latest run 输入快照的摘要 |
+| `traceSummary` | object / null | tool trace 计数摘要 |
+| `commentPreviewCount` | integer | 评论预览数量，无 run 时为 0 |
+
+`POST /api/review-tasks` 可选请求字段 `reviewMode`（`MANUAL_DIFF` | `GITHUB_PR`）。解析顺序：显式 `reviewMode` > 有 `diffText` → `MANUAL_DIFF` > 否则 `GITHUB_PR`。显式 `MANUAL_DIFF` 且无有效 `diffText` 时返回 400。
+
+每次 create 都会创建 `review_run`（run number 1），`latestRunId` 指向该 run。
+
+- **MANUAL_DIFF**：执行现有 mock/MiMo 同步 pipeline，issues 关联 `review_run_id`，任务与 run 均为 `SUCCESS`（与 Round 16 前行为一致，但需有 `diffText` 或显式模式且带 diff）。
+- **GITHUB_PR**：先解析本地 GitHub token 配置并执行 bounded metadata loader（`github.pr.metadata.load`）。缺少 `GITHUB_TOKEN` 时任务与 run 均为 `FAILED`，`errorCode=GITHUB_AUTH_MISSING`，无 input snapshot、无 mock issues。metadata 成功时写入 sanitized `review_input_snapshot`，随后执行现有 mock/MiMo fallback provider pipeline，保存 issues、provider trace 和本地 comment previews。当前仍不拉取 PR diff，也不写回 GitHub。
+
+无 `diffText` 的 create（默认 `GITHUB_PR`）仅在 GitHub metadata loader 成功后返回 `SUCCESS` 与 provider findings；缺少 token 或 metadata loader 失败时返回 failed run。
+
+API 永不返回：`diffText`、GitHub token、Authorization header、raw prompt、raw model output、未截断的 Stage 2 snapshot diff。
+
+### 5.2 Get Review Run
+
+```http
+GET /api/review-runs/{runId}
+```
+
+返回 run 状态、bounded input snapshot summary、provider summary。不返回 `snapshotJson` 或 raw prompt/output。
+
+### 5.3 Get Tool Trace
+
+```http
+GET /api/review-runs/{runId}/trace
+```
+
+返回 tool 时间线摘要（`toolName`、`status`、`outputSummary` 等）。不返回 `inputSummary`（可能含敏感信息）。
+
+### 5.4 Get Comment Previews
+
+```http
+GET /api/review-runs/{runId}/comment-previews
+```
+
+返回草稿评论列表。`publishStatus` 当前仅 `NOT_PUBLISHED`。无 GitHub 写回 endpoint。
+
+### 5.5 GitHub Token 与 Metadata Loader（Round 18）
+
+本地配置：
+
+```yaml
+codereviewx:
+  github:
+    api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+    token: ${GITHUB_TOKEN:}
+    timeout-seconds: ${GITHUB_TIMEOUT_SECONDS:20}
+```
+
+Token 是可选本地配置；应用启动不要求 `GITHUB_TOKEN`。token 值和 Authorization header 不入库、不出 API、不写 tool trace。
+
+`GITHUB_PR` 当前只加载 PR metadata，并用该 bounded context 启动 provider fallback review：
+
+```text
+owner, repo, prNumber, title, author login, base/head refs, base/head shas,
+state, createdAt, updatedAt, changedFiles, additions, deletions
+```
+
+错误码：
+
+| 错误码 | 语义 |
+|---|---|
+| `GITHUB_AUTH_MISSING` | 本地未配置 `GITHUB_TOKEN` |
+| `GITHUB_AUTH_FAILED` | GitHub 返回 401/403 且非 rate limit |
+| `GITHUB_PR_NOT_FOUND` | PR 不存在或不可访问 |
+| `GITHUB_RATE_LIMITED` | GitHub API rate limit |
+| `GITHUB_METADATA_LOAD_FAILED` | 其他 metadata loader 安全失败 |
+
+### 5.6 GitHub Token 最低权限（Stage 2 规划）
+
+私有仓库 review 所需最低 GitHub token 权限：
+
+```text
+repo read（或 public_repo）
+pull request read
+```
+
+Token 仅存于本地环境变量（如 `GITHUB_TOKEN`），不入库、不出 API。
+
+### 5.7 默认 diff 边界
+
+Stage 2 规划默认：最多 50 个变更文件，总 diff 500KB。raw prompt / model output 默认不持久化。
+
+---
+
+## 6. ai-service API（供 backend-java 调用）
 
 > ai-service 的接口仅供 backend-java 内部调用，不对 frontend 暴露。
 

@@ -4,15 +4,23 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password: ''
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     show-sql: false
   h2:
     console:
       enabled: false
 
 codereviewx:
+  github:
+    api-base-url: https://api.github.com
+    token:
+    timeout-seconds: 20
   review:
     provider: mimo
   ai:

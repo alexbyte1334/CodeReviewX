@@ -1,5 +1,7 @@
 package com.codereviewx.backend.review.dto;
 
+import com.codereviewx.backend.review.enums.ReviewMode;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
@@ -24,6 +26,19 @@ public class CreateReviewTaskRequest {
      */
     @Pattern(regexp = "^(?i)(mock|mimo)$", message = "provider must be mock or mimo")
     private String provider;
+
+    /**
+     * Optional review mode. When omitted, resolved as MANUAL_DIFF if diffText is present, else GITHUB_PR.
+     */
+    private ReviewMode reviewMode;
+
+    @AssertTrue(message = "MANUAL_DIFF requires non-blank diffText")
+    public boolean isManualDiffRequirementMet() {
+        if (reviewMode != ReviewMode.MANUAL_DIFF) {
+            return true;
+        }
+        return diffText != null && !diffText.trim().isEmpty();
+    }
 
     public CreateReviewTaskRequest() {
     }
@@ -58,5 +73,13 @@ public class CreateReviewTaskRequest {
 
     public void setProvider(String provider) {
         this.provider = provider;
+    }
+
+    public ReviewMode getReviewMode() {
+        return reviewMode;
+    }
+
+    public void setReviewMode(ReviewMode reviewMode) {
+        this.reviewMode = reviewMode;
     }
 }

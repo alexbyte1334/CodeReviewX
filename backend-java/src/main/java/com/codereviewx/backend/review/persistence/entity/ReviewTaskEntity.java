@@ -1,5 +1,6 @@
 package com.codereviewx.backend.review.persistence.entity;
 
+import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.enums.ReviewTaskStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -50,6 +51,13 @@ public class ReviewTaskEntity {
     private String providerUsed;
 
     private Boolean providerHit;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "review_mode", length = 32)
+    private ReviewMode reviewMode;
+
+    @Column(name = "latest_run_id")
+    private Long latestRunId;
 
     private String errorMessage;
 
@@ -135,6 +143,22 @@ public class ReviewTaskEntity {
 
     public void setProviderHit(Boolean providerHit) {
         this.providerHit = providerHit;
+    }
+
+    public ReviewMode getReviewMode() {
+        return reviewMode;
+    }
+
+    public void setReviewMode(ReviewMode reviewMode) {
+        this.reviewMode = reviewMode;
+    }
+
+    public Long getLatestRunId() {
+        return latestRunId;
+    }
+
+    public void setLatestRunId(Long latestRunId) {
+        this.latestRunId = latestRunId;
     }
 
     public String getErrorMessage() {
