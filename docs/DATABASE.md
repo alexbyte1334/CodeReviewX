@@ -360,7 +360,7 @@ MANUAL_DIFF 产生的 review_issue 同时写入 review_task_id 与 review_run_id
 GITHUB_PR 缺少本地 GITHUB_TOKEN 时写入一条 FAILED metadata tool trace，
 并产生 FAILED run（error_code=GITHUB_AUTH_MISSING），无 input snapshot、无 issues。
 GITHUB_PR metadata 加载成功时写入 sanitized review_input_snapshot 和 SUCCESS metadata tool trace，
-随后执行现有 mock/MiMo fallback provider pipeline，写入 provider issues、provider trace
+随后执行 MiMo 双 AI agent pipeline，写入 provider issues、provider trace
 和本地 comment previews，最终产生 SUCCESS run。
 ```
 

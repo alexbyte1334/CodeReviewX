@@ -261,8 +261,8 @@ GET /api/review-tasks/{id}
 
 每次 create 都会创建 `review_run`（run number 1），`latestRunId` 指向该 run。
 
-- **MANUAL_DIFF**：执行现有 mock/MiMo 同步 pipeline，issues 关联 `review_run_id`，任务与 run 均为 `SUCCESS`（与 Round 16 前行为一致，但需有 `diffText` 或显式模式且带 diff）。
-- **GITHUB_PR**：先解析本地 GitHub token 配置并执行 bounded metadata loader（`github.pr.metadata.load`）。缺少 `GITHUB_TOKEN` 时任务与 run 均为 `FAILED`，`errorCode=GITHUB_AUTH_MISSING`，无 input snapshot、无 mock issues。metadata 成功时写入 sanitized `review_input_snapshot`，随后执行现有 mock/MiMo fallback provider pipeline，保存 issues、provider trace 和本地 comment previews。当前仍不拉取 PR diff，也不写回 GitHub。
+- **MANUAL_DIFF**：执行 MiMo 双 AI agent pipeline，issues 关联 `review_run_id`，任务与 run 均为 `SUCCESS`（需有 `diffText` 或显式模式且带 diff）。
+- **GITHUB_PR**：先解析本地 GitHub token 配置并执行 bounded metadata loader（`github.pr.metadata.load`）。缺少 `GITHUB_TOKEN` 时任务与 run 均为 `FAILED`，`errorCode=GITHUB_AUTH_MISSING`，无 input snapshot、无 issues。metadata 成功时写入 sanitized `review_input_snapshot`，随后执行 MiMo 双 AI agent pipeline，保存 issues、provider trace 和本地 comment previews。当前仍不拉取 PR diff，也不写回 GitHub。
 
 无 `diffText` 的 create（默认 `GITHUB_PR`）仅在 GitHub metadata loader 成功后返回 `SUCCESS` 与 provider findings；缺少 token 或 metadata loader 失败时返回 failed run。
 
@@ -306,7 +306,7 @@ codereviewx:
 
 Token 是可选本地配置；应用启动不要求 `GITHUB_TOKEN`。token 值和 Authorization header 不入库、不出 API、不写 tool trace。
 
-`GITHUB_PR` 当前只加载 PR metadata，并用该 bounded context 启动 provider fallback review：
+`GITHUB_PR` 当前只加载 PR metadata，并用该 bounded context 启动 MiMo 双 AI agent review：
 
 ```text
 owner, repo, prNumber, title, author login, base/head refs, base/head shas,

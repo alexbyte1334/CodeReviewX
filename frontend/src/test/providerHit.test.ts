@@ -6,9 +6,9 @@ describe('formatProviderHitLabel', () => {
     expect(formatProviderHitLabel(true, 'mimo', 'mimo')).toBe('命中 · MiMo 已生效');
   });
 
-  it('returns miss label when fallback occurred', () => {
+  it('labels historical mock responses without recommending fallback', () => {
     expect(formatProviderHitLabel(false, 'mimo', 'mock')).toBe(
-      '未命中 · 请求 MiMo，实际使用 Mock',
+      '未命中 · 请求 MiMo，实际使用 Historical Mock',
     );
   });
 });

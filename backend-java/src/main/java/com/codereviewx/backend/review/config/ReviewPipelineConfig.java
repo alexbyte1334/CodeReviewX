@@ -6,6 +6,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({ReviewProperties.class, XiaomiMiMoProperties.class, GithubProperties.class})
+@EnableConfigurationProperties({XiaomiMiMoProperties.class, GithubProperties.class})
 public class ReviewPipelineConfig {
 }

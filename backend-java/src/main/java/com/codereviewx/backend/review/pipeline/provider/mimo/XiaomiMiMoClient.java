@@ -45,7 +45,13 @@ public class XiaomiMiMoClient {
         if (!properties.hasApiKey()) {
             throw new XiaomiMiMoClientException("MiMo API key is not configured");
         }
+        return complete(systemPrompt, userPrompt, properties.getApiKey());
+    }
 
+    public String complete(String systemPrompt, String userPrompt, String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new XiaomiMiMoClientException("MiMo API key is not configured");
+        }
         XiaomiMiMoClientRequest request = new XiaomiMiMoClientRequest(
                 properties.getModel(),
                 List.of(
@@ -60,7 +66,7 @@ public class XiaomiMiMoClient {
         try {
             XiaomiMiMoClientResponse response = restClient.post()
                     .uri(url)
-                    .header("Authorization", "Bearer " + properties.getApiKey())
+                    .header("Authorization", "Bearer " + apiKey)
                     .header("Content-Type", "application/json")
                     .body(request)
                     .retrieve()

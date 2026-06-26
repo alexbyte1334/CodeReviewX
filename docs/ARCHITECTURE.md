@@ -12,7 +12,7 @@
 4. MySQL 只作为业务数据存储，不承担分析逻辑。
 5. 第一阶段不引入 Redis、消息队列、Kubernetes、向量数据库和复杂权限系统。
 6. 所有服务优先保证本地可运行、可调试、可演示。
-7. 所有 AI 能力必须先有 mock fallback，再接入真实 LLM。
+7. 当前 review agent 锁定 Xiaomi MiMo 双 AI 工作流；缺少 role key 或模型输出非法时 fail fast，不做 mock fallback。
 
 ---
 
@@ -129,7 +129,7 @@ PENDING -> RUNNING -> FAILED
 
 1. `FAILED` 状态必须同时保存 `error_message` 字段，记录可读错误原因。
 2. Semgrep 单独失败不强制导致任务 `FAILED`，可降级为 warning 记录。
-3. LLM 失败优先使用 mock fallback，fallback 失败后才将任务置为 `FAILED`。
+3. LLM 失败、缺少 MiMo role key 或 gate 拒绝时将任务置为 `FAILED`，不回退到 mock。
 4. 状态只能单向流转，不可回退（如 `SUCCESS` 不可变回 `RUNNING`）。
 
 ---
@@ -173,7 +173,7 @@ PENDING -> RUNNING -> FAILED
 |---|---|
 | GitHub API 失败 | 任务状态 FAILED，保存 error_message |
 | Semgrep 失败 | 降级为 warning，不导致任务失败 |
-| LLM 失败 | 使用 mock fallback 或返回空 issues |
+| LLM 失败 | 任务状态 FAILED，保存安全错误原因 |
 | LLM JSON schema 校验失败 | 记录原始输出摘要，不返回未校验结构 |
 | backend 数据库保存失败 | 任务状态 FAILED |
 | ai-service 超时 | 任务状态 FAILED，保存超时原因 |
@@ -477,12 +477,12 @@ POST /api/review-tasks (reviewMode=GITHUB_PR)
   -> persist review_tool_trace
   -> on metadata success: persist sanitized review_input_snapshot
   -> run.status=REVIEWING
-  -> execute existing mock/MiMo fallback provider pipeline with bounded PR context
+  -> execute MiMo dual-AI agent pipeline with bounded PR context
   -> persist review_issue, review_provider_trace, and local review_comment_preview rows
   -> run.status=SUCCESS
 ```
 
-当前 `GITHUB_PR` MVP 不拉取 PR diff，不读取 repository context，不写回 GitHub；它只使用 bounded PR metadata 启动现有 provider fallback review，并生成本地 comment preview。
+当前 `GITHUB_PR` MVP 不拉取 PR diff，不读取 repository context，不写回 GitHub；它只使用 bounded PR metadata 启动 MiMo 双 AI agent review，并生成本地 comment preview。
 
 ### 14.6 默认边界
 

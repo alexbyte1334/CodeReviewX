@@ -37,6 +37,7 @@ import com.codereviewx.backend.review.pipeline.ReviewContext;
 import com.codereviewx.backend.review.pipeline.ReviewFinding;
 import com.codereviewx.backend.review.pipeline.ReviewPipelineService;
 import com.codereviewx.backend.review.pipeline.ReviewProviderResult;
+import com.codereviewx.backend.review.pipeline.provider.mimo.MiMoAgentException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -275,7 +276,13 @@ public class ReviewTaskService {
                 normalizedDiffText,
                 normalizedProvider
         );
-        ReviewProviderResult providerResult = reviewPipelineService.run(context);
+        ReviewProviderResult providerResult;
+        try {
+            providerResult = reviewPipelineService.run(context);
+        } catch (MiMoAgentException ex) {
+            LocalDateTime failedAt = LocalDateTime.now();
+            return completeFailedProviderReview(task, run, ex.getErrorCode(), ex.getMessage(), failedAt);
+        }
         LocalDateTime reviewFinishedAt = LocalDateTime.now();
         persistProviderTrace(run.getId(), task, providerResult, reviewStartedAt, reviewFinishedAt);
 
@@ -318,6 +325,33 @@ public class ReviewTaskService {
         return toResponse(completedTask, persistedIssues);
     }
 
+    private ReviewTaskResponse completeFailedProviderReview(ReviewTaskEntity task,
+                                                            ReviewRunEntity run,
+                                                            String errorCode,
+                                                            String errorMessage,
+                                                            LocalDateTime now) {
+        run.setStatus(ReviewRunStatus.FAILED);
+        run.setRequestedProvider("mimo");
+        run.setProviderUsed(null);
+        run.setProviderHit(false);
+        run.setErrorCode(errorCode);
+        run.setErrorMessage(errorMessage);
+        run.setFinishedAt(now);
+        run.setUpdatedAt(now);
+        reviewRunRepository.save(run);
+
+        task.setStatus(ReviewTaskStatus.FAILED);
+        task.setSummary(null);
+        task.setRequestedProvider("mimo");
+        task.setProviderUsed(null);
+        task.setProviderHit(false);
+        task.setErrorMessage(errorMessage);
+        task.setUpdatedAt(now);
+        ReviewTaskEntity failedTask = reviewTaskRepository.save(task);
+
+        return toResponse(failedTask, Collections.emptyList());
+    }
+
     private void persistProviderTrace(Long runId,
                                       ReviewTaskEntity task,
                                       ReviewProviderResult providerResult,
@@ -334,7 +368,7 @@ public class ReviewTaskService {
         trace.setOutputSummary(providerResult.getFindings().size()
                 + " findings normalized from provider response.");
         trace.setFindingCount(providerResult.getFindings().size());
-        trace.setNormalizationSummary("Provider findings mapped to persisted review issues.");
+        trace.setNormalizationSummary("Approved MiMo candidate review mapped by IssueGenerator.");
         if (!providerResult.isProviderHit()) {
             trace.setFallbackReason("Requested provider fell back to "
                     + providerResult.getProviderUsed() + " provider.");
@@ -393,10 +427,7 @@ public class ReviewTaskService {
     }
 
     private String normalizeProvider(String provider) {
-        if (provider == null || provider.isBlank()) {
-            return null;
-        }
-        return provider.trim().toLowerCase();
+        return "mimo";
     }
 
     private ReviewMode resolveReviewMode(CreateReviewTaskRequest request, String normalizedDiffText) {

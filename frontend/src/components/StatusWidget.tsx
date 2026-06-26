@@ -5,7 +5,6 @@ interface StatusWidgetProps {
   backendStatus: BackendStatus;
   tasks: ReviewTask[];
   mimoConfigured?: boolean;
-  defaultReviewProvider?: string;
 }
 
 interface ArcGaugeProps {
@@ -110,7 +109,6 @@ export function StatusWidget({
   backendStatus,
   tasks,
   mimoConfigured = false,
-  defaultReviewProvider = 'mimo',
 }: StatusWidgetProps) {
   const backend = backendGaugeProps(backendStatus);
   const reviews = reviewGaugeProps(tasks);
@@ -123,8 +121,8 @@ export function StatusWidget({
         : 'Checking…';
 
   const providerCaption = mimoConfigured
-    ? `Mock or MiMo · server default: ${defaultReviewProvider}`
-    : `Server default: ${defaultReviewProvider} · MiMo not configured (falls back to Mock)`;
+    ? 'MiMo dual-agent review'
+    : 'MiMo keys required';
 
   return (
     <div className="status-widget" aria-label="Provider status widget">

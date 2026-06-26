@@ -23,7 +23,7 @@
 
 1. **Documentation first.** No business code is written before the PRD section, API design, and database design exist and are reviewed.
 2. **MVP first.** No features outside the defined MVP scope are introduced without a PRD update.
-3. **Mock first, real LLM later.** ai-service must first work with mock LLM before real LLM is integrated.
+3. **MiMo-only review.** The current review agent uses Xiaomi MiMo role keys and must fail fast instead of falling back to mock review.
 4. **One coding Agent modifies files at a time.** Concurrent modifications to the same module are not allowed.
 5. **Architecture changes update documentation first.** Any change to module boundaries or API contracts requires updating the relevant document before code changes.
 6. **No unapproved scope expansion.** Agents must not add features, dependencies, or modules not defined in the current PRD.

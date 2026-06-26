@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { formatIssueSourceLabel, resolveProviderSourceLabel } from '../utils/providerLabels';
 
 describe('providerLabels', () => {
-  it('maps MOCK to Mock Provider', () => {
-    expect(formatIssueSourceLabel('MOCK')).toBe('Mock Provider');
+  it('maps historical MOCK data without exposing it as an active provider', () => {
+    expect(formatIssueSourceLabel('MOCK')).toBe('Historical Mock');
   });
 
   it('maps MIMO to Xiaomi MiMo', () => {
@@ -11,7 +11,7 @@ describe('providerLabels', () => {
   });
 
   it('resolves single provider source', () => {
-    expect(resolveProviderSourceLabel(['MOCK'])).toBe('Mock Provider');
+    expect(resolveProviderSourceLabel(['MOCK'])).toBe('Historical Mock');
   });
 
   it('returns N/A for empty sources', () => {

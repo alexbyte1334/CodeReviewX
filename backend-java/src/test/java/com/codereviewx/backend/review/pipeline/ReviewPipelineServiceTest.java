@@ -21,7 +21,7 @@ class ReviewPipelineServiceTest {
                 "ISSUE-TEST",
                 IssueSeverity.HIGH,
                 IssueCategory.SECURITY,
-                IssueSource.MOCK,
+                IssueSource.MIMO,
                 IssueStatus.OPEN,
                 "src/Foo.java",
                 1,

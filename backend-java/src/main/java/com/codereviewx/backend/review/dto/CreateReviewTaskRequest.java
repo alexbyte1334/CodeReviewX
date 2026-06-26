@@ -21,10 +21,9 @@ public class CreateReviewTaskRequest {
     private String diffText;
 
     /**
-     * Optional per-request provider override: {@code mock} or {@code mimo}.
-     * When omitted, the server default from configuration is used.
+     * Optional legacy provider field. The review pipeline is MiMo-only; only {@code mimo} is accepted.
      */
-    @Pattern(regexp = "^(?i)(mock|mimo)$", message = "provider must be mock or mimo")
+    @Pattern(regexp = "^(?i)(mimo)$", message = "provider must be mimo")
     private String provider;
 
     /**
