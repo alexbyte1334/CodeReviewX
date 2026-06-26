@@ -21,7 +21,7 @@ server:
 
 codereviewx:
   review:
-    provider: ${CODEREVIEWX_REVIEW_PROVIDER:mock}
+    provider: ${CODEREVIEWX_REVIEW_PROVIDER:mimo}
   ai:
     mimo:
       base-url: ${MIMO_BASE_URL:https://api.xiaomimimo.com/v1}

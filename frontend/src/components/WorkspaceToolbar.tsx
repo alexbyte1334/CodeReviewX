@@ -5,7 +5,7 @@ interface WorkspaceToolbarProps {
   tasksCount: number;
   findingsLabel: string;
   expandedPanels: Set<PanelId>;
-  onTogglePanel: (id: PanelId) => void;
+  onNavigatePanel: (id: PanelId) => void;
 }
 
 const QUICK_PANELS: { id: PanelId; label: string }[] = [
@@ -19,7 +19,7 @@ export function WorkspaceToolbar({
   tasksCount,
   findingsLabel,
   expandedPanels,
-  onTogglePanel,
+  onNavigatePanel,
 }: WorkspaceToolbarProps) {
   const statusLabel =
     backendStatus === 'up'
@@ -56,7 +56,7 @@ export function WorkspaceToolbar({
                 key={id}
                 type="button"
                 className={`workspace-quick-pill${isOpen ? ' workspace-quick-pill--active' : ''}`}
-                onClick={() => onTogglePanel(id)}
+                onClick={() => onNavigatePanel(id)}
                 aria-pressed={isOpen}
               >
                 {label}

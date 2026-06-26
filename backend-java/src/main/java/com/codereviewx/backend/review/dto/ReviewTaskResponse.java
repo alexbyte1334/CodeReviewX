@@ -19,6 +19,9 @@ public class ReviewTaskResponse {
     private LocalDateTime updatedAt;
     private List<ReviewIssueResponse> issues;
     private IssueSummaryResponse issueSummary;
+    private String requestedProvider;
+    private String providerUsed;
+    private Boolean providerHit;
 
     public ReviewTaskResponse() {
     }
@@ -109,5 +112,29 @@ public class ReviewTaskResponse {
 
     public void setIssueSummary(IssueSummaryResponse issueSummary) {
         this.issueSummary = issueSummary;
+    }
+
+    public String getRequestedProvider() {
+        return requestedProvider;
+    }
+
+    public void setRequestedProvider(String requestedProvider) {
+        this.requestedProvider = requestedProvider;
+    }
+
+    public String getProviderUsed() {
+        return providerUsed;
+    }
+
+    public void setProviderUsed(String providerUsed) {
+        this.providerUsed = providerUsed;
+    }
+
+    public Boolean getProviderHit() {
+        return providerHit;
+    }
+
+    public void setProviderHit(Boolean providerHit) {
+        this.providerHit = providerHit;
     }
 }

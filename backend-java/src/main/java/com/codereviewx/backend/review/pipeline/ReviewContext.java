@@ -13,17 +13,28 @@ public class ReviewContext {
     private final Integer prNumber;
     private final LocalDateTime createdAt;
     private final String diffText;
+    private final String requestedProvider;
 
     public ReviewContext(Long taskId, String repoUrl, Integer prNumber, LocalDateTime createdAt) {
-        this(taskId, repoUrl, prNumber, createdAt, null);
+        this(taskId, repoUrl, prNumber, createdAt, null, null);
     }
 
     public ReviewContext(Long taskId, String repoUrl, Integer prNumber, LocalDateTime createdAt, String diffText) {
+        this(taskId, repoUrl, prNumber, createdAt, diffText, null);
+    }
+
+    public ReviewContext(Long taskId,
+                         String repoUrl,
+                         Integer prNumber,
+                         LocalDateTime createdAt,
+                         String diffText,
+                         String requestedProvider) {
         this.taskId = taskId;
         this.repoUrl = repoUrl;
         this.prNumber = prNumber;
         this.createdAt = createdAt;
         this.diffText = diffText;
+        this.requestedProvider = requestedProvider;
     }
 
     public Long getTaskId() {
@@ -48,5 +59,9 @@ public class ReviewContext {
 
     public boolean hasDiffText() {
         return diffText != null && !diffText.isBlank();
+    }
+
+    public String getRequestedProvider() {
+        return requestedProvider;
     }
 }

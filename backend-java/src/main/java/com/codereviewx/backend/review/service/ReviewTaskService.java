@@ -46,6 +46,7 @@ public class ReviewTaskService {
     public ReviewTaskResponse createTask(CreateReviewTaskRequest request) {
         LocalDateTime now = LocalDateTime.now();
         String normalizedDiffText = normalizeDiffText(request.getDiffText());
+        String normalizedProvider = normalizeProvider(request.getProvider());
 
         ReviewTaskEntity task = new ReviewTaskEntity();
         task.setRepoUrl(request.getRepoUrl());
@@ -63,12 +64,16 @@ public class ReviewTaskService {
                 savedTask.getRepoUrl(),
                 savedTask.getPrNumber(),
                 savedTask.getCreatedAt(),
-                normalizedDiffText
+                normalizedDiffText,
+                normalizedProvider
         );
         ReviewProviderResult providerResult = reviewPipelineService.run(context);
 
         savedTask.setStatus(ReviewTaskStatus.SUCCESS);
         savedTask.setSummary(buildSummary(request.getPrNumber(), providerResult));
+        savedTask.setRequestedProvider(providerResult.getRequestedProvider());
+        savedTask.setProviderUsed(providerResult.getProviderUsed());
+        savedTask.setProviderHit(providerResult.isProviderHit());
         savedTask.setErrorMessage(null);
         savedTask.setUpdatedAt(LocalDateTime.now());
         ReviewTaskEntity completedTask = reviewTaskRepository.save(savedTask);
@@ -88,6 +93,13 @@ public class ReviewTaskService {
         }
         String trimmed = diffText.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeProvider(String provider) {
+        if (provider == null || provider.isBlank()) {
+            return null;
+        }
+        return provider.trim().toLowerCase();
     }
 
     private String buildSummary(int prNumber, ReviewProviderResult providerResult) {
@@ -198,6 +210,9 @@ public class ReviewTaskService {
         response.setIssues(issueResponses);
         response.setIssueSummary(issueSummary);
         response.setRiskLevel(issueSummary.getRiskLevel());
+        response.setRequestedProvider(task.getRequestedProvider());
+        response.setProviderUsed(task.getProviderUsed());
+        response.setProviderHit(task.getProviderHit());
         return response;
     }
 }

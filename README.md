@@ -11,8 +11,9 @@
 - **审查任务管理** — 创建、列表、详情查询，任务与问题持久化到本地 H2 数据库
 - **Diff 上下文** — 可选粘贴 unified diff（最大 20,000 字符），为 AI 审查提供代码变更依据
 - **双 Provider 模式**
-  - **Mock（默认）** — 无需 API Key，返回稳定的演示数据
-  - **小米 MiMo** — 通过环境变量配置，调用真实模型生成审查结果
+  - **小米 MiMo（默认）** — 通过环境变量 `MIMO_API_KEY` 调用真实模型；Key 缺失时安全降级 Mock
+  - **Mock** — 无需 API Key，返回稳定的演示数据
+- **Provider 命中反馈** — 每次审查返回 `requestedProvider`、`providerUsed`、`providerHit`（是否命中请求的 Provider）
 - **安全降级** — Key 缺失、API 失败或解析失败时自动回退 Mock，不暴露内部错误细节
 - **结构化输出** — 每条 issue 含 severity、category、文件路径、行号、标题、描述与建议
 - **Web 界面** — React 前端展示审查摘要、风险等级、Provider 来源与 issue 卡片
@@ -38,12 +39,14 @@
 - Node.js 18+
 - Maven 3.8+
 
-### 1. 启动后端（Mock 模式，默认）
+### 1. 启动后端
 
 ```bash
 cd backend-java
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 ```
+
+默认 Provider 为 **MiMo**。未配置 `MIMO_API_KEY` 时会自动降级为 Mock，并在响应中返回 `providerHit: false`。
 
 服务地址：`http://localhost:8080`
 
@@ -63,21 +66,20 @@ npm run dev -- --host 127.0.0.1
 
 浏览器打开 [http://localhost:5173](http://localhost:5173)。
 
-### 3. 启用小米 MiMo（可选）
+### 3. 启用小米 MiMo（推荐）
 
 ```bash
 export MIMO_API_KEY="<your-local-key>"   # 仅来自环境变量，切勿提交到仓库
 
 cd backend-java
-JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run \
-  -Dspring-boot.run.arguments="--codereviewx.review.provider=mimo"
+JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 ```
 
-可复制根目录 `.env.example` 为本地 `.env` 参考变量名；`.env` 已被 `.gitignore` 排除。
+可复制根目录 `.env.example` 为本地 `.env` 参考变量名；`.env` 已被 `.gitignore` 排除，**请勿将真实 Key 写入仓库**。
 
 | 环境变量 | 说明 | 默认值 |
 |---|---|---|
-| `CODEREVIEWX_REVIEW_PROVIDER` | `mock` 或 `mimo` | `mock` |
+| `CODEREVIEWX_REVIEW_PROVIDER` | `mock` 或 `mimo` | `mimo` |
 | `MIMO_API_KEY` | 小米 MiMo API Key | — |
 | `MIMO_BASE_URL` | API 地址 | `https://api.xiaomimimo.com/v1` |
 | `MIMO_MODEL` | 模型名称 | `mimo-v2.5-pro` |
@@ -110,6 +112,7 @@ curl -X POST http://localhost:8080/api/review-tasks \
 **响应要点：**
 
 - 包含 `issueSummary`（总数、各级别计数、`riskLevel`）
+- 含 `requestedProvider`、`providerUsed`、`providerHit`（Provider 是否命中）
 - 每条 `issues[]` 含 `source`（`MOCK` / `MIMO`）、`severity`、`category`、`title` 等
 - **不返回** 原始 `diffText`、prompt 或模型原始输出
 
@@ -125,8 +128,8 @@ curl -X POST http://localhost:8080/api/review-tasks \
 ReviewPipelineService
         ↓
 ConfigurableReviewProvider
-   ├─ MockReviewProvider（默认 / 降级）
-   └─ XiaomiMiMoReviewProvider（配置 MiMo 时）
+   ├─ XiaomiMiMoReviewProvider（默认，需 MIMO_API_KEY）
+   └─ MockReviewProvider（显式 mock 或降级回退）
         ↓
 结构化 findings → 持久化 → 返回 ReviewTaskResponse
 ```

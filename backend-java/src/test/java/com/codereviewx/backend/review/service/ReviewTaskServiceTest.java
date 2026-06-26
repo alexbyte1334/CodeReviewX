@@ -56,6 +56,9 @@ class ReviewTaskServiceTest {
         assertThat(response.getSummary()).contains("Review completed for PR #123");
         assertThat(response.getSummary()).doesNotContainIgnoringCase("mock");
         assertThat(response.getErrorMessage()).isNull();
+        assertThat(response.getRequestedProvider()).isEqualTo("mimo");
+        assertThat(response.getProviderUsed()).isEqualTo("mock");
+        assertThat(response.getProviderHit()).isFalse();
         assertThat(response.getCreatedAt()).isNotNull();
         assertThat(response.getUpdatedAt()).isNotNull();
     }

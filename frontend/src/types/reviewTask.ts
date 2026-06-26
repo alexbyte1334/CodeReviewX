@@ -14,6 +14,8 @@ export type IssueCategory =
 
 export type IssueSource = 'MOCK' | 'MIMO' | 'SEMGREP' | 'LLM' | 'MANUAL';
 
+export type ReviewProviderChoice = 'mock' | 'mimo';
+
 export type IssueStatus = 'OPEN' | 'RESOLVED' | 'FALSE_POSITIVE';
 
 export interface IssueSummary {
@@ -50,12 +52,16 @@ export interface ReviewTask {
   updatedAt: string;
   issues: ReviewIssue[];
   issueSummary?: IssueSummary;
+  requestedProvider?: ReviewProviderChoice;
+  providerUsed?: ReviewProviderChoice;
+  providerHit?: boolean;
 }
 
 export interface CreateReviewTaskRequest {
   repoUrl: string;
   prNumber: number;
   diffText?: string;
+  provider?: ReviewProviderChoice;
 }
 
 export const MAX_DIFF_TEXT_LENGTH = 20000;
@@ -63,4 +69,6 @@ export const MAX_DIFF_TEXT_LENGTH = 20000;
 export interface HealthData {
   status: string;
   service: string;
+  defaultReviewProvider?: string;
+  mimoConfigured?: boolean;
 }

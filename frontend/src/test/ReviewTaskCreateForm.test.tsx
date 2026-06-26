@@ -13,7 +13,7 @@ const defaultProps = {
 
 describe('ReviewTaskCreateForm', () => {
   it('renders Repository URL and PR Number fields when expanded', () => {
-    render(<ReviewTaskCreateForm {...defaultProps} />);
+    render(<ReviewTaskCreateForm {...defaultProps} defaultReviewProvider="mock" />);
     expect(screen.getByLabelText(/repository url/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/pull request number/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^run review$/i })).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe('ReviewTaskCreateForm', () => {
   });
 
   it('renders optional diff textarea with helper copy', () => {
-    render(<ReviewTaskCreateForm {...defaultProps} />);
+    render(<ReviewTaskCreateForm {...defaultProps} defaultReviewProvider="mock" />);
     expect(screen.getByLabelText(/optional pr diff/i)).toBeInTheDocument();
     expect(
       screen.getByText(/paste a unified diff to let the review agent inspect actual code changes/i),
@@ -34,7 +34,7 @@ describe('ReviewTaskCreateForm', () => {
   });
 
   it('renders character counter for diff textarea', () => {
-    render(<ReviewTaskCreateForm {...defaultProps} />);
+    render(<ReviewTaskCreateForm {...defaultProps} defaultReviewProvider="mock" />);
     expect(screen.getByText(`0 / ${MAX_DIFF_TEXT_LENGTH.toLocaleString()}`)).toBeInTheDocument();
   });
 
@@ -66,6 +66,7 @@ describe('ReviewTaskCreateForm', () => {
       expect(reviewTaskApi.createReviewTask).toHaveBeenCalledWith({
         repoUrl: 'https://github.com/example/repo',
         prNumber: 10,
+        provider: 'mimo',
       });
     });
     expect(onCreated).toHaveBeenCalled();
@@ -89,7 +90,7 @@ describe('ReviewTaskCreateForm', () => {
       },
     });
 
-    render(<ReviewTaskCreateForm {...defaultProps} />);
+    render(<ReviewTaskCreateForm {...defaultProps} defaultReviewProvider="mock" />);
     await userEvent.type(screen.getByLabelText(/repository url/i), 'https://github.com/example/repo');
     await userEvent.type(screen.getByLabelText(/pull request number/i), '10');
     await userEvent.type(
@@ -102,7 +103,47 @@ describe('ReviewTaskCreateForm', () => {
       expect(reviewTaskApi.createReviewTask).toHaveBeenCalledWith({
         repoUrl: 'https://github.com/example/repo',
         prNumber: 10,
+        provider: 'mock',
         diffText: 'diff --git a/src/App.tsx b/src/App.tsx\n+const x = 1;',
+      });
+    });
+  });
+
+  it('renders provider selector', () => {
+    render(<ReviewTaskCreateForm {...defaultProps} defaultReviewProvider="mock" />);
+    expect(screen.getByRole('radiogroup', { name: /review provider/i })).toBeInTheDocument();
+    expect(screen.getByText(/xiaomi mimo/i)).toBeInTheDocument();
+  });
+
+  it('submit with MiMo when configured sends provider mimo', async () => {
+    vi.spyOn(reviewTaskApi, 'createReviewTask').mockResolvedValueOnce({
+      success: true,
+      message: 'OK',
+      data: {
+        id: 1,
+        repoUrl: 'https://github.com/example/repo',
+        prNumber: 10,
+        status: 'SUCCESS',
+        summary: null,
+        riskLevel: 'HIGH',
+        errorMessage: null,
+        createdAt: '',
+        updatedAt: '',
+        issues: [],
+      },
+    });
+
+    render(<ReviewTaskCreateForm {...defaultProps} mimoConfigured />);
+    await userEvent.type(screen.getByLabelText(/repository url/i), 'https://github.com/example/repo');
+    await userEvent.type(screen.getByLabelText(/pull request number/i), '10');
+    await userEvent.click(screen.getByLabelText(/xiaomi mimo/i));
+    await userEvent.click(screen.getByRole('button', { name: /^run review$/i }));
+
+    await waitFor(() => {
+      expect(reviewTaskApi.createReviewTask).toHaveBeenCalledWith({
+        repoUrl: 'https://github.com/example/repo',
+        prNumber: 10,
+        provider: 'mimo',
       });
     });
   });
@@ -110,7 +151,7 @@ describe('ReviewTaskCreateForm', () => {
   it('blocks submit when diff exceeds max length', async () => {
     const createSpy = vi.spyOn(reviewTaskApi, 'createReviewTask');
 
-    render(<ReviewTaskCreateForm {...defaultProps} />);
+    render(<ReviewTaskCreateForm {...defaultProps} defaultReviewProvider="mock" />);
     await userEvent.type(screen.getByLabelText(/repository url/i), 'https://github.com/example/repo');
     await userEvent.type(screen.getByLabelText(/pull request number/i), '10');
     fireEvent.change(screen.getByLabelText(/optional pr diff/i), {
@@ -127,13 +168,42 @@ describe('ReviewTaskCreateForm', () => {
       () => new Promise(() => {}),
     );
 
-    render(<ReviewTaskCreateForm {...defaultProps} />);
+    render(<ReviewTaskCreateForm {...defaultProps} defaultReviewProvider="mock" />);
     await userEvent.type(screen.getByLabelText(/repository url/i), 'https://github.com/example/repo');
     await userEvent.type(screen.getByLabelText(/pull request number/i), '10');
     await userEvent.click(screen.getByRole('button', { name: /^run review$/i }));
 
     expect(screen.getByText(/running review/i)).toBeInTheDocument();
     expect(screen.getByText(/analyzing your input/i)).toBeInTheDocument();
+  });
+
+  it('shows provider hit banner after successful review', async () => {
+    vi.spyOn(reviewTaskApi, 'createReviewTask').mockResolvedValueOnce({
+      success: true,
+      message: 'OK',
+      data: {
+        id: 1,
+        repoUrl: 'https://github.com/example/repo',
+        prNumber: 10,
+        status: 'SUCCESS',
+        summary: null,
+        riskLevel: 'HIGH',
+        errorMessage: null,
+        createdAt: '',
+        updatedAt: '',
+        issues: [],
+        requestedProvider: 'mimo',
+        providerUsed: 'mock',
+        providerHit: false,
+      },
+    });
+
+    render(<ReviewTaskCreateForm {...defaultProps} defaultReviewProvider="mock" />);
+    await userEvent.type(screen.getByLabelText(/repository url/i), 'https://github.com/example/repo');
+    await userEvent.type(screen.getByLabelText(/pull request number/i), '10');
+    await userEvent.click(screen.getByRole('button', { name: /^run review$/i }));
+
+    expect(await screen.findByText(/未命中/i)).toBeInTheDocument();
   });
 
   it('disables submit when backend is unavailable', () => {

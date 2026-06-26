@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReviewTask } from './types/reviewTask';
 import { getHealth, getReviewTask, listReviewTasks } from './api/reviewTaskApi';
 import { ReviewTaskCreateForm } from './components/ReviewTaskCreateForm';
@@ -10,6 +10,7 @@ import { WorkspaceToolbar } from './components/WorkspaceToolbar';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { useColorTheme } from './hooks/useColorTheme';
 import type { BackendStatus, PanelId } from './types/ui';
+import type { ReviewProviderChoice } from './types/reviewTask';
 import { PRODUCT_LIMITS } from './types/ui';
 import './styles/app.css';
 
@@ -18,6 +19,8 @@ type NavSection = 'workspace' | 'history';
 export default function App() {
   const { theme, toggleTheme } = useColorTheme();
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
+  const [mimoConfigured, setMimoConfigured] = useState(false);
+  const [defaultReviewProvider, setDefaultReviewProvider] = useState<ReviewProviderChoice>('mock');
   const [activeNav, setActiveNav] = useState<NavSection>('workspace');
   const [expandedPanels, setExpandedPanels] = useState<Set<PanelId>>(() => new Set());
   const [showLimits, setShowLimits] = useState(false);
@@ -29,10 +32,20 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState<ReviewTask | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const workspaceRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     getHealth()
-      .then((res) => setBackendStatus(res.success ? 'up' : 'down'))
+      .then((res) => {
+        if (res.success && res.data) {
+          setBackendStatus('up');
+          setMimoConfigured(Boolean(res.data.mimoConfigured));
+          const serverDefault = (res.data.defaultReviewProvider ?? 'mock').toLowerCase();
+          setDefaultReviewProvider(serverDefault === 'mimo' ? 'mimo' : 'mock');
+        } else {
+          setBackendStatus('down');
+        }
+      })
       .catch(() => setBackendStatus('down'));
   }, []);
 
@@ -104,12 +117,43 @@ export default function App() {
     }
   }
 
+  function scrollToPanel(panel: PanelId) {
+    if (panel === 'review') {
+      setActiveNav('workspace');
+    } else if (panel === 'history') {
+      setActiveNav('history');
+    }
+    expandPanel(panel);
+
+    const sectionId =
+      panel === 'review'
+        ? 'section-workspace'
+        : panel === 'history'
+          ? 'section-history'
+          : 'section-findings';
+
+    requestAnimationFrame(() => {
+      const container = workspaceRef.current;
+      const section = document.getElementById(sectionId);
+      if (!section) return;
+
+      if (container) {
+        const containerTop = container.getBoundingClientRect().top;
+        const sectionTop = section.getBoundingClientRect().top;
+        const nextTop = container.scrollTop + (sectionTop - containerTop) - 12;
+        container.scrollTo({ top: Math.max(nextTop, 0), behavior: 'smooth' });
+      } else {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
+
   function scrollToSection(section: NavSection) {
-    setActiveNav(section);
-    if (section === 'workspace') expandPanel('review');
-    if (section === 'history') expandPanel('history');
-    const el = document.getElementById(`section-${section}`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (section === 'workspace') {
+      scrollToPanel('review');
+      return;
+    }
+    scrollToPanel('history');
   }
 
   const findingsSummary = selectedTask
@@ -168,7 +212,12 @@ export default function App() {
           </nav>
 
           <div className="sidebar-footer">
-            <StatusWidget backendStatus={backendStatus} tasks={tasks} />
+            <StatusWidget
+              backendStatus={backendStatus}
+              tasks={tasks}
+              mimoConfigured={mimoConfigured}
+              defaultReviewProvider={defaultReviewProvider}
+            />
 
             <CollapsiblePanel
               panelId="panel-about"
@@ -201,13 +250,13 @@ export default function App() {
             </div>
           </header>
 
-          <main className="workspace">
+          <main className="workspace" ref={workspaceRef}>
             <WorkspaceToolbar
               backendStatus={backendStatus}
               tasksCount={tasks.length}
               findingsLabel={findingsSummary}
               expandedPanels={expandedPanels}
-              onTogglePanel={togglePanel}
+              onNavigatePanel={scrollToPanel}
             />
 
             {backendStatus === 'down' && (
@@ -223,6 +272,8 @@ export default function App() {
                   onToggle={() => togglePanel('review')}
                   onCreated={handleTaskCreated}
                   backendAvailable={backendStatus === 'up'}
+                  mimoConfigured={mimoConfigured}
+                  defaultReviewProvider={defaultReviewProvider}
                 />
               </section>
 

@@ -55,8 +55,24 @@ class ConfigurableReviewProviderTest {
         ReviewProviderResult result = provider.review(context);
 
         assertThat(result.getProviderName()).isEqualTo(MockReviewProvider.PROVIDER_NAME);
+        assertThat(result.getRequestedProvider()).isEqualTo("mock");
+        assertThat(result.isProviderHit()).isTrue();
         verify(mockReviewProvider).review(context);
         verify(xiaomiMiMoReviewProvider, never()).review(context);
+    }
+
+    @Test
+    void defaultMimoModeWithoutKeyFallsBackWithProviderMiss() {
+        reviewProperties.setProvider("mimo");
+        mimoProperties.setApiKey("");
+
+        when(mockReviewProvider.review(context)).thenReturn(mockResult);
+
+        ReviewProviderResult result = provider.review(context);
+
+        assertThat(result.getProviderName()).isEqualTo(MockReviewProvider.PROVIDER_NAME);
+        assertThat(result.getRequestedProvider()).isEqualTo("mimo");
+        assertThat(result.isProviderHit()).isFalse();
     }
 
     @Test
@@ -81,6 +97,7 @@ class ConfigurableReviewProviderTest {
         ReviewProviderResult result = provider.review(context);
 
         assertThat(result.getProviderName()).isEqualTo(XiaomiMiMoReviewProvider.PROVIDER_NAME);
+        assertThat(result.isProviderHit()).isTrue();
         verify(xiaomiMiMoReviewProvider).review(context);
         verify(mockReviewProvider, never()).review(context);
     }
@@ -95,12 +112,14 @@ class ConfigurableReviewProviderTest {
         ReviewProviderResult result = provider.review(context);
 
         assertThat(result.getProviderName()).isEqualTo(MockReviewProvider.PROVIDER_NAME);
+        assertThat(result.getRequestedProvider()).isEqualTo("mimo");
+        assertThat(result.isProviderHit()).isFalse();
         verify(mockReviewProvider).review(context);
         verify(xiaomiMiMoReviewProvider, never()).review(context);
     }
 
     @Test
-    void mimoModeClientFailureFallsBackToMock() {
+    void mimoModeClientFailureFallsBackToMockWithProviderMiss() {
         reviewProperties.setProvider("mimo");
         mimoProperties.setApiKey("test-key");
 
@@ -111,11 +130,12 @@ class ConfigurableReviewProviderTest {
         ReviewProviderResult result = provider.review(context);
 
         assertThat(result.getProviderName()).isEqualTo(MockReviewProvider.PROVIDER_NAME);
+        assertThat(result.isProviderHit()).isFalse();
         verify(mockReviewProvider).review(context);
     }
 
     @Test
-    void mimoModeParserFailureFallsBackToMock() {
+    void mimoModeParserFailureFallsBackToMockWithProviderMiss() {
         reviewProperties.setProvider("mimo");
         mimoProperties.setApiKey("test-key");
 
@@ -126,6 +146,7 @@ class ConfigurableReviewProviderTest {
         ReviewProviderResult result = provider.review(context);
 
         assertThat(result.getProviderName()).isEqualTo(MockReviewProvider.PROVIDER_NAME);
+        assertThat(result.isProviderHit()).isFalse();
         verify(mockReviewProvider).review(context);
     }
 
@@ -139,5 +160,40 @@ class ConfigurableReviewProviderTest {
 
         verify(mockReviewProvider).review(context);
         verify(xiaomiMiMoReviewProvider, never()).review(context);
+    }
+
+    @Test
+    void requestProviderMockOverridesGlobalMimoMode() {
+        reviewProperties.setProvider("mimo");
+        mimoProperties.setApiKey("test-key");
+        ReviewContext mockContext = new ReviewContext(
+                1L, "https://github.com/example/repo", 9, LocalDateTime.now(), null, "mock");
+
+        when(mockReviewProvider.review(mockContext)).thenReturn(mockResult);
+
+        ReviewProviderResult result = provider.review(mockContext);
+
+        assertThat(result.getProviderName()).isEqualTo(MockReviewProvider.PROVIDER_NAME);
+        assertThat(result.getRequestedProvider()).isEqualTo("mock");
+        assertThat(result.isProviderHit()).isTrue();
+        verify(mockReviewProvider).review(mockContext);
+        verify(xiaomiMiMoReviewProvider, never()).review(mockContext);
+    }
+
+    @Test
+    void requestProviderMimoOverridesGlobalMockMode() {
+        reviewProperties.setProvider("mock");
+        mimoProperties.setApiKey("test-key");
+        ReviewContext mimoContext = new ReviewContext(
+                1L, "https://github.com/example/repo", 9, LocalDateTime.now(), null, "mimo");
+
+        when(xiaomiMiMoReviewProvider.review(mimoContext)).thenReturn(mimoResult);
+
+        ReviewProviderResult result = provider.review(mimoContext);
+
+        assertThat(result.getProviderName()).isEqualTo(XiaomiMiMoReviewProvider.PROVIDER_NAME);
+        assertThat(result.isProviderHit()).isTrue();
+        verify(xiaomiMiMoReviewProvider).review(mimoContext);
+        verify(mockReviewProvider, never()).review(mimoContext);
     }
 }

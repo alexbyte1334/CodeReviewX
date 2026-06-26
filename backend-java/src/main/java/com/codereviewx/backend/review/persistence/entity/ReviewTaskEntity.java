@@ -43,6 +43,14 @@ public class ReviewTaskEntity {
     @Column(length = 1000)
     private String summary;
 
+    @Column(length = 16)
+    private String requestedProvider;
+
+    @Column(length = 16)
+    private String providerUsed;
+
+    private Boolean providerHit;
+
     private String errorMessage;
 
     @Column(nullable = false)
@@ -103,6 +111,30 @@ public class ReviewTaskEntity {
 
     public void setSummary(String summary) {
         this.summary = summary;
+    }
+
+    public String getRequestedProvider() {
+        return requestedProvider;
+    }
+
+    public void setRequestedProvider(String requestedProvider) {
+        this.requestedProvider = requestedProvider;
+    }
+
+    public String getProviderUsed() {
+        return providerUsed;
+    }
+
+    public void setProviderUsed(String providerUsed) {
+        this.providerUsed = providerUsed;
+    }
+
+    public Boolean getProviderHit() {
+        return providerHit;
+    }
+
+    public void setProviderHit(Boolean providerHit) {
+        this.providerHit = providerHit;
     }
 
     public String getErrorMessage() {

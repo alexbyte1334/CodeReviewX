@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import type { ReviewTask } from '../types/reviewTask';
+import type { ReviewTask, ReviewProviderChoice } from '../types/reviewTask';
 import { MAX_DIFF_TEXT_LENGTH } from '../types/reviewTask';
 import { createReviewTask } from '../api/reviewTaskApi';
+import { formatProviderHitLabel } from '../utils/providerHit';
 import { LoadingState } from './LoadingState';
 import { ErrorMessage } from './ErrorMessage';
 import { CollapsiblePanel } from './CollapsiblePanel';
@@ -9,6 +10,8 @@ import { CollapsiblePanel } from './CollapsiblePanel';
 interface ReviewTaskCreateFormProps {
   onCreated: (task: ReviewTask) => void;
   backendAvailable?: boolean;
+  mimoConfigured?: boolean;
+  defaultReviewProvider?: string;
   expanded: boolean;
   onToggle: () => void;
 }
@@ -18,14 +21,21 @@ type FormState = 'idle' | 'submitting' | 'success' | 'error';
 export function ReviewTaskCreateForm({
   onCreated,
   backendAvailable = true,
+  mimoConfigured = false,
+  defaultReviewProvider = 'mimo',
   expanded,
   onToggle,
 }: ReviewTaskCreateFormProps) {
   const [repoUrl, setRepoUrl] = useState('');
   const [prNumber, setPrNumber] = useState('');
   const [diffText, setDiffText] = useState('');
+  const [provider, setProvider] = useState<ReviewProviderChoice>(
+    defaultReviewProvider.toLowerCase() === 'mimo' ? 'mimo' : 'mock',
+  );
   const [formState, setFormState] = useState<FormState>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const [lastProviderHit, setLastProviderHit] = useState<boolean | null>(null);
+  const [lastProviderHitLabel, setLastProviderHitLabel] = useState('');
   const [validationErrors, setValidationErrors] = useState<{
     repoUrl?: string;
     prNumber?: string;
@@ -63,11 +73,14 @@ export function ReviewTaskCreateForm({
 
     setFormState('submitting');
     setErrorMsg('');
+    setLastProviderHit(null);
+    setLastProviderHitLabel('');
 
     const trimmedDiff = diffText.trim();
     const payload = {
       repoUrl: repoUrl.trim(),
       prNumber: parseInt(prNumber, 10),
+      provider,
       ...(trimmedDiff ? { diffText: trimmedDiff } : {}),
     };
 
@@ -75,6 +88,14 @@ export function ReviewTaskCreateForm({
       const res = await createReviewTask(payload);
       if (res.success && res.data) {
         setFormState('success');
+        setLastProviderHit(res.data.providerHit ?? null);
+        setLastProviderHitLabel(
+          formatProviderHitLabel(
+            res.data.providerHit,
+            res.data.requestedProvider ?? provider,
+            res.data.providerUsed,
+          ),
+        );
         setRepoUrl('');
         setPrNumber('');
         setDiffText('');
@@ -109,6 +130,43 @@ export function ReviewTaskCreateForm({
         Enter repository and PR details. Paste an optional diff for grounded analysis.
       </p>
       <form onSubmit={handleSubmit} noValidate>
+        <div className="form-group">
+          <span className="form-group-label">Review Provider</span>
+          <div className="provider-choice" role="radiogroup" aria-label="Review provider">
+            <label className={`provider-choice-option${provider === 'mock' ? ' provider-choice-option--active' : ''}`}>
+              <input
+                type="radio"
+                name="reviewProvider"
+                value="mock"
+                checked={provider === 'mock'}
+                onChange={() => setProvider('mock')}
+                disabled={isSubmitting}
+              />
+              <span className="provider-choice-title">Mock</span>
+              <span className="provider-choice-desc">Stable demo data</span>
+            </label>
+            <label
+              className={`provider-choice-option${provider === 'mimo' ? ' provider-choice-option--active' : ''}${!mimoConfigured ? ' provider-choice-option--disabled' : ''}`}
+            >
+              <input
+                type="radio"
+                name="reviewProvider"
+                value="mimo"
+                checked={provider === 'mimo'}
+                onChange={() => setProvider('mimo')}
+                disabled={isSubmitting || !mimoConfigured}
+              />
+              <span className="provider-choice-title">Xiaomi MiMo</span>
+              <span className="provider-choice-desc">Live AI review</span>
+            </label>
+          </div>
+          {!mimoConfigured && (
+            <p className="field-help">
+              MiMo requires <code>MIMO_API_KEY</code> on the backend server. Mock mode remains available.
+            </p>
+          )}
+        </div>
+
         <div className="form-group">
           <label htmlFor="repoUrl">Repository URL</label>
           <input
@@ -180,7 +238,16 @@ export function ReviewTaskCreateForm({
       {isSubmitting && <LoadingState message="Analyzing your input…" />}
       {formState === 'error' && <ErrorMessage message={errorMsg} />}
       {formState === 'success' && (
-        <p className="success-message">Review complete. Findings are ready to inspect.</p>
+        <div className="success-panel" role="status">
+          <p className="success-message">Review complete. Findings are ready to inspect.</p>
+          {lastProviderHitLabel && (
+            <p
+              className={`provider-hit-banner${lastProviderHit ? ' provider-hit-banner--hit' : ' provider-hit-banner--miss'}`}
+            >
+              {lastProviderHitLabel}
+            </p>
+          )}
+        </div>
       )}
     </CollapsiblePanel>
   );

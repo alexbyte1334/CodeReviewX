@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { IssueSummary, ReviewIssue, ReviewTask } from '../types/reviewTask';
 import { getIssueSummary } from '../utils/reviewSummary';
 import { formatIssueSourceLabel, resolveProviderSourceLabel } from '../utils/providerLabels';
+import { formatProviderHitLabel } from '../utils/providerHit';
 import { riskLevelDisplayLabel } from '../utils/riskLevel';
 import { LoadingState } from './LoadingState';
 import { ErrorMessage } from './ErrorMessage';
@@ -80,6 +81,11 @@ function ReviewSummaryPanel({
 }) {
   const providerLabel = resolveProviderSourceLabel(issues.map((issue) => issue.source));
   const riskLabel = riskLevelDisplayLabel(summary.riskLevel);
+  const providerHitLabel = formatProviderHitLabel(
+    task.providerHit,
+    task.requestedProvider,
+    task.providerUsed,
+  );
 
   return (
     <div className="review-summary-panel">
@@ -105,6 +111,16 @@ function ReviewSummaryPanel({
             </span>
           </div>
         </div>
+        {task.providerHit !== undefined && (
+          <div className="summary-meta-item">
+            <span className="summary-meta-label">Provider Hit</span>
+            <span
+              className={`provider-hit-chip${task.providerHit ? ' provider-hit-chip--hit' : ' provider-hit-chip--miss'}`}
+            >
+              {providerHitLabel}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="risk-row">

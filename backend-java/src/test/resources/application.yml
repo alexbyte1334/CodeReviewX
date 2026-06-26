@@ -14,7 +14,7 @@ spring:
 
 codereviewx:
   review:
-    provider: mock
+    provider: mimo
   ai:
     mimo:
       base-url: https://api.xiaomimimo.com/v1

@@ -39,23 +39,54 @@ public class ConfigurableReviewProvider implements ReviewProvider {
 
     @Override
     public ReviewProviderResult review(ReviewContext context) {
-        if (reviewProperties.isMockMode()) {
-            return mockReviewProvider.review(context);
+        String requestedProvider = resolveRequestedProvider(context);
+
+        if (!shouldUseMimo(context)) {
+            return annotate(mockReviewProvider.review(context), requestedProvider);
         }
 
         if (!mimoProperties.hasApiKey()) {
             log.warn("Review provider mode is mimo but MIMO_API_KEY is missing; falling back to mock provider");
-            return mockReviewProvider.review(context);
+            return annotate(mockReviewProvider.review(context), requestedProvider);
         }
 
         try {
-            return xiaomiMiMoReviewProvider.review(context);
+            return annotate(xiaomiMiMoReviewProvider.review(context), requestedProvider);
         } catch (XiaomiMiMoClientException | XiaomiMiMoParseException ex) {
             log.warn("Xiaomi MiMo review failed; falling back to mock provider: {}", ex.getMessage());
-            return mockReviewProvider.review(context);
+            return annotate(mockReviewProvider.review(context), requestedProvider);
         } catch (RuntimeException ex) {
             log.warn("Unexpected Xiaomi MiMo review failure; falling back to mock provider: {}", ex.getMessage());
-            return mockReviewProvider.review(context);
+            return annotate(mockReviewProvider.review(context), requestedProvider);
         }
+    }
+
+    private ReviewProviderResult annotate(ReviewProviderResult result, String requestedProvider) {
+        String providerUsed = result.getProviderUsed();
+        boolean providerHit = requestedProvider != null && requestedProvider.equals(providerUsed);
+        return new ReviewProviderResult(
+                result.getFindings(),
+                result.getProviderName(),
+                result.isSuccessful(),
+                result.getMessage(),
+                requestedProvider,
+                providerHit
+        );
+    }
+
+    private String resolveRequestedProvider(ReviewContext context) {
+        String requested = context.getRequestedProvider();
+        if (requested != null && !requested.isBlank()) {
+            return requested.trim().toLowerCase();
+        }
+        return reviewProperties.isMimoMode() ? "mimo" : "mock";
+    }
+
+    private boolean shouldUseMimo(ReviewContext context) {
+        String requested = context.getRequestedProvider();
+        if (requested != null && !requested.isBlank()) {
+            return "mimo".equalsIgnoreCase(requested.trim());
+        }
+        return reviewProperties.isMimoMode();
     }
 }

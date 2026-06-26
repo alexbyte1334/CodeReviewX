@@ -7,9 +7,9 @@ public class ReviewProperties {
 
     /**
      * Active review provider: {@code mock} or {@code mimo}.
-     * Defaults to mock so local startup never requires MIMO_API_KEY.
+     * Defaults to mimo; falls back to mock when {@code MIMO_API_KEY} is missing.
      */
-    private String provider = "mock";
+    private String provider = "mimo";
 
     public String getProvider() {
         return provider;

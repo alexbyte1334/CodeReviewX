@@ -17,7 +17,7 @@ describe('App shell', () => {
     vi.mocked(reviewTaskApi.getHealth).mockResolvedValue({
       success: true,
       message: 'OK',
-      data: { status: 'UP', service: 'backend-java' },
+      data: { status: 'UP', service: 'backend-java', defaultReviewProvider: 'mimo' },
     });
     vi.mocked(reviewTaskApi.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [] });
   });
@@ -38,13 +38,17 @@ describe('App shell', () => {
   });
 
   it('shows provider status widget in sidebar', async () => {
+    vi.mocked(reviewTaskApi.getHealth).mockResolvedValue({
+      success: true,
+      message: 'OK',
+      data: { status: 'UP', service: 'backend-java', defaultReviewProvider: 'mimo', mimoConfigured: false },
+    });
     render(<App />);
 
     expect(screen.getByLabelText(/provider status widget/i)).toBeInTheDocument();
-    expect(screen.getByText('Mock provider · default')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Connected')).toBeInTheDocument();
+      expect(screen.getByText('Server default: mimo · MiMo not configured (falls back to Mock)')).toBeInTheDocument();
     });
   });
 

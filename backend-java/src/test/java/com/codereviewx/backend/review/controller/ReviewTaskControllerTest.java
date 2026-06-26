@@ -117,6 +117,32 @@ class ReviewTaskControllerTest {
     }
 
     @Test
+    void createTask_returnsProviderHitFields() throws Exception {
+        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mock\"}";
+
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requestedProvider", is("mock")))
+                .andExpect(jsonPath("$.data.providerUsed", is("mock")))
+                .andExpect(jsonPath("$.data.providerHit", is(true)));
+    }
+
+    @Test
+    void createTask_mimoWithoutKey_returnsProviderMiss() throws Exception {
+        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mimo\"}";
+
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requestedProvider", is("mimo")))
+                .andExpect(jsonPath("$.data.providerUsed", is("mock")))
+                .andExpect(jsonPath("$.data.providerHit", is(false)));
+    }
+
+    @Test
     void createTask_riskLevelConsistentWithIssueSummary() throws Exception {
         String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123}";
 
@@ -286,5 +312,16 @@ class ReviewTaskControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success", is(false)))
                 .andExpect(jsonPath("$.message", containsString("diffText is too large")));
+    }
+
+    @Test
+    void createTask_invalidProvider_returnsValidationError() throws Exception {
+        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":10,\"provider\":\"openai\"}";
+
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)));
     }
 }

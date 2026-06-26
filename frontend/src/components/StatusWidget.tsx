@@ -4,6 +4,8 @@ import type { BackendStatus } from '../types/ui';
 interface StatusWidgetProps {
   backendStatus: BackendStatus;
   tasks: ReviewTask[];
+  mimoConfigured?: boolean;
+  defaultReviewProvider?: string;
 }
 
 interface ArcGaugeProps {
@@ -104,7 +106,12 @@ function reviewGaugeProps(tasks: ReviewTask[]): { value: number; display: string
   };
 }
 
-export function StatusWidget({ backendStatus, tasks }: StatusWidgetProps) {
+export function StatusWidget({
+  backendStatus,
+  tasks,
+  mimoConfigured = false,
+  defaultReviewProvider = 'mimo',
+}: StatusWidgetProps) {
   const backend = backendGaugeProps(backendStatus);
   const reviews = reviewGaugeProps(tasks);
 
@@ -114,6 +121,10 @@ export function StatusWidget({ backendStatus, tasks }: StatusWidgetProps) {
       : backendStatus === 'down'
         ? 'Unavailable'
         : 'Checking…';
+
+  const providerCaption = mimoConfigured
+    ? `Mock or MiMo · server default: ${defaultReviewProvider}`
+    : `Server default: ${defaultReviewProvider} · MiMo not configured (falls back to Mock)`;
 
   return (
     <div className="status-widget" aria-label="Provider status widget">
@@ -146,7 +157,7 @@ export function StatusWidget({ backendStatus, tasks }: StatusWidgetProps) {
         />
       </div>
 
-      <p className="status-widget-caption">Mock provider · default</p>
+      <p className="status-widget-caption">{providerCaption}</p>
     </div>
   );
 }
