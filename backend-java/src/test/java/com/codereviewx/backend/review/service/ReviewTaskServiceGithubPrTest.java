@@ -17,6 +17,8 @@ import com.codereviewx.backend.review.persistence.repository.ReviewProviderTrace
 import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
+import com.codereviewx.backend.review.pipeline.provider.mimo.TestMiMoAgentResponses;
+import com.codereviewx.backend.review.pipeline.provider.mimo.XiaomiMiMoClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,8 +62,12 @@ class ReviewTaskServiceGithubPrTest {
     @MockBean
     private GithubPrMetadataLoader githubPrMetadataLoader;
 
+    @MockBean
+    private XiaomiMiMoClient xiaomiMiMoClient;
+
     @BeforeEach
     void setUp() {
+        TestMiMoAgentResponses.stubSuccessfulReview(xiaomiMiMoClient);
         commentPreviewRepository.deleteAll();
         toolTraceRepository.deleteAll();
         providerTraceRepository.deleteAll();
@@ -72,7 +78,7 @@ class ReviewTaskServiceGithubPrTest {
     }
 
     @Test
-    void createTask_githubPr_metadataSuccessRunsMockReviewAndBuildsPreviews() {
+    void createTask_githubPr_metadataSuccessRunsMimoReviewAndBuildsPreviews() {
         when(githubPrMetadataLoader.load("https://github.com/example/repo", 18))
                 .thenReturn(GithubPrMetadataLoadResult.success(metadata()));
 
@@ -90,7 +96,7 @@ class ReviewTaskServiceGithubPrTest {
         assertThat(response.getIngestionSummary().getChangedFiles()).isEqualTo(3);
         assertThat(response.getTraceSummary().getToolCount()).isEqualTo(1);
         assertThat(response.getTraceSummary().getFailedToolCount()).isEqualTo(0);
-        assertThat(response.getTraceSummary().isProviderFallback()).isTrue();
+        assertThat(response.getTraceSummary().isProviderFallback()).isFalse();
         assertThat(response.getCommentPreviewCount()).isEqualTo(3);
 
         List<ReviewToolTraceEntity> traces =
@@ -117,8 +123,8 @@ class ReviewTaskServiceGithubPrTest {
                 .get()
                 .satisfies(trace -> {
                     assertThat(trace.getRequestedProvider()).isEqualTo("mimo");
-                    assertThat(trace.getProviderUsed()).isEqualTo("mock");
-                    assertThat(trace.getProviderHit()).isFalse();
+                    assertThat(trace.getProviderUsed()).isEqualTo("mimo");
+                    assertThat(trace.getProviderHit()).isTrue();
                     assertThat(trace.getFindingCount()).isEqualTo(3);
                 });
         assertThat(commentPreviewRepository.findByReviewRunIdOrderByIdAsc(response.getLatestRunId()))

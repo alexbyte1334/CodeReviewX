@@ -17,7 +17,7 @@ describe('App shell', () => {
     vi.mocked(reviewTaskApi.getHealth).mockResolvedValue({
       success: true,
       message: 'OK',
-      data: { status: 'UP', service: 'backend-java', defaultReviewProvider: 'mimo' },
+      data: { status: 'UP', service: 'backend-java', reviewProvider: 'mimo' },
     });
     vi.mocked(reviewTaskApi.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [] });
   });
@@ -41,14 +41,14 @@ describe('App shell', () => {
     vi.mocked(reviewTaskApi.getHealth).mockResolvedValue({
       success: true,
       message: 'OK',
-      data: { status: 'UP', service: 'backend-java', defaultReviewProvider: 'mimo', mimoConfigured: false },
+      data: { status: 'UP', service: 'backend-java', reviewProvider: 'mimo', mimoConfigured: false },
     });
     render(<App />);
 
     expect(screen.getByLabelText(/provider status widget/i)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Server default: mimo · MiMo not configured (falls back to Mock)')).toBeInTheDocument();
+      expect(screen.getByText('MiMo keys required')).toBeInTheDocument();
     });
   });
 
@@ -61,6 +61,7 @@ describe('App shell', () => {
     await user.click(screen.getByRole('button', { name: /expand about & limits panel/i }));
 
     expect(screen.getByText(/manual diff input only/i)).toBeVisible();
+    expect(screen.getByText(/mimo dual-agent review only/i)).toBeVisible();
     expect(screen.getByText(/no automatic github pr fetching yet/i)).toBeVisible();
   });
 

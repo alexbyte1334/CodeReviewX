@@ -19,10 +19,13 @@ import com.codereviewx.backend.review.persistence.repository.ReviewProviderTrace
 import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
+import com.codereviewx.backend.review.pipeline.provider.mimo.TestMiMoAgentResponses;
+import com.codereviewx.backend.review.pipeline.provider.mimo.XiaomiMiMoClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 
 import java.util.List;
 
@@ -56,8 +59,12 @@ class ReviewTaskServiceTest {
     @Autowired
     private ReviewRunRepository reviewRunRepository;
 
+    @MockBean
+    private XiaomiMiMoClient xiaomiMiMoClient;
+
     @BeforeEach
     void setUp() {
+        TestMiMoAgentResponses.stubSuccessfulReview(xiaomiMiMoClient);
         commentPreviewRepository.deleteAll();
         toolTraceRepository.deleteAll();
         providerTraceRepository.deleteAll();
@@ -90,8 +97,8 @@ class ReviewTaskServiceTest {
         assertThat(response.getSummary()).doesNotContainIgnoringCase("mock");
         assertThat(response.getErrorMessage()).isNull();
         assertThat(response.getRequestedProvider()).isEqualTo("mimo");
-        assertThat(response.getProviderUsed()).isEqualTo("mock");
-        assertThat(response.getProviderHit()).isFalse();
+        assertThat(response.getProviderUsed()).isEqualTo("mimo");
+        assertThat(response.getProviderHit()).isTrue();
         assertThat(response.getLatestRunId()).isNotNull();
         assertThat(response.getCreatedAt()).isNotNull();
         assertThat(response.getUpdatedAt()).isNotNull();
@@ -258,13 +265,13 @@ class ReviewTaskServiceTest {
     }
 
     @Test
-    void createTask_allIssuesHaveSourceMock() {
+    void createTask_allIssuesHaveSourceMimo() {
         CreateReviewTaskRequest request = manualDiffRequest(1);
 
         ReviewTaskResponse response = service.createTask(request);
 
         for (ReviewIssueResponse issue : response.getIssues()) {
-            assertThat(issue.getSource()).isEqualTo(IssueSource.MOCK);
+            assertThat(issue.getSource()).isEqualTo(IssueSource.MIMO);
         }
     }
 
@@ -300,9 +307,9 @@ class ReviewTaskServiceTest {
 
         ReviewTaskResponse response = service.createTask(request);
 
-        assertThat(response.getIssues().get(0).getId()).isEqualTo("ISSUE-1");
-        assertThat(response.getIssues().get(1).getId()).isEqualTo("ISSUE-2");
-        assertThat(response.getIssues().get(2).getId()).isEqualTo("ISSUE-3");
+        assertThat(response.getIssues().get(0).getId()).isEqualTo("MIMO-ISSUE-1");
+        assertThat(response.getIssues().get(1).getId()).isEqualTo("MIMO-ISSUE-2");
+        assertThat(response.getIssues().get(2).getId()).isEqualTo("MIMO-ISSUE-3");
     }
 
     @Test
@@ -367,7 +374,7 @@ class ReviewTaskServiceTest {
     }
 
     @Test
-    void createTask_withDiffText_stillReturnsThreeMockIssues() {
+    void createTask_withDiffText_returnsThreeMimoIssues() {
         CreateReviewTaskRequest request = new CreateReviewTaskRequest();
         request.setRepoUrl("https://github.com/example/repo");
         request.setPrNumber(10);

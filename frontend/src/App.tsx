@@ -10,7 +10,6 @@ import { WorkspaceToolbar } from './components/WorkspaceToolbar';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { useColorTheme } from './hooks/useColorTheme';
 import type { BackendStatus, PanelId } from './types/ui';
-import type { ReviewProviderChoice } from './types/reviewTask';
 import { PRODUCT_LIMITS } from './types/ui';
 import './styles/app.css';
 
@@ -20,7 +19,6 @@ export default function App() {
   const { theme, toggleTheme } = useColorTheme();
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [mimoConfigured, setMimoConfigured] = useState(false);
-  const [defaultReviewProvider, setDefaultReviewProvider] = useState<ReviewProviderChoice>('mock');
   const [activeNav, setActiveNav] = useState<NavSection>('workspace');
   const [expandedPanels, setExpandedPanels] = useState<Set<PanelId>>(() => new Set());
   const [showLimits, setShowLimits] = useState(false);
@@ -40,8 +38,6 @@ export default function App() {
         if (res.success && res.data) {
           setBackendStatus('up');
           setMimoConfigured(Boolean(res.data.mimoConfigured));
-          const serverDefault = (res.data.defaultReviewProvider ?? 'mock').toLowerCase();
-          setDefaultReviewProvider(serverDefault === 'mimo' ? 'mimo' : 'mock');
         } else {
           setBackendStatus('down');
         }
@@ -216,7 +212,6 @@ export default function App() {
               backendStatus={backendStatus}
               tasks={tasks}
               mimoConfigured={mimoConfigured}
-              defaultReviewProvider={defaultReviewProvider}
             />
 
             <CollapsiblePanel
@@ -273,7 +268,6 @@ export default function App() {
                   onCreated={handleTaskCreated}
                   backendAvailable={backendStatus === 'up'}
                   mimoConfigured={mimoConfigured}
-                  defaultReviewProvider={defaultReviewProvider}
                 />
               </section>
 

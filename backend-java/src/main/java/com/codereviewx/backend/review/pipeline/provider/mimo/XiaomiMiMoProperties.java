@@ -7,7 +7,10 @@ public class XiaomiMiMoProperties {
 
     private String baseUrl = "https://api.xiaomimimo.com/v1";
     private String model = "mimo-v2.5-pro";
+    /** Legacy single-key compatibility only; new dual-agent flow requires role keys. */
     private String apiKey = "";
+    private String plannerApiKey = "";
+    private String executorApiKey = "";
     /** Connect and read timeout for MiMo HTTP calls (seconds). */
     private int timeoutSeconds = 60;
 
@@ -47,12 +50,42 @@ public class XiaomiMiMoProperties {
         return apiKey != null && !apiKey.isBlank();
     }
 
+    public String getPlannerApiKey() {
+        return plannerApiKey;
+    }
+
+    public void setPlannerApiKey(String plannerApiKey) {
+        this.plannerApiKey = plannerApiKey;
+    }
+
+    public String getExecutorApiKey() {
+        return executorApiKey;
+    }
+
+    public void setExecutorApiKey(String executorApiKey) {
+        this.executorApiKey = executorApiKey;
+    }
+
+    public boolean hasPlannerApiKey() {
+        return plannerApiKey != null && !plannerApiKey.isBlank();
+    }
+
+    public boolean hasExecutorApiKey() {
+        return executorApiKey != null && !executorApiKey.isBlank();
+    }
+
+    public boolean hasRoleApiKeys() {
+        return hasPlannerApiKey() && hasExecutorApiKey();
+    }
+
     @Override
     public String toString() {
         return "XiaomiMiMoProperties{"
                 + "baseUrl='" + baseUrl + '\''
                 + ", model='" + model + '\''
                 + ", apiKey='***'"
+                + ", plannerApiKey='***'"
+                + ", executorApiKey='***'"
                 + '}';
     }
 }

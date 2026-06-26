@@ -186,12 +186,12 @@ describe('ReviewTaskDetail', () => {
     expect(sourceBadges.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('renders user-facing source labels for MOCK', async () => {
+  it('renders historical labels for old MOCK sources', async () => {
     const user = userEvent.setup();
     render(<ReviewTaskDetail {...baseProps} task={mockTask} />);
     await expandIssuesPanel(user);
     await expandAllIssueCards(user);
-    const sourceBadges = screen.getAllByText('Mock Provider');
+    const sourceBadges = screen.getAllByText('Historical Mock');
     expect(sourceBadges.length).toBeGreaterThanOrEqual(3);
   });
 

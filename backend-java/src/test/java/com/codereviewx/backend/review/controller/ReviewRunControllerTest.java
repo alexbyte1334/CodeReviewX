@@ -84,7 +84,7 @@ class ReviewRunControllerTest {
                 .andExpect(jsonPath("$.data.status", is("SUCCESS")))
                 .andExpect(jsonPath("$.data.reviewMode", is("GITHUB_PR")))
                 .andExpect(jsonPath("$.data.inputSnapshotSummary.headSha", is("abc123")))
-                .andExpect(jsonPath("$.data.providerSummary.providerUsed", is("mock")))
+                .andExpect(jsonPath("$.data.providerSummary.providerUsed", is("mimo")))
                 .andExpect(jsonPath("$.data.inputSnapshotSummary.snapshotJson").doesNotExist())
                 .andExpect(jsonPath("$.data.providerSummary.inputSummary").doesNotExist());
     }
@@ -135,8 +135,8 @@ class ReviewRunControllerTest {
         run.setReviewMode(ReviewMode.GITHUB_PR);
         run.setStatus(ReviewRunStatus.SUCCESS);
         run.setRequestedProvider("mimo");
-        run.setProviderUsed("mock");
-        run.setProviderHit(false);
+        run.setProviderUsed("mimo");
+        run.setProviderHit(true);
         run.setStartedAt(now);
         run.setFinishedAt(now);
         run.setCreatedAt(now);
@@ -178,13 +178,13 @@ class ReviewRunControllerTest {
         ReviewProviderTraceEntity providerTrace = new ReviewProviderTraceEntity();
         providerTrace.setReviewRunId(savedRun.getId());
         providerTrace.setRequestedProvider("mimo");
-        providerTrace.setProviderUsed("mock");
-        providerTrace.setProviderHit(false);
+        providerTrace.setProviderUsed("mimo");
+        providerTrace.setProviderHit(true);
         providerTrace.setModelName("mimo-v2.5-pro");
         providerTrace.setInputSummary("raw prompt should not be returned");
         providerTrace.setOutputSummary("3 findings normalized from provider response.");
         providerTrace.setFindingCount(3);
-        providerTrace.setFallbackReason("MiMo API key missing");
+        providerTrace.setFallbackReason(null);
         providerTrace.setStartedAt(now);
         providerTrace.setFinishedAt(now);
         providerTrace.setCreatedAt(now);

@@ -14,7 +14,8 @@ export type IssueCategory =
 
 export type IssueSource = 'MOCK' | 'MIMO' | 'SEMGREP' | 'LLM' | 'MANUAL';
 
-export type ReviewProviderChoice = 'mock' | 'mimo';
+export type ReviewProviderChoice = 'mimo';
+export type HistoricalReviewProvider = ReviewProviderChoice | 'mock';
 
 export type IssueStatus = 'OPEN' | 'RESOLVED' | 'FALSE_POSITIVE';
 
@@ -52,8 +53,8 @@ export interface ReviewTask {
   updatedAt: string;
   issues: ReviewIssue[];
   issueSummary?: IssueSummary;
-  requestedProvider?: ReviewProviderChoice;
-  providerUsed?: ReviewProviderChoice;
+  requestedProvider?: HistoricalReviewProvider;
+  providerUsed?: HistoricalReviewProvider;
   providerHit?: boolean;
 }
 
@@ -69,6 +70,6 @@ export const MAX_DIFF_TEXT_LENGTH = 20000;
 export interface HealthData {
   status: string;
   service: string;
-  defaultReviewProvider?: string;
+  reviewProvider?: string;
   mimoConfigured?: boolean;
 }

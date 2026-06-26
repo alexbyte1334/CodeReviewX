@@ -28,3 +28,5 @@ codereviewx:
       base-url: https://api.xiaomimimo.com/v1
       model: mimo-v2.5-pro
       api-key:
+      planner-api-key: test-planner-key
+      executor-api-key: test-executor-key

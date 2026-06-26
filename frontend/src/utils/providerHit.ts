@@ -1,14 +1,14 @@
-import type { ReviewProviderChoice } from '../types/reviewTask';
+import type { HistoricalReviewProvider } from '../types/reviewTask';
 
 export function formatProviderSlug(provider?: string | null): string {
   if (!provider) return '—';
-  return provider.toLowerCase() === 'mimo' ? 'MiMo' : 'Mock';
+  return provider.toLowerCase() === 'mimo' ? 'MiMo' : 'Historical Mock';
 }
 
 export function formatProviderHitLabel(
   providerHit?: boolean,
-  requestedProvider?: ReviewProviderChoice | string | null,
-  providerUsed?: ReviewProviderChoice | string | null,
+  requestedProvider?: HistoricalReviewProvider | string | null,
+  providerUsed?: HistoricalReviewProvider | string | null,
 ): string {
   if (providerHit === undefined || providerHit === null) {
     return 'Provider hit status unavailable';

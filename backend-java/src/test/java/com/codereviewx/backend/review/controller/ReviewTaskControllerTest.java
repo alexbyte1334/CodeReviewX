@@ -7,12 +7,15 @@ import com.codereviewx.backend.review.persistence.repository.ReviewProviderTrace
 import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
+import com.codereviewx.backend.review.pipeline.provider.mimo.TestMiMoAgentResponses;
+import com.codereviewx.backend.review.pipeline.provider.mimo.XiaomiMiMoClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -57,6 +60,9 @@ class ReviewTaskControllerTest {
     @Autowired
     private ReviewRunRepository reviewRunRepository;
 
+    @MockBean
+    private XiaomiMiMoClient xiaomiMiMoClient;
+
     private static final String BASE_URL = "/api/review-tasks";
 
     private static final String SAMPLE_DIFF = "diff --git a/a.txt b/a.txt\\n";
@@ -71,6 +77,7 @@ class ReviewTaskControllerTest {
 
     @BeforeEach
     void setUp() {
+        TestMiMoAgentResponses.stubSuccessfulReview(xiaomiMiMoClient);
         commentPreviewRepository.deleteAll();
         toolTraceRepository.deleteAll();
         providerTraceRepository.deleteAll();
@@ -123,7 +130,7 @@ class ReviewTaskControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(manualDiffBody(123)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.issues[0].id", is("ISSUE-1")))
+                .andExpect(jsonPath("$.data.issues[0].id", is("MIMO-ISSUE-1")))
                 .andExpect(jsonPath("$.data.issues[0].severity", is("HIGH")))
                 .andExpect(jsonPath("$.data.issues[0].category", is("SECURITY")))
                 .andExpect(jsonPath("$.data.issues[0].filePath", notNullValue()))
@@ -138,13 +145,13 @@ class ReviewTaskControllerTest {
     void createTask_issuesHaveSourceAndStatus() throws Exception {
         mockMvc.perform(post(BASE_URL)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(manualDiffBody(123)))
+                .content(manualDiffBody(123)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.issues[0].source", is("MOCK")))
+                .andExpect(jsonPath("$.data.issues[0].source", is("MIMO")))
                 .andExpect(jsonPath("$.data.issues[0].status", is("OPEN")))
-                .andExpect(jsonPath("$.data.issues[1].source", is("MOCK")))
+                .andExpect(jsonPath("$.data.issues[1].source", is("MIMO")))
                 .andExpect(jsonPath("$.data.issues[1].status", is("OPEN")))
-                .andExpect(jsonPath("$.data.issues[2].source", is("MOCK")))
+                .andExpect(jsonPath("$.data.issues[2].source", is("MIMO")))
                 .andExpect(jsonPath("$.data.issues[2].status", is("OPEN")));
     }
 
@@ -164,20 +171,6 @@ class ReviewTaskControllerTest {
 
     @Test
     void createTask_returnsProviderHitFields() throws Exception {
-        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mock\",\"diffText\":\""
-                + SAMPLE_DIFF + "\"}";
-
-        mockMvc.perform(post(BASE_URL)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.requestedProvider", is("mock")))
-                .andExpect(jsonPath("$.data.providerUsed", is("mock")))
-                .andExpect(jsonPath("$.data.providerHit", is(true)));
-    }
-
-    @Test
-    void createTask_mimoWithoutKey_returnsProviderMiss() throws Exception {
         String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mimo\",\"diffText\":\""
                 + SAMPLE_DIFF + "\"}";
 
@@ -186,8 +179,20 @@ class ReviewTaskControllerTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.requestedProvider", is("mimo")))
-                .andExpect(jsonPath("$.data.providerUsed", is("mock")))
-                .andExpect(jsonPath("$.data.providerHit", is(false)));
+                .andExpect(jsonPath("$.data.providerUsed", is("mimo")))
+                .andExpect(jsonPath("$.data.providerHit", is(true)));
+    }
+
+    @Test
+    void createTask_mockProvider_returnsValidationError() throws Exception {
+        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mock\",\"diffText\":\""
+                + SAMPLE_DIFF + "\"}";
+
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)));
     }
 
     @Test

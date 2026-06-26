@@ -8,74 +8,108 @@ public class ReviewPromptBuilder {
 
     public static final String SYSTEM_PROMPT =
             "You are CodeReviewX, an AI code review agent. "
-                    + "You identify security, maintainability, reliability, performance, test, style, and documentation risks. "
                     + "Return only strict JSON. Do not wrap output in markdown.";
+    public static final String PLANNER_SYSTEM_PROMPT =
+            "You are CodeReviewX AI-1 Planner and Gatekeeper. "
+                    + SYSTEM_PROMPT;
+    public static final String EXECUTOR_SYSTEM_PROMPT =
+            "You are CodeReviewX AI-2 Review Executor. "
+                    + SYSTEM_PROMPT;
+    public static final String GATEKEEPER_SYSTEM_PROMPT =
+            "You are CodeReviewX AI-1 Quality Gatekeeper. "
+                    + SYSTEM_PROMPT;
 
-    private static final String JSON_SCHEMA = """
-            [
-              {
-                "issueKey": "MIMO-ISSUE-1",
-                "severity": "HIGH|MEDIUM|LOW",
-                "category": "BUG|SECURITY|PERFORMANCE|MAINTAINABILITY|STYLE|TEST",
-                "filePath": "string",
-                "startLine": 1,
-                "endLine": 1,
-                "title": "string",
-                "description": "string",
-                "recommendation": "string"
-              }
-            ]""";
+    private static final String TASK_PLAN_SCHEMA = """
+            {
+              "taskId": 1,
+              "repoUrl": "https://github.com/owner/repo",
+              "prNumber": 12,
+              "reviewMode": "MANUAL_DIFF|GITHUB_PR",
+              "query": "string",
+              "focusAreas": ["SECURITY", "BUG", "MAINTAINABILITY"],
+              "constraints": ["string"]
+            }""";
+
+    private static final String CANDIDATE_REVIEW_SCHEMA = """
+            {
+              "summary": "string",
+              "findings": [
+                {
+                  "severity": "HIGH|MEDIUM|LOW",
+                  "category": "BUG|SECURITY|PERFORMANCE|MAINTAINABILITY|STYLE|TEST",
+                  "filePath": "string",
+                  "startLine": 1,
+                  "endLine": 1,
+                  "title": "string",
+                  "description": "string",
+                  "recommendation": "string"
+                }
+              ]
+            }""";
+
+    private static final String GATE_DECISION_SCHEMA = """
+            {
+              "approved": true,
+              "reason": "string",
+              "requiredChanges": []
+            }""";
 
     public String buildUserPrompt(ReviewContext context) {
-        if (context.hasDiffText()) {
-            return buildWithDiffPrompt(context);
-        }
-        return buildNoDiffPrompt(context);
+        return buildPlannerPrompt(context);
     }
 
-    private String buildNoDiffPrompt(ReviewContext context) {
+    public String buildPlannerPrompt(ReviewContext context) {
         return """
-                Review this pull request context.
+                Decompose this ReviewTask and rewrite it into a precise code-review query.
 
+                taskId: %d
                 repoUrl: %s
                 prNumber: %d
+                reviewMode: %s
+                contextAvailable: %s
 
-                Current available context does not include the actual PR diff yet.
-                Return findings only if you can identify meaningful risks from the provided context.
-                For demo mode, you may return conservative synthetic findings clearly framed as review suggestions.
-
-                Return only a JSON array with objects using this schema:
+                Return only one JSON object using this schema:
                 %s
 
                 Rules:
                 - Return only JSON.
                 - Do not wrap JSON in markdown fences.
                 - Do not include prose before or after JSON.
-                - Use only allowed enum values.
-                - If there are no meaningful findings, return [].
-                """.formatted(context.getRepoUrl(), context.getPrNumber(), JSON_SCHEMA);
+                - The query must instruct AI-2 to use only available context.
+                - Include constraints that forbid invented files and ungrounded claims.
+                """.formatted(
+                context.getTaskId(),
+                context.getRepoUrl(),
+                context.getPrNumber(),
+                context.hasDiffText() ? "MANUAL_DIFF" : "GITHUB_PR",
+                context.hasDiffText() ? "PR diff text" : "bounded PR metadata only",
+                TASK_PLAN_SCHEMA
+        );
     }
 
-    private String buildWithDiffPrompt(ReviewContext context) {
-        return """
-                Review this pull request context.
-
-                repoUrl: %s
-                prNumber: %d
-
-                The following PR diff is provided and should be used as the primary review context.
-
+    public String buildExecutorPrompt(ReviewContext context, String taskPlanJson) {
+        String reviewContext = context.hasDiffText()
+                ? """
                 --- PR DIFF START ---
                 %s
                 --- PR DIFF END ---
+                """.formatted(context.getDiffText())
+                : "No PR diff is available yet. Use only repoUrl, prNumber, and bounded metadata.";
 
-                Review changed lines and nearby context.
-                Identify security, reliability, maintainability, performance, test, style, and bug risks.
-                Use only files and code present in the provided diff.
-                Do not invent files that are not present in the diff.
-                Prefer changed-hunk line numbers when possible.
+        return """
+                Execute the review using this approved TaskPlan JSON.
 
-                Return only a JSON array with objects using this schema:
+                --- TASK PLAN JSON START ---
+                %s
+                --- TASK PLAN JSON END ---
+
+                repoUrl: %s
+                prNumber: %d
+
+                Review context:
+                %s
+
+                Return only one CandidateReview JSON object using this schema:
                 %s
 
                 Rules:
@@ -83,9 +117,30 @@ public class ReviewPromptBuilder {
                 - Do not wrap JSON in markdown fences.
                 - Do not include prose before or after JSON.
                 - Use only allowed enum values.
-                - Use only files/code present in the provided diff.
-                - Do not invent files outside the diff.
-                - If there are no meaningful findings, return [].
-                """.formatted(context.getRepoUrl(), context.getPrNumber(), context.getDiffText(), JSON_SCHEMA);
+                - Do not include issueKey; IssueGenerator will assign final keys.
+                - If there are no meaningful findings, return an empty findings array.
+                """.formatted(taskPlanJson, context.getRepoUrl(), context.getPrNumber(), reviewContext, CANDIDATE_REVIEW_SCHEMA);
+    }
+
+    public String buildGatekeeperPrompt(String taskPlanJson, String candidateReviewJson) {
+        return """
+                Check whether the CandidateReview follows the TaskPlan, schema, and grounding rules.
+
+                --- TASK PLAN JSON START ---
+                %s
+                --- TASK PLAN JSON END ---
+
+                --- CANDIDATE REVIEW JSON START ---
+                %s
+                --- CANDIDATE REVIEW JSON END ---
+
+                Return only one GateDecision JSON object using this schema:
+                %s
+
+                Rules:
+                - Approve only if findings are grounded and use the allowed schema.
+                - Reject if the review invents files, uses unsupported enum values, or ignores constraints.
+                - Return only JSON with no markdown.
+                """.formatted(taskPlanJson, candidateReviewJson, GATE_DECISION_SCHEMA);
     }
 }

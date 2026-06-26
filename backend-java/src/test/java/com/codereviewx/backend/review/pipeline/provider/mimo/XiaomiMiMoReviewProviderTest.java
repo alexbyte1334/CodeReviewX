@@ -1,5 +1,6 @@
 package com.codereviewx.backend.review.pipeline.provider.mimo;
 
+import com.codereviewx.backend.review.ReviewErrorCodes;
 import com.codereviewx.backend.review.enums.IssueCategory;
 import com.codereviewx.backend.review.enums.IssueSeverity;
 import com.codereviewx.backend.review.enums.IssueSource;
@@ -7,63 +8,58 @@ import com.codereviewx.backend.review.enums.IssueStatus;
 import com.codereviewx.backend.review.pipeline.ReviewContext;
 import com.codereviewx.backend.review.pipeline.ReviewFinding;
 import com.codereviewx.backend.review.pipeline.ReviewProviderResult;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import org.mockito.ArgumentCaptor;
 
 class XiaomiMiMoReviewProviderTest {
 
-    private ReviewPromptBuilder promptBuilder;
     private XiaomiMiMoClient client;
-    private XiaomiMiMoFindingParser parser;
+    private XiaomiMiMoProperties properties;
     private XiaomiMiMoReviewProvider provider;
     private ReviewContext context;
 
     @BeforeEach
     void setUp() {
-        promptBuilder = new ReviewPromptBuilder();
+        ObjectMapper objectMapper = new ObjectMapper();
+        ReviewPromptBuilder promptBuilder = new ReviewPromptBuilder();
         client = mock(XiaomiMiMoClient.class);
-        parser = new XiaomiMiMoFindingParser(new com.fasterxml.jackson.databind.ObjectMapper());
-        provider = new XiaomiMiMoReviewProvider(promptBuilder, client, parser);
-        context = new ReviewContext(1L, "https://github.com/example/repo", 9, LocalDateTime.now());
+        properties = new XiaomiMiMoProperties();
+        properties.setPlannerApiKey("planner-key");
+        properties.setExecutorApiKey("executor-key");
+        provider = new XiaomiMiMoReviewProvider(
+                promptBuilder,
+                client,
+                properties,
+                new MiMoAgentJsonParser(objectMapper),
+                new MiMoIssueGenerator(),
+                objectMapper
+        );
+        context = new ReviewContext(1L, "https://github.com/example/repo", 9, LocalDateTime.now(),
+                "diff --git a/a.txt b/a.txt\n+const x = 1;\n");
     }
 
     @Test
-    void review_buildsPromptCallsClientAndParsesFindings() {
-        String modelOutput = """
-                [
-                  {
-                    "issueKey": "MIMO-ISSUE-1",
-                    "severity": "HIGH",
-                    "category": "SECURITY",
-                    "filePath": "src/Main.java",
-                    "startLine": 10,
-                    "endLine": 12,
-                    "title": "Missing auth",
-                    "description": "Endpoint lacks auth.",
-                    "recommendation": "Add auth guard."
-                  }
-                ]
-                """;
-
-        when(client.complete(eq(ReviewPromptBuilder.SYSTEM_PROMPT), anyString())).thenReturn(modelOutput);
+    void review_runsPlannerExecutorGatekeeperAndGeneratesMimoFindings() {
+        TestMiMoAgentResponses.stubSuccessfulReview(client);
 
         ReviewProviderResult result = provider.review(context);
 
-        verify(client).complete(eq(ReviewPromptBuilder.SYSTEM_PROMPT), anyString());
+        verify(client).complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), eq("planner-key"));
+        verify(client).complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), eq("executor-key"));
+        verify(client).complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), eq("planner-key"));
         assertThat(result.isSuccessful()).isTrue();
         assertThat(result.getProviderName()).isEqualTo(XiaomiMiMoReviewProvider.PROVIDER_NAME);
-        assertThat(result.getFindings()).hasSize(1);
+        assertThat(result.getFindings()).hasSize(3);
 
         ReviewFinding finding = result.getFindings().get(0);
         assertThat(finding.getIssueKey()).isEqualTo("MIMO-ISSUE-1");
@@ -74,71 +70,57 @@ class XiaomiMiMoReviewProviderTest {
     }
 
     @Test
-    void review_handlesValidEmptyArray() {
-        when(client.complete(eq(ReviewPromptBuilder.SYSTEM_PROMPT), anyString())).thenReturn("[]");
+    void review_failsFastWhenRoleKeysMissing() {
+        properties.setPlannerApiKey("");
 
-        ReviewProviderResult result = provider.review(context);
-
-        assertThat(result.isSuccessful()).isTrue();
-        assertThat(result.getFindings()).isEmpty();
+        assertThatThrownBy(() -> provider.review(context))
+                .isInstanceOf(MiMoAgentException.class)
+                .extracting("errorCode")
+                .isEqualTo(ReviewErrorCodes.MIMO_AUTH_MISSING);
     }
 
     @Test
-    void review_generatesDeterministicIssueKeysWhenMissing() {
-        String modelOutput = """
-                [
-                  {
-                    "severity": "LOW",
-                    "category": "TEST",
-                    "filePath": "src/Test.java",
-                    "startLine": 1,
-                    "endLine": 1,
-                    "title": "Add tests",
-                    "description": "Coverage gap.",
-                    "recommendation": "Add unit tests."
-                  }
-                ]
-                """;
+    void review_rejectsInvalidPlannerJson() {
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn("[]");
 
-        when(client.complete(eq(ReviewPromptBuilder.SYSTEM_PROMPT), anyString())).thenReturn(modelOutput);
-
-        ReviewProviderResult result = provider.review(context);
-
-        assertThat(result.getFindings()).extracting(ReviewFinding::getIssueKey)
-                .containsExactly("MIMO-ISSUE-1");
+        assertThatThrownBy(() -> provider.review(context))
+                .isInstanceOf(MiMoAgentException.class)
+                .extracting("errorCode")
+                .isEqualTo(ReviewErrorCodes.MIMO_PLAN_INVALID);
     }
 
     @Test
-    void review_withDiffText_usesDiffPrompt() {
-        ReviewContext diffContext = new ReviewContext(
-                1L,
-                "https://github.com/example/repo",
-                9,
-                LocalDateTime.now(),
-                "diff --git a/src/App.tsx b/src/App.tsx\n+const password = request.query.password;\n"
-        );
-        when(client.complete(eq(ReviewPromptBuilder.SYSTEM_PROMPT), anyString())).thenReturn("[]");
+    void review_rejectsInvalidExecutorJson() {
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn("[]");
 
-        provider.review(diffContext);
-
-        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(client).complete(eq(ReviewPromptBuilder.SYSTEM_PROMPT), promptCaptor.capture());
-        assertThat(promptCaptor.getValue())
-                .contains("The following PR diff is provided and should be used as the primary review context.")
-                .contains("--- PR DIFF START ---")
-                .contains("+const password = request.query.password;");
+        assertThatThrownBy(() -> provider.review(context))
+                .isInstanceOf(MiMoAgentException.class)
+                .extracting("errorCode")
+                .isEqualTo(ReviewErrorCodes.MIMO_REVIEW_INVALID);
     }
 
     @Test
-    void review_withoutDiffText_usesNoDiffPrompt() {
-        when(client.complete(eq(ReviewPromptBuilder.SYSTEM_PROMPT), anyString())).thenReturn("[]");
+    void review_rejectsGatekeeperRejection() {
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.candidateReviewJson());
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn("""
+                        {
+                          "approved": false,
+                          "reason": "Ungrounded finding.",
+                          "requiredChanges": ["Remove ungrounded finding."]
+                        }
+                        """);
 
-        provider.review(context);
-
-        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(client).complete(eq(ReviewPromptBuilder.SYSTEM_PROMPT), promptCaptor.capture());
-        assertThat(promptCaptor.getValue())
-                .contains("does not include the actual PR diff yet")
-                .doesNotContain("--- PR DIFF START ---");
+        assertThatThrownBy(() -> provider.review(context))
+                .isInstanceOf(MiMoAgentException.class)
+                .extracting("errorCode")
+                .isEqualTo(ReviewErrorCodes.MIMO_GATE_REJECTED);
     }
 }

@@ -20,52 +20,45 @@ class ReviewPromptBuilderTest {
     }
 
     @Test
-    void buildUserPrompt_withoutDiff_statesDiffUnavailable() {
-        String prompt = promptBuilder.buildUserPrompt(contextWithoutDiff());
+    void buildPlannerPrompt_returnsTaskPlanSchema() {
+        String prompt = promptBuilder.buildPlannerPrompt(contextWithoutDiff());
 
-        assertThat(prompt).contains("does not include the actual PR diff yet");
-        assertThat(prompt).doesNotContain("--- PR DIFF START ---");
-        assertThat(prompt).contains("\"issueKey\": \"MIMO-ISSUE-1\"");
+        assertThat(prompt).contains("Decompose this ReviewTask");
+        assertThat(prompt).contains("\"query\": \"string\"");
+        assertThat(prompt).contains("\"focusAreas\"");
         assertThat(prompt).contains("Return only JSON.");
     }
 
     @Test
-    void buildUserPrompt_withDiff_includesDiffAsPrimaryContext() {
+    void buildExecutorPrompt_withDiff_includesDiffAndCandidateSchema() {
         String diff = "diff --git a/src/App.tsx b/src/App.tsx\n+const password = request.query.password;\n";
-        String prompt = promptBuilder.buildUserPrompt(contextWithDiff(diff));
+        String prompt = promptBuilder.buildExecutorPrompt(contextWithDiff(diff), TestMiMoAgentResponses.taskPlanJson());
 
-        assertThat(prompt).contains("The following PR diff is provided and should be used as the primary review context.");
+        assertThat(prompt).contains("--- TASK PLAN JSON START ---");
         assertThat(prompt).contains("--- PR DIFF START ---");
         assertThat(prompt).contains(diff);
-        assertThat(prompt).contains("--- PR DIFF END ---");
-        assertThat(prompt).doesNotContain("does not include the actual PR diff yet");
+        assertThat(prompt).contains("\"findings\"");
+        assertThat(prompt).contains("Do not include issueKey");
     }
 
     @Test
-    void buildUserPrompt_withDiff_instructsNotToInventFiles() {
-        String prompt = promptBuilder.buildUserPrompt(contextWithDiff("diff --git a/a.txt b/a.txt\n"));
+    void buildExecutorPrompt_withoutDiff_statesDiffUnavailable() {
+        String prompt = promptBuilder.buildExecutorPrompt(contextWithoutDiff(), TestMiMoAgentResponses.taskPlanJson());
 
-        assertThat(prompt).contains("Do not invent files");
-        assertThat(prompt).contains("Use only files and code present in the provided diff");
-        assertThat(prompt).contains("Prefer changed-hunk line numbers when possible");
-    }
-
-    @Test
-    void buildUserPrompt_withDiff_usesStrictJsonSchema() {
-        String prompt = promptBuilder.buildUserPrompt(contextWithDiff("diff --git a/a.txt b/a.txt\n"));
-
-        assertThat(prompt).contains("\"severity\": \"HIGH|MEDIUM|LOW\"");
-        assertThat(prompt).contains("\"category\": \"BUG|SECURITY|PERFORMANCE|MAINTAINABILITY|STYLE|TEST\"");
-        assertThat(prompt).contains("Do not wrap JSON in markdown fences");
-        assertThat(prompt).contains("If there are no meaningful findings, return []");
-    }
-
-    @Test
-    void buildUserPrompt_blankDiffText_usesNoDiffPrompt() {
-        ReviewContext context = new ReviewContext(1L, "https://github.com/example/repo", 10, LocalDateTime.now(), "   ");
-        String prompt = promptBuilder.buildUserPrompt(context);
-
-        assertThat(prompt).contains("does not include the actual PR diff yet");
+        assertThat(prompt).contains("No PR diff is available yet");
         assertThat(prompt).doesNotContain("--- PR DIFF START ---");
+    }
+
+    @Test
+    void buildGatekeeperPrompt_containsBothJsonPayloadsAndDecisionSchema() {
+        String prompt = promptBuilder.buildGatekeeperPrompt(
+                TestMiMoAgentResponses.taskPlanJson(),
+                TestMiMoAgentResponses.candidateReviewJson()
+        );
+
+        assertThat(prompt).contains("--- TASK PLAN JSON START ---");
+        assertThat(prompt).contains("--- CANDIDATE REVIEW JSON START ---");
+        assertThat(prompt).contains("\"approved\": true");
+        assertThat(prompt).contains("Reject if the review invents files");
     }
 }
