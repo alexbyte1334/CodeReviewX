@@ -1,6 +1,6 @@
 # backend-java
 
-> Round 10 Status: PR / Diff Context v1. Optional pasted diff context for MiMo prompts; default mock mode and fallback behavior unchanged.
+> Current Status: MiMo dual-AI review with manual diff, GitHub PR metadata/diff ingestion, and selected comment preview publishing.
 
 ## Current State
 
@@ -20,8 +20,7 @@ This module contains the Spring Boot 3 + Java 17 + Maven backend service for Cod
   - `ReviewFinding` — normalized internal finding model
   - `ReviewProvider` — provider interface
   - `ReviewProviderResult` — provider execution result wrapper
-  - `ConfigurableReviewProvider` — configuration-driven provider selection with mock fallback
-  - `MockReviewProvider` — deterministic mock provider (default)
+  - `ConfigurableReviewProvider` — routes review requests to the configured provider
   - `XiaomiMiMoReviewProvider` — Xiaomi MiMo AI provider (`review/pipeline/provider/mimo/`)
   - `ReviewPromptBuilder`, `XiaomiMiMoClient`, `XiaomiMiMoFindingParser`
 - `ApiResponse<T>` response wrapper
@@ -29,7 +28,7 @@ This module contains the Spring Boot 3 + Java 17 + Maven backend service for Cod
   - `ReviewTaskRepository`
   - `ReviewIssueRepository`
 - JPA entities:
-  - `ReviewTaskEntity` (optional persisted `diffText`, not exposed in public API)
+  - `ReviewTaskEntity` (manual `diffText` is optional and not exposed in public API; GitHub-loaded diff is not persisted here)
   - `ReviewIssueEntity`
 - DTOs:
   - `CreateReviewTaskRequest` (optional `diffText`, max 20000 characters)
@@ -58,10 +57,9 @@ jdbc:h2:mem:testdb
 
 ## Review Provider Configuration
 
-Round 09 introduces a configurable Xiaomi MiMo provider behind the `ReviewProvider` interface. **Default local behavior remains mock mode.**
+The current mainline provider is Xiaomi MiMo. Missing role keys fail fast; there is no mock fallback for new review tasks.
 
 ```properties
-codereviewx.review.provider=mock
 codereviewx.ai.mimo.base-url=https://api.xiaomimimo.com/v1
 codereviewx.ai.mimo.model=mimo-v2.5-pro
 ```
@@ -70,44 +68,25 @@ Environment variables (optional overrides):
 
 | Variable | Purpose |
 |---|---|
-| `CODEREVIEWX_REVIEW_PROVIDER` | `mock` (default) or `mimo` |
-| `MIMO_API_KEY` | Xiaomi MiMo API key (**never commit**) |
+| `MIMO_PLANNER_API_KEY` | AI-1 Planner/Gatekeeper MiMo API key (**never commit**) |
+| `MIMO_EXECUTOR_API_KEY` | AI-2 Executor MiMo API key (**never commit**) |
 | `MIMO_BASE_URL` | MiMo API base URL |
 | `MIMO_MODEL` | MiMo model name |
 | `MIMO_TIMEOUT_SECONDS` | MiMo HTTP connect/read timeout (default `60`) |
 
-### Default mock mode
+### Xiaomi MiMo mode
 
 ```bash
+export MIMO_PLANNER_API_KEY="<local-planner-secret-not-committed>"
+export MIMO_EXECUTOR_API_KEY="<local-executor-secret-not-committed>"
+
 cd backend-java
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 ```
 
-Returns 3 deterministic mock issues with `source: MOCK`. No API key required.
-
-### Xiaomi MiMo mode
-
-```bash
-export MIMO_API_KEY="<local-secret-not-committed>"
-
-cd backend-java
-JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run \
-  -Dspring-boot.run.arguments="--codereviewx.review.provider=mimo"
-```
-
 When MiMo succeeds, findings use `source: MIMO`. Valid empty `[]` from MiMo means zero findings with `riskLevel: NONE`.
 
-### Fallback behavior
-
-If `provider=mimo` but:
-
-- `MIMO_API_KEY` is missing or blank
-- MiMo HTTP call fails (timeout, network, non-2xx)
-- Model output cannot be parsed safely
-
-…the pipeline **falls back to `MockReviewProvider`** with a safe server-side warning log. Task creation still succeeds; the public API shape is unchanged; fallback reason is not exposed.
-
-**Never commit `MIMO_API_KEY`.** Read it only from environment variables.
+**Never commit MiMo API keys.** Read them only from environment variables.
 
 ## Review Agent Flow (Round 10)
 
@@ -115,15 +94,15 @@ If `provider=mimo` but:
 ReviewTaskService.createTask
   -> normalize optional diffText
   -> persist ReviewTaskEntity (optional diffText)
-  -> ReviewPipelineService.run(ReviewContext with optional diffText)
-  -> ConfigurableReviewProvider (mock or mimo)
-      -> MockReviewProvider
-      OR
+  -> GITHUB_PR mode: github.pr.metadata.load + github.pr.diff.load
+  -> ReviewPipelineService.run(ReviewContext with manual or GitHub-loaded diff)
+  -> ConfigurableReviewProvider
       -> XiaomiMiMoReviewProvider
           -> ReviewPromptBuilder (diff-aware when diffText present)
           -> XiaomiMiMoClient (OpenAI-compatible /chat/completions)
           -> XiaomiMiMoFindingParser
   -> map ReviewFinding -> ReviewIssueEntity and persist
+  -> persist sanitized agent step trace and local comment previews
   -> compute issueSummary and riskLevel
 ```
 
@@ -133,24 +112,24 @@ Round 10 adds optional pasted PR diff context:
 - Blank or whitespace-only `diffText` is treated as absent.
 - Maximum `diffText` length is 20000 characters.
 - MiMo prompt uses pasted diff as primary review context when provided.
-- Mock mode remains default and ignores diff for deterministic demo findings.
+- GITHUB_PR mode uses the auto-loaded bounded GitHub diff when `diffText` is absent.
 - Public API responses do not expose raw `diffText`, prompts, or model output.
-- Automatic GitHub PR fetching is not implemented.
+- Public API responses do not expose GitHub token, Authorization header, raw full diff, or `snapshotJson`.
+- `GET /api/review-runs/{runId}/trace` exposes sanitized step status/timing only.
+- Comment preview publishing requires selected previews and explicit confirmation, then stores `PUBLISHED` / `FAILED` state.
 
 Current limitations:
 
-- No automatic GitHub PR fetching or GitHub App integration.
-- No private repository access.
+- No GitHub App integration.
 - No repository is cloned or parsed.
 - No full repository analysis or production-grade review claim.
-- No PR comment write-back.
 - No visual diff viewer or syntax highlighting.
 - No RAG, MCP, Function Calling, or memory system.
 - No production auth or team model.
 - No Semgrep process is executed.
 - No status update, resolve, false-positive, or human review workflow exists.
 
-Creating a task in mock mode returns `status: SUCCESS`, `riskLevel: HIGH`, and 3 deterministic mock issues. The public issue ids are string keys such as `ISSUE-1`, not internal database ids.
+Successful MiMo reviews persist normalized issue keys such as `MIMO-ISSUE-1`; public responses do not expose internal database ids.
 
 ## Quick Start
 

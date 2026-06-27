@@ -11,6 +11,8 @@ public class CommentPreviewItemResponse {
     private String draftBody;
     private Boolean selectedForPublish;
     private PublishStatus publishStatus;
+    private Long githubCommentId;
+    private String publishErrorMessage;
 
     public Long getId() {
         return id;
@@ -66,5 +68,21 @@ public class CommentPreviewItemResponse {
 
     public void setPublishStatus(PublishStatus publishStatus) {
         this.publishStatus = publishStatus;
+    }
+
+    public Long getGithubCommentId() {
+        return githubCommentId;
+    }
+
+    public void setGithubCommentId(Long githubCommentId) {
+        this.githubCommentId = githubCommentId;
+    }
+
+    public String getPublishErrorMessage() {
+        return publishErrorMessage;
+    }
+
+    public void setPublishErrorMessage(String publishErrorMessage) {
+        this.publishErrorMessage = publishErrorMessage;
     }
 }

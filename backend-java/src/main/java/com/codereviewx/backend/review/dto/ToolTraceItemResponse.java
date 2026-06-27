@@ -11,6 +11,7 @@ public class ToolTraceItemResponse {
     private ToolTraceStatus status;
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;
+    private Long durationMs;
     private String outputSummary;
     private String errorCode;
 
@@ -52,6 +53,14 @@ public class ToolTraceItemResponse {
 
     public void setFinishedAt(LocalDateTime finishedAt) {
         this.finishedAt = finishedAt;
+    }
+
+    public Long getDurationMs() {
+        return durationMs;
+    }
+
+    public void setDurationMs(Long durationMs) {
+        this.durationMs = durationMs;
     }
 
     public String getOutputSummary() {

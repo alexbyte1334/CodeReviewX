@@ -1,5 +1,12 @@
 import type { ApiResponse } from '../types/apiResponse';
-import type { CreateReviewTaskRequest, HealthData, ReviewTask } from '../types/reviewTask';
+import type {
+  CommentPreview,
+  CommentPreviewListResponse,
+  CreateReviewTaskRequest,
+  HealthData,
+  ReviewTask,
+  ToolTraceListResponse,
+} from '../types/reviewTask';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 
@@ -29,4 +36,61 @@ export async function listReviewTasks(): Promise<ApiResponse<ReviewTask[]>> {
 
 export async function getReviewTask(id: number): Promise<ApiResponse<ReviewTask>> {
   return fetchJson<ReviewTask>(`${BASE_URL}/api/review-tasks/${id}`);
+}
+
+export async function getCommentPreviews(
+  runId: number,
+): Promise<ApiResponse<CommentPreviewListResponse>> {
+  return fetchJson<CommentPreviewListResponse>(
+    `${BASE_URL}/api/review-runs/${runId}/comment-previews`,
+  );
+}
+
+export async function getToolTrace(
+  runId: number,
+): Promise<ApiResponse<ToolTraceListResponse>> {
+  return fetchJson<ToolTraceListResponse>(
+    `${BASE_URL}/api/review-runs/${runId}/trace`,
+  );
+}
+
+export async function updateCommentPreviewSelection(
+  runId: number,
+  selectedPreviewIds: number[],
+): Promise<ApiResponse<CommentPreviewListResponse>> {
+  return fetchJson<CommentPreviewListResponse>(
+    `${BASE_URL}/api/review-runs/${runId}/comment-previews/selection`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedPreviewIds }),
+    },
+  );
+}
+
+export async function publishSelectedCommentPreviews(
+  runId: number,
+): Promise<ApiResponse<CommentPreviewListResponse>> {
+  return fetchJson<CommentPreviewListResponse>(
+    `${BASE_URL}/api/review-runs/${runId}/comment-previews/publish-selected`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmed: true }),
+    },
+  );
+}
+
+export async function publishCommentPreview(
+  runId: number,
+  previewId: number,
+): Promise<ApiResponse<CommentPreview>> {
+  return fetchJson<CommentPreview>(
+    `${BASE_URL}/api/review-runs/${runId}/comment-previews/${previewId}/publish`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmed: true }),
+    },
+  );
 }

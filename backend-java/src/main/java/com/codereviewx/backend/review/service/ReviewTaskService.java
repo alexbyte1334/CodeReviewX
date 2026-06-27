@@ -18,6 +18,10 @@ import com.codereviewx.backend.review.exception.ReviewTaskNotFoundException;
 import com.codereviewx.backend.review.github.GithubPrMetadata;
 import com.codereviewx.backend.review.github.GithubPrMetadataLoadResult;
 import com.codereviewx.backend.review.github.GithubPrMetadataLoader;
+import com.codereviewx.backend.review.github.GithubPrDiff;
+import com.codereviewx.backend.review.github.GithubPrDiffFile;
+import com.codereviewx.backend.review.github.GithubPrDiffLoadResult;
+import com.codereviewx.backend.review.github.GithubPrDiffLoader;
 import com.codereviewx.backend.review.github.GithubProperties;
 import com.codereviewx.backend.review.persistence.entity.ReviewCommentPreviewEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewInputSnapshotEntity;
@@ -33,6 +37,7 @@ import com.codereviewx.backend.review.persistence.repository.ReviewProviderTrace
 import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
+import com.codereviewx.backend.review.pipeline.ReviewAgentStep;
 import com.codereviewx.backend.review.pipeline.ReviewContext;
 import com.codereviewx.backend.review.pipeline.ReviewFinding;
 import com.codereviewx.backend.review.pipeline.ReviewPipelineService;
@@ -63,6 +68,7 @@ public class ReviewTaskService {
     private final ReviewProviderTraceRepository providerTraceRepository;
     private final ReviewCommentPreviewRepository commentPreviewRepository;
     private final GithubPrMetadataLoader githubPrMetadataLoader;
+    private final GithubPrDiffLoader githubPrDiffLoader;
     private final GithubProperties githubProperties;
     private final ObjectMapper objectMapper;
 
@@ -75,6 +81,7 @@ public class ReviewTaskService {
                              ReviewProviderTraceRepository providerTraceRepository,
                              ReviewCommentPreviewRepository commentPreviewRepository,
                              GithubPrMetadataLoader githubPrMetadataLoader,
+                             GithubPrDiffLoader githubPrDiffLoader,
                              GithubProperties githubProperties,
                              ObjectMapper objectMapper) {
         this.reviewTaskRepository = reviewTaskRepository;
@@ -86,6 +93,7 @@ public class ReviewTaskService {
         this.providerTraceRepository = providerTraceRepository;
         this.commentPreviewRepository = commentPreviewRepository;
         this.githubPrMetadataLoader = githubPrMetadataLoader;
+        this.githubPrDiffLoader = githubPrDiffLoader;
         this.githubProperties = githubProperties;
         this.objectMapper = objectMapper;
     }
@@ -154,8 +162,17 @@ public class ReviewTaskService {
                     ingestionFinishedAt);
         }
 
-        persistInputSnapshot(run.getId(), task, result.getMetadata(), ingestionFinishedAt);
-        return completeProviderReview(task, run, null, normalizedProvider);
+        GithubPrDiffLoadResult diffResult = githubPrDiffLoader.load(result.getMetadata());
+        LocalDateTime diffFinishedAt = LocalDateTime.now();
+        persistDiffToolTrace(run.getId(), task, diffResult, ingestionFinishedAt, diffFinishedAt);
+
+        if (!diffResult.isSuccess()) {
+            return completeFailedGithubPrIngestion(task, run, diffResult.getErrorCode(), diffResult.getErrorMessage(),
+                    diffFinishedAt);
+        }
+
+        persistInputSnapshot(run.getId(), task, result.getMetadata(), diffResult.getDiff(), diffFinishedAt);
+        return completeProviderReview(task, run, diffResult.getDiff().diffText(), normalizedProvider);
     }
 
     private ReviewTaskResponse completeFailedGithubPrIngestion(ReviewTaskEntity task,
@@ -207,9 +224,40 @@ public class ReviewTaskService {
         toolTraceRepository.save(trace);
     }
 
+    private void persistDiffToolTrace(Long runId,
+                                      ReviewTaskEntity task,
+                                      GithubPrDiffLoadResult result,
+                                      LocalDateTime startedAt,
+                                      LocalDateTime finishedAt) {
+        ReviewToolTraceEntity trace = new ReviewToolTraceEntity();
+        trace.setReviewRunId(runId);
+        trace.setSequenceNumber(2);
+        trace.setToolName(GithubPrDiffLoader.TOOL_NAME);
+        trace.setStatus(result.isSuccess() ? ToolTraceStatus.SUCCESS : ToolTraceStatus.FAILED);
+        trace.setInputSummary("repoUrl=" + task.getRepoUrl()
+                + ", prNumber=" + task.getPrNumber()
+                + ", tokenConfigured=" + githubProperties.hasToken()
+                + ", maxChangedFiles=" + githubProperties.getMaxChangedFiles()
+                + ", maxDiffBytes=" + githubProperties.getMaxDiffBytes()
+                + ", perFilePatchMaxBytes=" + githubProperties.getPerFilePatchMaxBytes());
+        trace.setOutputSummary(result.isSuccess()
+                ? "Loaded bounded PR diff: fileCount=" + result.getDiff().fileCount()
+                + ", diffBytes=" + result.getDiff().diffBytes()
+                + ", diffTruncated=" + result.getDiff().diffTruncated()
+                : result.getErrorMessage());
+        trace.setErrorCode(result.getErrorCode());
+        trace.setErrorMessage(result.getErrorMessage());
+        trace.setStartedAt(startedAt);
+        trace.setFinishedAt(finishedAt);
+        trace.setDurationMs(ChronoUnit.MILLIS.between(startedAt, finishedAt));
+        trace.setCreatedAt(startedAt);
+        toolTraceRepository.save(trace);
+    }
+
     private void persistInputSnapshot(Long runId,
                                       ReviewTaskEntity task,
                                       GithubPrMetadata metadata,
+                                      GithubPrDiff diff,
                                       LocalDateTime now) {
         ReviewInputSnapshotEntity snapshot = new ReviewInputSnapshotEntity();
         snapshot.setReviewRunId(runId);
@@ -226,14 +274,14 @@ public class ReviewTaskService {
         snapshot.setChangedFiles(metadata.changedFiles());
         snapshot.setAdditions(metadata.additions());
         snapshot.setDeletions(metadata.deletions());
-        snapshot.setDiffTruncated(false);
+        snapshot.setDiffTruncated(diff.diffTruncated());
         snapshot.setContextTruncated(false);
-        snapshot.setSnapshotJson(toSnapshotJson(metadata));
+        snapshot.setSnapshotJson(toSnapshotJson(metadata, diff));
         snapshot.setCreatedAt(now);
         inputSnapshotRepository.save(snapshot);
     }
 
-    private String toSnapshotJson(GithubPrMetadata metadata) {
+    private String toSnapshotJson(GithubPrMetadata metadata, GithubPrDiff diff) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("owner", metadata.owner());
         snapshot.put("repo", metadata.repo());
@@ -250,13 +298,30 @@ public class ReviewTaskService {
         snapshot.put("changedFiles", metadata.changedFiles());
         snapshot.put("additions", metadata.additions());
         snapshot.put("deletions", metadata.deletions());
-        snapshot.put("diffTruncated", false);
+        snapshot.put("diffFileCount", diff.fileCount());
+        snapshot.put("diffBytes", diff.diffBytes());
+        snapshot.put("diffTruncated", diff.diffTruncated());
+        snapshot.put("diffFiles", diff.files().stream()
+                .map(this::toSnapshotFileSummary)
+                .collect(Collectors.toList()));
         snapshot.put("contextTruncated", false);
         try {
             return objectMapper.writeValueAsString(snapshot);
         } catch (JsonProcessingException ex) {
             return "{\"metadata\":\"sanitized\"}";
         }
+    }
+
+    private Map<String, Object> toSnapshotFileSummary(GithubPrDiffFile file) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("filename", file.filename());
+        summary.put("status", file.status());
+        summary.put("additions", file.additions());
+        summary.put("deletions", file.deletions());
+        summary.put("changes", file.changes());
+        summary.put("patchBytes", file.patchBytes());
+        summary.put("patchTruncated", file.patchTruncated());
+        return summary;
     }
 
     private ReviewTaskResponse completeProviderReview(ReviewTaskEntity task,
@@ -274,16 +339,20 @@ public class ReviewTaskService {
                 task.getPrNumber(),
                 task.getCreatedAt(),
                 normalizedDiffText,
-                normalizedProvider
+                normalizedProvider,
+                task.getReviewMode()
         );
         ReviewProviderResult providerResult;
+        int agentStepStartSequence = toolTraceRepository.countByReviewRunId(run.getId()) + 1;
         try {
             providerResult = reviewPipelineService.run(context);
         } catch (MiMoAgentException ex) {
             LocalDateTime failedAt = LocalDateTime.now();
+            persistAgentStepTraces(run.getId(), context.getAgentSteps(), agentStepStartSequence);
             return completeFailedProviderReview(task, run, ex.getErrorCode(), ex.getMessage(), failedAt);
         }
         LocalDateTime reviewFinishedAt = LocalDateTime.now();
+        persistAgentStepTraces(run.getId(), context.getAgentSteps(), agentStepStartSequence);
         persistProviderTrace(run.getId(), task, providerResult, reviewStartedAt, reviewFinishedAt);
 
         run.setRequestedProvider(providerResult.getRequestedProvider());
@@ -315,6 +384,16 @@ public class ReviewTaskService {
         List<ReviewIssueEntity> persistedIssues =
                 reviewIssueRepository.findByReviewTaskIdOrderByIdAsc(completedTask.getId());
         persistCommentPreviews(runId, persistedIssues, previewStartedAt);
+        LocalDateTime previewFinishedAt = LocalDateTime.now();
+        persistToolTrace(runId,
+                toolTraceRepository.countByReviewRunId(runId) + 1,
+                "comment.preview.build",
+                ToolTraceStatus.SUCCESS,
+                "Built " + persistedIssues.size() + " local comment preview(s).",
+                null,
+                null,
+                previewStartedAt,
+                previewFinishedAt);
 
         LocalDateTime completedAt = LocalDateTime.now();
         run.setStatus(ReviewRunStatus.SUCCESS);
@@ -323,6 +402,46 @@ public class ReviewTaskService {
         reviewRunRepository.save(run);
 
         return toResponse(completedTask, persistedIssues);
+    }
+
+    private void persistAgentStepTraces(Long runId, List<ReviewAgentStep> steps, int startSequenceNumber) {
+        int sequence = startSequenceNumber;
+        for (ReviewAgentStep step : steps) {
+            persistToolTrace(runId,
+                    sequence++,
+                    step.getStepName(),
+                    step.getStatus(),
+                    step.getOutputSummary(),
+                    step.getErrorCode(),
+                    step.getErrorMessage(),
+                    step.getStartedAt(),
+                    step.getFinishedAt());
+        }
+    }
+
+    private void persistToolTrace(Long runId,
+                                  int sequenceNumber,
+                                  String toolName,
+                                  ToolTraceStatus status,
+                                  String outputSummary,
+                                  String errorCode,
+                                  String errorMessage,
+                                  LocalDateTime startedAt,
+                                  LocalDateTime finishedAt) {
+        ReviewToolTraceEntity trace = new ReviewToolTraceEntity();
+        trace.setReviewRunId(runId);
+        trace.setSequenceNumber(sequenceNumber);
+        trace.setToolName(toolName);
+        trace.setStatus(status);
+        trace.setInputSummary(null);
+        trace.setOutputSummary(outputSummary);
+        trace.setErrorCode(errorCode);
+        trace.setErrorMessage(errorMessage);
+        trace.setStartedAt(startedAt);
+        trace.setFinishedAt(finishedAt);
+        trace.setDurationMs(finishedAt == null ? null : ChronoUnit.MILLIS.between(startedAt, finishedAt));
+        trace.setCreatedAt(startedAt);
+        toolTraceRepository.save(trace);
     }
 
     private ReviewTaskResponse completeFailedProviderReview(ReviewTaskEntity task,

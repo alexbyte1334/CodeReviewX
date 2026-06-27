@@ -1,5 +1,6 @@
 package com.codereviewx.backend.review.pipeline.provider.mimo;
 
+import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.pipeline.ReviewContext;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +28,24 @@ class ReviewPromptBuilderTest {
         assertThat(prompt).contains("\"query\": \"string\"");
         assertThat(prompt).contains("\"focusAreas\"");
         assertThat(prompt).contains("Return only JSON.");
+    }
+
+    @Test
+    void buildPlannerPrompt_withGithubPrDiffKeepsGithubPrReviewMode() {
+        ReviewContext context = new ReviewContext(
+                1L,
+                "https://github.com/example/repo",
+                10,
+                LocalDateTime.now(),
+                "diff --git a/src/App.ts b/src/App.ts\n+const x = 1;\n",
+                "mimo",
+                ReviewMode.GITHUB_PR
+        );
+
+        String prompt = promptBuilder.buildPlannerPrompt(context);
+
+        assertThat(prompt).contains("reviewMode: GITHUB_PR");
+        assertThat(prompt).contains("contextAvailable: PR diff text");
     }
 
     @Test

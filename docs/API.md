@@ -262,11 +262,11 @@ GET /api/review-tasks/{id}
 每次 create 都会创建 `review_run`（run number 1），`latestRunId` 指向该 run。
 
 - **MANUAL_DIFF**：执行 MiMo 双 AI agent pipeline，issues 关联 `review_run_id`，任务与 run 均为 `SUCCESS`（需有 `diffText` 或显式模式且带 diff）。
-- **GITHUB_PR**：先解析本地 GitHub token 配置并执行 bounded metadata loader（`github.pr.metadata.load`）。缺少 `GITHUB_TOKEN` 时任务与 run 均为 `FAILED`，`errorCode=GITHUB_AUTH_MISSING`，无 input snapshot、无 issues。metadata 成功时写入 sanitized `review_input_snapshot`，随后执行 MiMo 双 AI agent pipeline，保存 issues、provider trace 和本地 comment previews。当前仍不拉取 PR diff，也不写回 GitHub。
+- **GITHUB_PR**：先解析本地 GitHub token 配置并执行 bounded metadata loader（`github.pr.metadata.load`），再执行 bounded PR diff loader（`github.pr.diff.load`）。缺少 `GITHUB_TOKEN` 时任务与 run 均为 `FAILED`，`errorCode=GITHUB_AUTH_MISSING`，无 input snapshot、无 issues。metadata 和 diff 均成功时写入 sanitized `review_input_snapshot`，随后把受限 diff 输入 MiMo 双 AI agent pipeline，保存 issues、provider trace 和本地 comment previews。创建任务不会自动写回 GitHub；写回必须通过 comment preview publish endpoint 人工选择并确认。
 
-无 `diffText` 的 create（默认 `GITHUB_PR`）仅在 GitHub metadata loader 成功后返回 `SUCCESS` 与 provider findings；缺少 token 或 metadata loader 失败时返回 failed run。
+无 `diffText` 的 create（默认 `GITHUB_PR`）仅在 GitHub metadata loader 与 diff loader 都成功后返回 `SUCCESS` 与 provider findings；缺少 token、metadata loader 失败、diff loader 失败或 diff 不可用时返回 failed run。
 
-API 永不返回：`diffText`、GitHub token、Authorization header、raw prompt、raw model output、未截断的 Stage 2 snapshot diff。
+API 永不返回：`diffText`、GitHub token、Authorization header、raw full diff、raw prompt、raw model output、`snapshotJson`。
 
 ### 5.2 Get Review Run
 
@@ -282,7 +282,20 @@ GET /api/review-runs/{runId}
 GET /api/review-runs/{runId}/trace
 ```
 
-返回 tool 时间线摘要（`toolName`、`status`、`outputSummary` 等）。不返回 `inputSummary`（可能含敏感信息）。
+返回 agent/tool 时间线摘要。成功的 GitHub PR run 通常包含：
+
+```text
+github.pr.metadata.load
+github.pr.diff.load
+mimo.ai1.plan
+mimo.ai2.execute
+mimo.ai1.gate
+issue.generate
+comment.preview.build
+```
+
+每个 item 返回 `toolName`、`status`、`startedAt`、`finishedAt`、`durationMs`、`outputSummary`、`errorCode`。
+不返回 `inputSummary`、`errorMessage`、raw prompt、raw model output、raw full diff、token 或 Authorization header。
 
 ### 5.4 Get Comment Previews
 
@@ -290,9 +303,47 @@ GET /api/review-runs/{runId}/trace
 GET /api/review-runs/{runId}/comment-previews
 ```
 
-返回草稿评论列表。`publishStatus` 当前仅 `NOT_PUBLISHED`。无 GitHub 写回 endpoint。
+返回草稿评论列表。`publishStatus` 可能为 `NOT_PUBLISHED`、`PUBLISHING`、`PUBLISHED` 或 `FAILED`。响应可包含 `githubCommentId` 和 `publishErrorMessage`，不包含 GitHub token。
 
-### 5.5 GitHub Token 与 Metadata Loader（Round 18）
+### 5.5 Select and Publish Comment Previews
+
+```http
+PATCH /api/review-runs/{runId}/comment-previews/selection
+```
+
+请求：
+
+```json
+{
+  "selectedPreviewIds": [101, 102]
+}
+```
+
+用途：持久化人工选择结果。`selectedPreviewIds` 必须属于同一个 `runId`。
+
+```http
+POST /api/review-runs/{runId}/comment-previews/{previewId}/publish
+POST /api/review-runs/{runId}/comment-previews/publish-selected
+```
+
+请求：
+
+```json
+{
+  "confirmed": true
+}
+```
+
+发布规则：
+
+- 只允许发布 `selectedForPublish=true` 的 preview。
+- `confirmed` 必须为 `true`。
+- 发布使用 `review_input_snapshot.headSha`、preview `filePath`、`line`、`side` 和 `draftBody` 调 GitHub PR review comment API。
+- 成功后保存 `publishStatus=PUBLISHED` 与 `githubCommentId`。
+- 失败后保存 `publishStatus=FAILED` 与 sanitized `publishErrorMessage`。
+- token 和 Authorization header 不入库、不出 API。
+
+### 5.6 GitHub Token、Metadata Loader、Diff Loader 与 Comment Publisher
 
 本地配置：
 
@@ -302,15 +353,19 @@ codereviewx:
     api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
     token: ${GITHUB_TOKEN:}
     timeout-seconds: ${GITHUB_TIMEOUT_SECONDS:20}
+    max-changed-files: ${GITHUB_MAX_CHANGED_FILES:50}
+    max-diff-bytes: ${GITHUB_MAX_DIFF_BYTES:512000}
+    per-file-patch-max-bytes: ${GITHUB_PER_FILE_PATCH_MAX_BYTES:20000}
 ```
 
 Token 是可选本地配置；应用启动不要求 `GITHUB_TOKEN`。token 值和 Authorization header 不入库、不出 API、不写 tool trace。
 
-`GITHUB_PR` 当前只加载 PR metadata，并用该 bounded context 启动 MiMo 双 AI agent review：
+`GITHUB_PR` 当前加载 PR metadata 与 files patch，并用 bounded diff 启动 MiMo 双 AI agent review。snapshot 只保存摘要，不保存 raw patch。
 
 ```text
 owner, repo, prNumber, title, author login, base/head refs, base/head shas,
-state, createdAt, updatedAt, changedFiles, additions, deletions
+state, createdAt, updatedAt, changedFiles, additions, deletions,
+diffFileCount, diffBytes, diffTruncated, per-file filename/status/counts/patchBytes/patchTruncated
 ```
 
 错误码：
@@ -322,21 +377,24 @@ state, createdAt, updatedAt, changedFiles, additions, deletions
 | `GITHUB_PR_NOT_FOUND` | PR 不存在或不可访问 |
 | `GITHUB_RATE_LIMITED` | GitHub API rate limit |
 | `GITHUB_METADATA_LOAD_FAILED` | 其他 metadata loader 安全失败 |
+| `GITHUB_DIFF_LOAD_FAILED` | 其他 diff loader 安全失败 |
+| `GITHUB_DIFF_TOO_LARGE` | PR diff 超出安全限制 |
+| `GITHUB_DIFF_UNAVAILABLE` | GitHub 未返回可审查的文本 patch |
 
-### 5.6 GitHub Token 最低权限（Stage 2 规划）
+### 5.7 GitHub Token 最低权限
 
-私有仓库 review 所需最低 GitHub token 权限：
+私有仓库 review 和评论发布所需最低 GitHub token 权限：
 
 ```text
-repo read（或 public_repo）
-pull request read
+Contents read
+Pull requests read/write
 ```
 
 Token 仅存于本地环境变量（如 `GITHUB_TOKEN`），不入库、不出 API。
 
-### 5.7 默认 diff 边界
+### 5.8 默认 diff 边界
 
-Stage 2 规划默认：最多 50 个变更文件，总 diff 500KB。raw prompt / model output 默认不持久化。
+当前默认：最多 50 个变更文件，总 diff 500KB，单文件 patch 超过 20KB 时截断。raw prompt / model output 默认不持久化。
 
 ---
 

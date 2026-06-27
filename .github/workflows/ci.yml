@@ -23,6 +23,8 @@ jobs:
           test -f docs/ARCHITECTURE.md
           test -f docs/API.md
           test -f docs/DATABASE.md
+          test -f docs/STATIC_ANALYSIS.md
+          test -f docs/SECURITY_CHECKLIST.md
           test -f docs/AGENT_RULES.md
           test -f docs/HANDOFF_TEMPLATE.md
           test -f backend-java/README.md
@@ -30,8 +32,37 @@ jobs:
           test -f frontend/README.md
           test -f .env.example
           test -f .gitignore
+          test -f .semgrep.yml
+          test -f scripts/static-scan.mjs
+          test -f scripts/secret-scan.mjs
+          test -f scripts/dependency-scan.mjs
+          test -f scripts/run-evals.mjs
           test -f docker-compose.yml
           echo "All required files exist. Repository structure check passed."
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python for Semgrep
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: python -m pip install semgrep
+
+      - name: Run static analysis
+        run: REQUIRE_SEMGREP=1 node scripts/static-scan.mjs
 
   backend:
     name: Backend Tests

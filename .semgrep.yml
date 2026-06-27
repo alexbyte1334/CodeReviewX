@@ -1,0 +1,47 @@
+rules:
+  - id: codereviewx-java-system-out
+    languages:
+      - java
+    severity: WARNING
+    message: Avoid System.out/System.err in backend code; use structured application logging.
+    pattern-either:
+      - pattern: System.out.println(...)
+      - pattern: System.err.println(...)
+    paths:
+      include:
+        - /backend-java/src/main/java/**
+
+  - id: codereviewx-java-raw-authorization-response
+    languages:
+      - java
+    severity: ERROR
+    message: Public responses must not expose Authorization header values.
+    pattern-either:
+      - pattern: $RESP.setErrorMessage(... + "Authorization" + ...)
+      - pattern: $RESP.setOutputSummary(... + "Authorization" + ...)
+      - pattern-regex: 'return\s+.*Authorization.*;'
+    paths:
+      include:
+        - /backend-java/src/main/java/**
+
+  - id: codereviewx-ts-hardcoded-localhost-api
+    languages:
+      - typescript
+    severity: INFO
+    message: Frontend API base URL should stay behind VITE_API_BASE_URL with localhost fallback only.
+    pattern: fetch("http://localhost:8080" + ...)
+    paths:
+      include:
+        - /frontend/src/**
+
+  - id: codereviewx-js-raw-token-log
+    languages:
+      - javascript
+      - typescript
+    severity: ERROR
+    message: Do not log token or Authorization values.
+    pattern-regex: 'console\.(log|error|warn)\([^;\n]*(token|Token|AUTH|Authorization)[^;\n]*\)'
+    paths:
+      include:
+        - /frontend/src/**
+        - /scripts/**

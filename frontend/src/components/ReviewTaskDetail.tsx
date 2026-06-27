@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { IssueSummary, ReviewIssue, ReviewTask } from '../types/reviewTask';
+import type { CommentPreview, IssueSummary, ReviewIssue, ReviewTask, ToolTraceItem } from '../types/reviewTask';
 import { getIssueSummary } from '../utils/reviewSummary';
 import { formatIssueSourceLabel, resolveProviderSourceLabel } from '../utils/providerLabels';
 import { formatProviderHitLabel } from '../utils/providerHit';
@@ -15,6 +15,15 @@ interface ReviewTaskDetailProps {
   expanded: boolean;
   onToggle: () => void;
   summary: string;
+  commentPreviews?: CommentPreview[];
+  commentPreviewLoading?: boolean;
+  commentPreviewError?: string | null;
+  commentPublishing?: boolean;
+  toolTraceItems?: ToolTraceItem[];
+  toolTraceLoading?: boolean;
+  toolTraceError?: string | null;
+  onCommentPreviewSelectionChange?: (previewId: number, selected: boolean) => void;
+  onPublishSelectedCommentPreviews?: () => void;
 }
 
 function riskBadgeClass(riskLevel: string): string {
@@ -216,6 +225,183 @@ function IssueCard({ issue }: { issue: ReviewIssue }) {
   );
 }
 
+function publishStatusClass(status: string): string {
+  switch (status) {
+    case 'PUBLISHED': return 'comment-preview-status comment-preview-status--published';
+    case 'FAILED': return 'comment-preview-status comment-preview-status--failed';
+    case 'PUBLISHING': return 'comment-preview-status comment-preview-status--publishing';
+    default: return 'comment-preview-status';
+  }
+}
+
+function CommentPreviewPanel({
+  previews,
+  loading,
+  error,
+  publishing,
+  onSelectionChange,
+  onPublishSelected,
+}: {
+  previews: CommentPreview[];
+  loading: boolean;
+  error: string | null;
+  publishing: boolean;
+  onSelectionChange?: (previewId: number, selected: boolean) => void;
+  onPublishSelected?: () => void;
+}) {
+  const selectedCount = previews.filter((preview) => preview.selectedForPublish).length;
+  const canPublish = selectedCount > 0 && !publishing && Boolean(onPublishSelected);
+
+  return (
+    <div className="comment-preview-panel">
+      {loading && <LoadingState message="Loading comment previews…" />}
+      {error && <ErrorMessage message={error} />}
+
+      {!loading && previews.length === 0 && (
+        <p className="empty-state">No comment previews were generated for this review.</p>
+      )}
+
+      {!loading && previews.length > 0 && (
+        <>
+          <div className="comment-preview-toolbar">
+            <span className="comment-preview-count">
+              {selectedCount} selected
+            </span>
+            <button
+              type="button"
+              className="comment-preview-publish-button"
+              onClick={onPublishSelected}
+              disabled={!canPublish}
+            >
+              Publish selected
+            </button>
+          </div>
+
+          <div className="comment-preview-list">
+            {previews.map((preview) => (
+              <article className="comment-preview-card" key={preview.id}>
+                <label className="comment-preview-select">
+                  <input
+                    type="checkbox"
+                    checked={preview.selectedForPublish}
+                    disabled={publishing || preview.publishStatus === 'PUBLISHED'}
+                    onChange={(event) => onSelectionChange?.(preview.id, event.currentTarget.checked)}
+                  />
+                  <span>Select</span>
+                </label>
+
+                <div className="comment-preview-main">
+                  <div className="comment-preview-meta">
+                    <span className="comment-preview-location">
+                      {preview.filePath}
+                      {preview.line ? `:${preview.line}` : ''}
+                    </span>
+                    <span className={publishStatusClass(preview.publishStatus)}>
+                      {preview.publishStatus}
+                    </span>
+                  </div>
+                  <p className="comment-preview-body">{preview.draftBody}</p>
+                  {preview.githubCommentId && (
+                    <p className="comment-preview-result">
+                      GitHub comment #{preview.githubCommentId}
+                    </p>
+                  )}
+                  {preview.publishErrorMessage && (
+                    <p className="comment-preview-error">{preview.publishErrorMessage}</p>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function traceStatusClass(status: string): string {
+  switch (status) {
+    case 'SUCCESS': return 'agent-trace-status agent-trace-status--success';
+    case 'FAILED': return 'agent-trace-status agent-trace-status--failed';
+    case 'RUNNING': return 'agent-trace-status agent-trace-status--running';
+    default: return 'agent-trace-status';
+  }
+}
+
+function traceStepLabel(toolName: string): string {
+  const labels: Record<string, string> = {
+    'github.pr.metadata.load': 'GitHub PR metadata',
+    'github.pr.diff.load': 'GitHub PR diff',
+    'mimo.ai1.plan': 'AI-1 planner',
+    'mimo.ai2.execute': 'AI-2 executor',
+    'mimo.ai1.gate': 'AI-1 gatekeeper',
+    'issue.generate': 'Issue generation',
+    'comment.preview.build': 'Comment preview',
+    'mimo.auth.check': 'MiMo auth check',
+  };
+  return labels[toolName] ?? toolName;
+}
+
+function formatTraceDuration(durationMs: number | null): string {
+  if (durationMs == null) return 'Pending';
+  if (durationMs < 1000) return `${durationMs} ms`;
+  return `${(durationMs / 1000).toFixed(1)} s`;
+}
+
+function formatTraceTime(startedAt: string, finishedAt: string | null): string {
+  const start = new Date(startedAt).toLocaleTimeString();
+  if (!finishedAt) return start;
+  return `${start} - ${new Date(finishedAt).toLocaleTimeString()}`;
+}
+
+function AgentTracePanel({
+  items,
+  loading,
+  error,
+}: {
+  items: ToolTraceItem[];
+  loading: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="agent-trace-panel">
+      {loading && <LoadingState message="Loading agent trace…" />}
+      {error && <ErrorMessage message={error} />}
+
+      {!loading && items.length === 0 && (
+        <p className="empty-state">No agent trace was recorded for this review.</p>
+      )}
+
+      {!loading && items.length > 0 && (
+        <ol className="agent-trace-list" aria-label="Agent step timeline">
+          {items.map((item) => (
+            <li className="agent-trace-item" key={item.id}>
+              <div className="agent-trace-marker" aria-hidden="true" />
+              <div className="agent-trace-content">
+                <div className="agent-trace-header">
+                  <div>
+                    <p className="agent-trace-title">{traceStepLabel(item.toolName)}</p>
+                    <p className="agent-trace-name">{item.toolName}</p>
+                  </div>
+                  <span className={traceStatusClass(item.status)}>{item.status}</span>
+                </div>
+                <div className="agent-trace-meta">
+                  <span>{formatTraceDuration(item.durationMs)}</span>
+                  <span>{formatTraceTime(item.startedAt, item.finishedAt)}</span>
+                  {item.errorCode && <span>{item.errorCode}</span>}
+                </div>
+                {item.outputSummary && (
+                  <p className="agent-trace-summary">{item.outputSummary}</p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 export function ReviewTaskDetail({
   task,
   loading,
@@ -223,9 +409,20 @@ export function ReviewTaskDetail({
   expanded,
   onToggle,
   summary,
+  commentPreviews = [],
+  commentPreviewLoading = false,
+  commentPreviewError = null,
+  commentPublishing = false,
+  toolTraceItems = [],
+  toolTraceLoading = false,
+  toolTraceError = null,
+  onCommentPreviewSelectionChange,
+  onPublishSelectedCommentPreviews,
 }: ReviewTaskDetailProps) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
+  const [traceOpen, setTraceOpen] = useState(false);
+  const [commentPreviewsOpen, setCommentPreviewsOpen] = useState(false);
 
   const issueSummary = task ? getIssueSummary(task) : null;
   const summaryLine = issueSummary
@@ -235,6 +432,18 @@ export function ReviewTaskDetail({
   const issuesLine = task
     ? `${task.issues.length} issue${task.issues.length === 1 ? '' : 's'}`
     : 'Issue cards';
+
+  const commentPreviewLine = task
+    ? `${commentPreviews.length || task.commentPreviewCount || 0} preview${
+        (commentPreviews.length || task.commentPreviewCount || 0) === 1 ? '' : 's'
+      }`
+    : 'Draft comments';
+
+  const traceLine = task
+    ? `${toolTraceItems.length || task.traceSummary?.toolCount || 0} step${
+        (toolTraceItems.length || task.traceSummary?.toolCount || 0) === 1 ? '' : 's'
+      }`
+    : 'Agent timeline';
 
   return (
     <CollapsiblePanel
@@ -291,6 +500,53 @@ export function ReviewTaskDetail({
                 ))}
               </div>
             )}
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            panelId="panel-findings-agent-trace"
+            title="Agent Trace"
+            summary={traceLine}
+            badge={
+              (toolTraceItems.length || task.traceSummary?.toolCount || 0) > 0 ? (
+                <span className="collapsible-badge">
+                  {toolTraceItems.length || task.traceSummary?.toolCount || 0}
+                </span>
+              ) : undefined
+            }
+            expanded={traceOpen}
+            onToggle={() => setTraceOpen((v) => !v)}
+            compact
+          >
+            <AgentTracePanel
+              items={toolTraceItems}
+              loading={toolTraceLoading}
+              error={toolTraceError}
+            />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            panelId="panel-findings-comment-previews"
+            title="Comment Previews"
+            summary={commentPreviewLine}
+            badge={
+              (commentPreviews.length || task.commentPreviewCount || 0) > 0 ? (
+                <span className="collapsible-badge">
+                  {commentPreviews.length || task.commentPreviewCount || 0}
+                </span>
+              ) : undefined
+            }
+            expanded={commentPreviewsOpen}
+            onToggle={() => setCommentPreviewsOpen((v) => !v)}
+            compact
+          >
+            <CommentPreviewPanel
+              previews={commentPreviews}
+              loading={commentPreviewLoading}
+              error={commentPreviewError}
+              publishing={commentPublishing}
+              onSelectionChange={onCommentPreviewSelectionChange}
+              onPublishSelected={onPublishSelectedCommentPreviews}
+            />
           </CollapsiblePanel>
 
           {task.errorMessage && (

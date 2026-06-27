@@ -1,0 +1,28 @@
+{
+  "id": "case-003-sql-injection",
+  "title": "String-concatenated SQL query from request parameter",
+  "repoUrl": "https://github.com/example/codereviewx-evals",
+  "prNumber": 103,
+  "diffText": "diff --git a/src/UserRepository.java b/src/UserRepository.java\n@@ -21,6 +21,7 @@ class UserRepository {\n+    return jdbc.query(\"select * from users where name = '\" + request.getName() + \"'\", mapper);\n }",
+  "expectedFindings": [
+    {
+      "severity": "HIGH",
+      "category": "SECURITY",
+      "filePath": "src/UserRepository.java",
+      "startLine": 22,
+      "keywords": ["sql", "request"],
+      "recommendationKeywords": ["parameterized", "prepared"]
+    }
+  ],
+  "baselineFindings": [
+    {
+      "severity": "HIGH",
+      "category": "SECURITY",
+      "filePath": "src/UserRepository.java",
+      "startLine": 22,
+      "title": "SQL query concatenates request input",
+      "description": "The query is built with request.getName(), allowing request input to alter SQL syntax.",
+      "recommendation": "Use a parameterized query or prepared statement so request input is bound as data."
+    }
+  ]
+}

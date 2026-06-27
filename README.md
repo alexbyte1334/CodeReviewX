@@ -1,8 +1,10 @@
 # CodeReviewX
 
-面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息与可选 diff，获取结构化的风险等级、问题摘要与修复建议。
+面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。
 
-> 当前版本为可本地运行的 MVP：支持手动 diff 上下文 + 小米 MiMo 双 AI agent，不包含 GitHub 自动拉取 PR diff。
+> 当前版本为可本地运行的 MVP：支持手动 diff 上下文、GitHub PR diff 自动拉取、小米 MiMo 双 AI agent、本地 comment preview 与人工确认后发布 GitHub PR 评论。
+
+![CodeReviewX review workspace](docs/assets/codereviewx-review-workspace.jpg)
 
 ---
 
@@ -10,7 +12,9 @@
 
 - **审查任务管理** — 创建、列表、详情查询，任务与问题持久化到本地 H2 数据库
 - **Diff 上下文** — 可选粘贴 unified diff（最大 20,000 字符），为 AI 审查提供代码变更依据
+- **GitHub PR Diff Loader** — `GITHUB_PR` 模式自动拉取 PR files patch，按文件数和 diff 大小做安全限制
 - **MiMo 双 AI agent** — AI-1 负责 task plan 与质量 gate，AI-2 负责执行审查，获批 JSON 由 IssueGenerator 生成 issues
+- **Human-in-the-loop 评论发布** — 前端选择 comment preview，确认后调用 GitHub PR review comment API
 - **Provider 命中反馈** — 每次审查返回 `requestedProvider`、`providerUsed`、`providerHit`
 - **Fail fast** — 缺少 MiMo role key、模型 JSON 非法或 gate 拒绝时任务失败，不回退到 Mock
 - **结构化输出** — 每条 issue 含 severity、category、文件路径、行号、标题、描述与建议
@@ -83,6 +87,10 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 | `MIMO_BASE_URL` | API 地址 | `https://api.xiaomimimo.com/v1` |
 | `MIMO_MODEL` | 模型名称 | `mimo-v2.5-pro` |
 | `MIMO_TIMEOUT_SECONDS` | 请求超时（秒） | `60` |
+| `GITHUB_TOKEN` | GitHub PR metadata/diff 读取和 PR 评论发布 token | — |
+| `GITHUB_MAX_CHANGED_FILES` | GitHub PR diff 最大变更文件数 | `50` |
+| `GITHUB_MAX_DIFF_BYTES` | GitHub PR diff 最大输入大小 | `512000` |
+| `GITHUB_PER_FILE_PATCH_MAX_BYTES` | 单文件 patch 截断阈值 | `20000` |
 | `BACKEND_PORT` | 后端端口 | `8080` |
 
 ---
@@ -108,14 +116,52 @@ curl -X POST http://localhost:8080/api/review-tasks \
   }'
 ```
 
+不传 `diffText` 时默认进入 `GITHUB_PR` 模式：后端会使用 `GITHUB_TOKEN` 拉取 PR metadata 与 files patch，保存 sanitized snapshot summary，并把受限 diff 输入 MiMo 双 AI agent。
+
 **响应要点：**
 
 - 包含 `issueSummary`（总数、各级别计数、`riskLevel`）
 - 含 `requestedProvider`、`providerUsed`、`providerHit`（Provider 是否命中）
 - 每条 `issues[]` 含 `source`（新任务为 `MIMO`）、`severity`、`category`、`title` 等
-- **不返回** 原始 `diffText`、prompt 或模型原始输出
+- **不返回** 原始 `diffText`、GitHub token、完整 PR diff、prompt 或模型原始输出
 
 更多接口细节见 [backend-java/README.md](backend-java/README.md)。
+
+---
+
+## Evals
+
+```bash
+node scripts/run-evals.mjs
+```
+
+默认离线跑 `evals/cases/` 的 baseline findings，并输出：
+
+```text
+evals/reports/latest.json
+evals/reports/latest.md
+```
+
+当前评测覆盖 null pointer、secret-like config、SQL injection 三类小样本，指标包含 schema pass rate、expected finding hit rate、severity/category match、false positives 和 gate rejections。
+
+---
+
+## Security Checks
+
+```bash
+node scripts/static-scan.mjs
+```
+
+发布或演示前按 [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) 检查：本地 key 只放环境变量，GitHub token 使用 Contents read + Pull requests read/write + Metadata read 的最小权限，禁止提交 `.env`、`docs/mimo_api_key.md`、本地 H2 数据和构建产物。
+
+静态分析说明见 [docs/STATIC_ANALYSIS.md](docs/STATIC_ANALYSIS.md)。本地统一入口会执行 secret scan、dependency hygiene scan，并在安装 Semgrep 时执行 `.semgrep.yml` 规则。
+
+本机安装 Semgrep：
+
+```bash
+brew install semgrep
+REQUIRE_SEMGREP=1 node scripts/static-scan.mjs
+```
 
 ---
 
@@ -123,6 +169,8 @@ curl -X POST http://localhost:8080/api/review-tasks \
 
 ```text
 用户提交 repoUrl + prNumber [+ diffText]
+        ↓
+GITHUB_PR: github.pr.metadata.load → github.pr.diff.load
         ↓
 ReviewPipelineService
         ↓
@@ -133,8 +181,25 @@ XiaomiMiMoReviewProvider
    ├─ AI-2 Executor: CandidateReview JSON
    └─ AI-1 Gatekeeper: GateDecision JSON
         ↓
-IssueGenerator → 结构化 findings → 持久化 → 返回 ReviewTaskResponse
+IssueGenerator → 结构化 findings → comment preview → trace timeline → 返回 ReviewTaskResponse
 ```
+
+---
+
+## 当前演示验收
+
+最近一次本地验收使用真实 GitHub token 和 MiMo key 跑通了 GitHub PR 端到端：
+
+- `GET /api/health` 返回 `reviewProvider=mimo`、`mimoConfigured=true`
+- 临时安全测试 PR: `https://github.com/alexbyte1334/CodeReviewX/pull/4`
+- `POST /api/review-tasks` 返回 `SUCCESS`，ReviewTask `385`，ReviewRun `257`
+- `providerUsed=mimo`、`providerHit=true`
+- 生成 2 个 `MIMO` issue、2 个 comment preview
+- Agent Trace 显示 `github.pr.metadata.load -> github.pr.diff.load -> mimo.ai1.plan -> mimo.ai2.execute -> mimo.ai1.gate -> issue.generate -> comment.preview.build` 全部成功
+- 已选择并发布 1 条 GitHub PR review comment，GitHub comment id `3485123121`
+- `REQUIRE_SEMGREP=1 node scripts/static-scan.mjs` 通过，Semgrep 4 条项目规则 0 findings
+
+GitHub PR 模式需要有效 `GITHUB_TOKEN`。缺少 token 时会按设计返回 `GITHUB_AUTH_MISSING`，不会静默降级。
 
 ---
 
@@ -155,11 +220,11 @@ CodeReviewX/
 ## 运行测试
 
 ```bash
-# 后端（93 tests）
+# 后端（116 tests）
 cd backend-java
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn test
 
-# 前端（50 tests）
+# 前端（57 tests）
 cd frontend
 npm run typecheck
 npm run build
@@ -172,14 +237,14 @@ npm test -- --run
 
 以下能力**尚未实现**，请勿在产品中误称已支持：
 
-- GitHub PR 自动拉取 / OAuth / GitHub App
+- OAuth / GitHub App
 - 仓库 clone 与全量代码分析
-- Semgrep 等静态扫描引擎
-- PR 评论回写、RAG、MCP、Function Calling
+- 将 Semgrep / dependency scan 结果自动并入 review task
+- RAG、MCP、Function Calling
 - 生产级认证与团队协作
 - MySQL / PostgreSQL 生产数据库
 
-MiMo 在无 diff 时仅依赖 `repoUrl + prNumber` 元数据，审查深度有限；粘贴 diff 可获得更可靠的结果。
+GitHub PR 模式当前只读取 PR metadata 和 files patch，不 clone 仓库、不读取完整 repository context；超大 PR 会按安全限制截断或失败。
 
 ---
 

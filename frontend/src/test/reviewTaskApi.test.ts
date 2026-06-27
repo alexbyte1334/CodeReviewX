@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getHealth, listReviewTasks, createReviewTask } from '../api/reviewTaskApi';
+import {
+  createReviewTask,
+  getCommentPreviews,
+  getHealth,
+  getToolTrace,
+  listReviewTasks,
+  publishSelectedCommentPreviews,
+  updateCommentPreviewSelection,
+} from '../api/reviewTaskApi';
 
 describe('reviewTaskApi', () => {
   beforeEach(() => {
@@ -54,5 +62,55 @@ describe('reviewTaskApi', () => {
     const body = JSON.parse(callArgs[1]?.body as string);
     expect(body.repoUrl).toBe('https://github.com/a/b');
     expect(body.prNumber).toBe(1);
+  });
+
+  it('getCommentPreviews reads run comment previews', async () => {
+    const mockResponse = { success: true, message: 'OK', data: { items: [] } };
+    vi.mocked(fetch).mockResolvedValueOnce({
+      json: async () => mockResponse,
+    } as Response);
+
+    const result = await getCommentPreviews(11);
+
+    expect(result.success).toBe(true);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toContain('/api/review-runs/11/comment-previews');
+  });
+
+  it('getToolTrace reads run trace timeline', async () => {
+    const mockResponse = { success: true, message: 'OK', data: { items: [] } };
+    vi.mocked(fetch).mockResolvedValueOnce({
+      json: async () => mockResponse,
+    } as Response);
+
+    const result = await getToolTrace(11);
+
+    expect(result.success).toBe(true);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toContain('/api/review-runs/11/trace');
+  });
+
+  it('updateCommentPreviewSelection sends selected preview ids', async () => {
+    const mockResponse = { success: true, message: 'OK', data: { items: [] } };
+    vi.mocked(fetch).mockResolvedValueOnce({
+      json: async () => mockResponse,
+    } as Response);
+
+    await updateCommentPreviewSelection(11, [101, 102]);
+
+    const callArgs = vi.mocked(fetch).mock.calls[0];
+    expect(callArgs[1]?.method).toBe('PATCH');
+    expect(JSON.parse(callArgs[1]?.body as string)).toEqual({ selectedPreviewIds: [101, 102] });
+  });
+
+  it('publishSelectedCommentPreviews sends confirmed publish request', async () => {
+    const mockResponse = { success: true, message: 'OK', data: { items: [] } };
+    vi.mocked(fetch).mockResolvedValueOnce({
+      json: async () => mockResponse,
+    } as Response);
+
+    await publishSelectedCommentPreviews(11);
+
+    const callArgs = vi.mocked(fetch).mock.calls[0];
+    expect(callArgs[1]?.method).toBe('POST');
+    expect(JSON.parse(callArgs[1]?.body as string)).toEqual({ confirmed: true });
   });
 });

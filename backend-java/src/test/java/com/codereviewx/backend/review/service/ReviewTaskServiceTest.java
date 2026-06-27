@@ -384,6 +384,8 @@ class ReviewTaskServiceTest {
 
         assertThat(response.getIssues()).hasSize(3);
         assertThat(response.getRiskLevel()).isEqualTo(response.getIssueSummary().getRiskLevel());
+        assertThat(response.getTraceSummary().getToolCount()).isEqualTo(5);
+        assertThat(response.getTraceSummary().getFailedToolCount()).isEqualTo(0);
     }
 
     @Test

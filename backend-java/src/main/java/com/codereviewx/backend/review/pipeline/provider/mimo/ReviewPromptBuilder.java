@@ -81,7 +81,7 @@ public class ReviewPromptBuilder {
                 context.getTaskId(),
                 context.getRepoUrl(),
                 context.getPrNumber(),
-                context.hasDiffText() ? "MANUAL_DIFF" : "GITHUB_PR",
+                context.getReviewMode(),
                 context.hasDiffText() ? "PR diff text" : "bounded PR metadata only",
                 TASK_PLAN_SCHEMA
         );

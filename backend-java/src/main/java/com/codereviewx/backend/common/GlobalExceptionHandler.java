@@ -1,6 +1,8 @@
 package com.codereviewx.backend.common;
 
 import com.codereviewx.backend.review.exception.ReviewRunNotFoundException;
+import com.codereviewx.backend.review.exception.CommentPreviewNotFoundException;
+import com.codereviewx.backend.review.exception.ReviewRequestInvalidException;
 import com.codereviewx.backend.review.exception.ReviewTaskNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -23,6 +25,18 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleReviewRunNotFound(ReviewRunNotFoundException ex) {
         return ApiResponse.failure("Review run not found");
+    }
+
+    @ExceptionHandler(CommentPreviewNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleCommentPreviewNotFound(CommentPreviewNotFoundException ex) {
+        return ApiResponse.failure("Comment preview not found");
+    }
+
+    @ExceptionHandler(ReviewRequestInvalidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleReviewRequestInvalid(ReviewRequestInvalidException ex) {
+        return ApiResponse.failure(ex.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

@@ -57,6 +57,15 @@ public class ReviewCommentPreviewEntity {
     @Column(name = "publish_status", nullable = false, length = 32)
     private PublishStatus publishStatus = PublishStatus.NOT_PUBLISHED;
 
+    @Column(name = "github_comment_id")
+    private Long githubCommentId;
+
+    @Column(name = "publish_error_message", length = 1000)
+    private String publishErrorMessage;
+
+    @Column(name = "published_at")
+    private LocalDateTime publishedAt;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -165,6 +174,30 @@ public class ReviewCommentPreviewEntity {
 
     public void setPublishStatus(PublishStatus publishStatus) {
         this.publishStatus = publishStatus;
+    }
+
+    public Long getGithubCommentId() {
+        return githubCommentId;
+    }
+
+    public void setGithubCommentId(Long githubCommentId) {
+        this.githubCommentId = githubCommentId;
+    }
+
+    public String getPublishErrorMessage() {
+        return publishErrorMessage;
+    }
+
+    public void setPublishErrorMessage(String publishErrorMessage) {
+        this.publishErrorMessage = publishErrorMessage;
+    }
+
+    public LocalDateTime getPublishedAt() {
+        return publishedAt;
+    }
+
+    public void setPublishedAt(LocalDateTime publishedAt) {
+        this.publishedAt = publishedAt;
     }
 
     public LocalDateTime getCreatedAt() {

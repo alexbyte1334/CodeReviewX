@@ -9,6 +9,10 @@ vi.mock('../api/reviewTaskApi', () => ({
   listReviewTasks: vi.fn(),
   getReviewTask: vi.fn(),
   createReviewTask: vi.fn(),
+  getCommentPreviews: vi.fn(),
+  updateCommentPreviewSelection: vi.fn(),
+  publishSelectedCommentPreviews: vi.fn(),
+  publishCommentPreview: vi.fn(),
 }));
 
 describe('App shell', () => {
@@ -60,9 +64,9 @@ describe('App shell', () => {
 
     await user.click(screen.getByRole('button', { name: /expand about & limits panel/i }));
 
-    expect(screen.getByText(/manual diff input only/i)).toBeVisible();
+    expect(screen.getByText(/manual diff or github pr diff input only/i)).toBeVisible();
     expect(screen.getByText(/mimo dual-agent review only/i)).toBeVisible();
-    expect(screen.getByText(/no automatic github pr fetching yet/i)).toBeVisible();
+    expect(screen.getByText(/no repository clone or github app integration yet/i)).toBeVisible();
   });
 
   it('renders collapsed workspace panels by default', async () => {

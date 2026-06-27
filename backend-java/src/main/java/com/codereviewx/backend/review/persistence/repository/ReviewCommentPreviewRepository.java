@@ -4,10 +4,15 @@ import com.codereviewx.backend.review.persistence.entity.ReviewCommentPreviewEnt
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ReviewCommentPreviewRepository extends JpaRepository<ReviewCommentPreviewEntity, Long> {
 
     List<ReviewCommentPreviewEntity> findByReviewRunIdOrderByIdAsc(Long reviewRunId);
+
+    List<ReviewCommentPreviewEntity> findByReviewRunIdAndSelectedForPublishTrueOrderByIdAsc(Long reviewRunId);
+
+    Optional<ReviewCommentPreviewEntity> findByIdAndReviewRunId(Long id, Long reviewRunId);
 
     int countByReviewRunId(Long reviewRunId);
 }

@@ -4,6 +4,9 @@ import com.codereviewx.backend.review.enums.PublishStatus;
 import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.enums.ReviewRunStatus;
 import com.codereviewx.backend.review.enums.ToolTraceStatus;
+import com.codereviewx.backend.review.github.GithubPrCommentPublishRequest;
+import com.codereviewx.backend.review.github.GithubPrCommentPublishResult;
+import com.codereviewx.backend.review.github.GithubPrCommentPublisher;
 import com.codereviewx.backend.review.persistence.entity.ReviewCommentPreviewEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewInputSnapshotEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewProviderTraceEntity;
@@ -22,16 +25,25 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.mockito.ArgumentCaptor;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -61,7 +73,11 @@ class ReviewRunControllerTest {
     @Autowired
     private ReviewTaskRepository reviewTaskRepository;
 
+    @MockBean
+    private GithubPrCommentPublisher githubPrCommentPublisher;
+
     private Long seededRunId;
+    private Long seededPreviewId;
 
     @BeforeEach
     void setUp() {
@@ -72,7 +88,9 @@ class ReviewRunControllerTest {
         reviewRunRepository.deleteAll();
         reviewIssueRepository.deleteAll();
         reviewTaskRepository.deleteAll();
-        seededRunId = seedStage2Run();
+        SeededRun seededRun = seedStage2Run();
+        seededRunId = seededRun.runId();
+        seededPreviewId = seededRun.previewId();
     }
 
     @Test
@@ -110,6 +128,87 @@ class ReviewRunControllerTest {
     }
 
     @Test
+    void updateCommentPreviewSelection_marksSelectedPreview() throws Exception {
+        mockMvc.perform(patch("/api/review-runs/" + seededRunId + "/comment-previews/selection")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"selectedPreviewIds\":[" + seededPreviewId + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items", hasSize(1)))
+                .andExpect(jsonPath("$.data.items[0].selectedForPublish", is(true)));
+    }
+
+    @Test
+    void publishCommentPreview_rejectsUnselectedPreview() throws Exception {
+        mockMvc.perform(post("/api/review-runs/" + seededRunId
+                        + "/comment-previews/" + seededPreviewId + "/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmed\":true}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.message", is("Comment preview must be selected before publishing")));
+    }
+
+    @Test
+    void publishCommentPreview_requiresHumanConfirmation() throws Exception {
+        selectSeededPreview();
+
+        mockMvc.perform(post("/api/review-runs/" + seededRunId
+                        + "/comment-previews/" + seededPreviewId + "/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmed\":false}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("confirmed")));
+    }
+
+    @Test
+    void publishCommentPreview_successPersistsGithubCommentId() throws Exception {
+        selectSeededPreview();
+        when(githubPrCommentPublisher.publish(any()))
+                .thenReturn(GithubPrCommentPublishResult.success(98765L));
+
+        mockMvc.perform(post("/api/review-runs/" + seededRunId
+                        + "/comment-previews/" + seededPreviewId + "/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmed\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.publishStatus", is("PUBLISHED")))
+                .andExpect(jsonPath("$.data.githubCommentId", is(98765)))
+                .andExpect(jsonPath("$.data.publishErrorMessage").doesNotExist());
+
+        ReviewCommentPreviewEntity preview = commentPreviewRepository.findById(seededPreviewId).orElseThrow();
+        assertThat(preview.getPublishStatus()).isEqualTo(PublishStatus.PUBLISHED);
+        assertThat(preview.getGithubCommentId()).isEqualTo(98765L);
+        assertThat(preview.getPublishedAt()).isNotNull();
+
+        ArgumentCaptor<GithubPrCommentPublishRequest> requestCaptor =
+                ArgumentCaptor.forClass(GithubPrCommentPublishRequest.class);
+        verify(githubPrCommentPublisher).publish(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().owner()).isEqualTo("example");
+        assertThat(requestCaptor.getValue().repo()).isEqualTo("repo");
+        assertThat(requestCaptor.getValue().prNumber()).isEqualTo(42);
+        assertThat(requestCaptor.getValue().commitId()).isEqualTo("abc123");
+        assertThat(requestCaptor.getValue().path()).isEqualTo("src/App.java");
+        assertThat(requestCaptor.getValue().line()).isEqualTo(42);
+        assertThat(requestCaptor.getValue().body()).contains("checking null");
+    }
+
+    @Test
+    void publishSelectedCommentPreviews_failurePersistsErrorMessage() throws Exception {
+        selectSeededPreview();
+        when(githubPrCommentPublisher.publish(any()))
+                .thenReturn(GithubPrCommentPublishResult.failure("GitHub rejected the comment target."));
+
+        mockMvc.perform(post("/api/review-runs/" + seededRunId + "/comment-previews/publish-selected")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmed\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items", hasSize(1)))
+                .andExpect(jsonPath("$.data.items[0].publishStatus", is("FAILED")))
+                .andExpect(jsonPath("$.data.items[0].publishErrorMessage", is("GitHub rejected the comment target.")));
+    }
+
+    @Test
     void getRun_notFound_returnsError() throws Exception {
         mockMvc.perform(get("/api/review-runs/99999"))
                 .andExpect(status().isNotFound())
@@ -117,7 +216,14 @@ class ReviewRunControllerTest {
                 .andExpect(jsonPath("$.message", is("Review run not found")));
     }
 
-    private Long seedStage2Run() {
+    private void selectSeededPreview() {
+        ReviewCommentPreviewEntity preview = commentPreviewRepository.findById(seededPreviewId).orElseThrow();
+        preview.setSelectedForPublish(true);
+        preview.setUpdatedAt(LocalDateTime.now());
+        commentPreviewRepository.save(preview);
+    }
+
+    private SeededRun seedStage2Run() {
         LocalDateTime now = LocalDateTime.now();
 
         ReviewTaskEntity task = new ReviewTaskEntity();
@@ -200,8 +306,11 @@ class ReviewRunControllerTest {
         preview.setPublishStatus(PublishStatus.NOT_PUBLISHED);
         preview.setCreatedAt(now);
         preview.setUpdatedAt(now);
-        commentPreviewRepository.save(preview);
+        ReviewCommentPreviewEntity savedPreview = commentPreviewRepository.save(preview);
 
-        return savedRun.getId();
+        return new SeededRun(savedRun.getId(), savedPreview.getId());
+    }
+
+    private record SeededRun(Long runId, Long previewId) {
     }
 }

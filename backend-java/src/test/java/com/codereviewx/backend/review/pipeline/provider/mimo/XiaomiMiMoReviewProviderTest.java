@@ -5,6 +5,7 @@ import com.codereviewx.backend.review.enums.IssueCategory;
 import com.codereviewx.backend.review.enums.IssueSeverity;
 import com.codereviewx.backend.review.enums.IssueSource;
 import com.codereviewx.backend.review.enums.IssueStatus;
+import com.codereviewx.backend.review.enums.ToolTraceStatus;
 import com.codereviewx.backend.review.pipeline.ReviewContext;
 import com.codereviewx.backend.review.pipeline.ReviewFinding;
 import com.codereviewx.backend.review.pipeline.ReviewProviderResult;
@@ -67,6 +68,15 @@ class XiaomiMiMoReviewProviderTest {
         assertThat(finding.getCategory()).isEqualTo(IssueCategory.SECURITY);
         assertThat(finding.getSource()).isEqualTo(IssueSource.MIMO);
         assertThat(finding.getStatus()).isEqualTo(IssueStatus.OPEN);
+        assertThat(context.getAgentSteps())
+                .extracting("stepName")
+                .containsExactly("mimo.ai1.plan", "mimo.ai2.execute", "mimo.ai1.gate", "issue.generate");
+        assertThat(context.getAgentSteps())
+                .allSatisfy(step -> {
+                    assertThat(step.getStatus()).isEqualTo(ToolTraceStatus.SUCCESS);
+                    assertThat(step.getOutputSummary()).doesNotContain("diff --git");
+                    assertThat(step.getOutputSummary()).doesNotContain("planner-key");
+                });
     }
 
     @Test
@@ -88,6 +98,10 @@ class XiaomiMiMoReviewProviderTest {
                 .isInstanceOf(MiMoAgentException.class)
                 .extracting("errorCode")
                 .isEqualTo(ReviewErrorCodes.MIMO_PLAN_INVALID);
+        assertThat(context.getAgentSteps()).hasSize(1);
+        assertThat(context.getAgentSteps().get(0).getStepName()).isEqualTo("mimo.ai1.plan");
+        assertThat(context.getAgentSteps().get(0).getStatus()).isEqualTo(ToolTraceStatus.FAILED);
+        assertThat(context.getAgentSteps().get(0).getErrorCode()).isEqualTo(ReviewErrorCodes.MIMO_PLAN_INVALID);
     }
 
     @Test

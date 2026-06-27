@@ -1,0 +1,146 @@
+{
+  "generatedAt": "2026-06-27T03:37:58.622Z",
+  "summary": {
+    "npmDirectDependencyCount": 12,
+    "mavenDirectDependencyCount": 6,
+    "issueCount": 1,
+    "blockingIssueCount": 0
+  },
+  "npmDependencies": [
+    {
+      "ecosystem": "npm",
+      "name": "react",
+      "requestedRange": "^18.3.1",
+      "version": "18.3.1",
+      "dev": false
+    },
+    {
+      "ecosystem": "npm",
+      "name": "react-dom",
+      "requestedRange": "^18.3.1",
+      "version": "18.3.1",
+      "dev": false
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@testing-library/jest-dom",
+      "requestedRange": "^6.6.3",
+      "version": "6.9.1",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@testing-library/react",
+      "requestedRange": "^16.3.0",
+      "version": "16.3.2",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@testing-library/user-event",
+      "requestedRange": "^14.5.2",
+      "version": "14.6.1",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@types/react",
+      "requestedRange": "^18.3.23",
+      "version": "18.3.31",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@types/react-dom",
+      "requestedRange": "^18.3.7",
+      "version": "18.3.7",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@vitejs/plugin-react",
+      "requestedRange": "^4.3.4",
+      "version": "4.7.0",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "jsdom",
+      "requestedRange": "^26.1.0",
+      "version": "26.1.0",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "typescript",
+      "requestedRange": "^5.8.3",
+      "version": "5.9.3",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "vite",
+      "requestedRange": "^6.3.5",
+      "version": "6.4.3",
+      "dev": true
+    },
+    {
+      "ecosystem": "npm",
+      "name": "vitest",
+      "requestedRange": "^3.2.4",
+      "version": "3.2.6",
+      "dev": true
+    }
+  ],
+  "mavenDependencies": [
+    {
+      "ecosystem": "maven",
+      "groupId": "org.springframework.boot",
+      "artifactId": "spring-boot-starter-web",
+      "version": "(managed)",
+      "scope": "compile"
+    },
+    {
+      "ecosystem": "maven",
+      "groupId": "org.springframework.boot",
+      "artifactId": "spring-boot-starter-validation",
+      "version": "(managed)",
+      "scope": "compile"
+    },
+    {
+      "ecosystem": "maven",
+      "groupId": "org.springframework.boot",
+      "artifactId": "spring-boot-starter-data-jpa",
+      "version": "(managed)",
+      "scope": "compile"
+    },
+    {
+      "ecosystem": "maven",
+      "groupId": "org.flywaydb",
+      "artifactId": "flyway-core",
+      "version": "(managed)",
+      "scope": "compile"
+    },
+    {
+      "ecosystem": "maven",
+      "groupId": "com.h2database",
+      "artifactId": "h2",
+      "version": "(managed)",
+      "scope": "compile"
+    },
+    {
+      "ecosystem": "maven",
+      "groupId": "org.springframework.boot",
+      "artifactId": "spring-boot-starter-test",
+      "version": "(managed)",
+      "scope": "test"
+    }
+  ],
+  "issues": [
+    {
+      "severity": "INFO",
+      "dependency": "com.h2database:h2",
+      "message": "H2 is a local MVP runtime dependency; do not use this setup for production."
+    }
+  ]
+}

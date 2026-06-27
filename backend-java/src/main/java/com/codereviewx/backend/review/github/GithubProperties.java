@@ -8,6 +8,9 @@ public class GithubProperties {
     private String apiBaseUrl = "https://api.github.com";
     private String token = "";
     private int timeoutSeconds = 20;
+    private int maxChangedFiles = 50;
+    private int maxDiffBytes = 512000;
+    private int perFilePatchMaxBytes = 20000;
 
     public String getApiBaseUrl() {
         return apiBaseUrl;
@@ -33,6 +36,30 @@ public class GithubProperties {
         this.timeoutSeconds = timeoutSeconds;
     }
 
+    public int getMaxChangedFiles() {
+        return maxChangedFiles;
+    }
+
+    public void setMaxChangedFiles(int maxChangedFiles) {
+        this.maxChangedFiles = maxChangedFiles;
+    }
+
+    public int getMaxDiffBytes() {
+        return maxDiffBytes;
+    }
+
+    public void setMaxDiffBytes(int maxDiffBytes) {
+        this.maxDiffBytes = maxDiffBytes;
+    }
+
+    public int getPerFilePatchMaxBytes() {
+        return perFilePatchMaxBytes;
+    }
+
+    public void setPerFilePatchMaxBytes(int perFilePatchMaxBytes) {
+        this.perFilePatchMaxBytes = perFilePatchMaxBytes;
+    }
+
     public boolean hasToken() {
         return token != null && !token.isBlank();
     }
@@ -43,6 +70,9 @@ public class GithubProperties {
                 + "apiBaseUrl='" + apiBaseUrl + '\''
                 + ", token='***'"
                 + ", timeoutSeconds=" + timeoutSeconds
+                + ", maxChangedFiles=" + maxChangedFiles
+                + ", maxDiffBytes=" + maxDiffBytes
+                + ", perFilePatchMaxBytes=" + perFilePatchMaxBytes
                 + '}';
     }
 }

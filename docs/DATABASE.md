@@ -310,6 +310,7 @@ backend-java/src/main/resources/db/migration/
 |---|---|---|
 | V1 | `V1__baseline_schema.sql` | `review_task`、`review_issue` 基线表 |
 | V2 | `V2__stage2_run_trace_schema.sql` | Stage 2 run/trace/snapshot/comment preview 表及 `review_task` / `review_issue` 扩展列 |
+| V3 | `V3__comment_preview_publish_schema.sql` | comment preview GitHub publish 结果字段 |
 
 本地 H2 文件库若已有 Hibernate 创建的表，Flyway 使用 `baseline-on-migrate`（baseline version 1）后仅执行 V2 增量 migration。
 
@@ -323,7 +324,7 @@ JPA `ddl-auto` 设为 `validate`，不再由 Hibernate 自动改表。
 | `review_input_snapshot` | 单次 run 的 sanitized 输入快照（不含 token、raw diff、raw prompt） |
 | `review_tool_trace` | loader/tool 步骤时间线 |
 | `review_provider_trace` | provider 调用摘要（不含 API key、Authorization、raw prompt/output） |
-| `review_comment_preview` | 草稿 PR 评论预览，`publish_status` 当前仅 `NOT_PUBLISHED` |
+| `review_comment_preview` | 草稿 PR 评论预览和 GitHub 发布状态（`NOT_PUBLISHED` / `PUBLISHING` / `PUBLISHED` / `FAILED`） |
 
 ### 7.3 review_task 扩展列
 
@@ -360,8 +361,9 @@ MANUAL_DIFF 产生的 review_issue 同时写入 review_task_id 与 review_run_id
 GITHUB_PR 缺少本地 GITHUB_TOKEN 时写入一条 FAILED metadata tool trace，
 并产生 FAILED run（error_code=GITHUB_AUTH_MISSING），无 input snapshot、无 issues。
 GITHUB_PR metadata 加载成功时写入 sanitized review_input_snapshot 和 SUCCESS metadata tool trace，
-随后执行 MiMo 双 AI agent pipeline，写入 provider issues、provider trace
-和本地 comment previews，最终产生 SUCCESS run。
+随后执行 MiMo 双 AI agent pipeline，并把 `mimo.ai1.plan`、`mimo.ai2.execute`、
+`mimo.ai1.gate`、`issue.generate`、`comment.preview.build` 写入 `review_tool_trace`，
+同时写入 provider issues、provider trace 和本地 comment previews，最终产生 SUCCESS run。
 ```
 
-Round 18 的 `review_input_snapshot.snapshot_json` 只保存 bounded PR metadata 摘要，不保存 token、Authorization header、raw diff、raw prompt 或 raw model output。`review_tool_trace.input_summary` 只能出现 `tokenConfigured=true/false` 等安全摘要。
+Round 18+ 的 `review_input_snapshot.snapshot_json` 只保存 bounded PR metadata 摘要，不保存 token、Authorization header、raw diff、raw prompt 或 raw model output。`review_tool_trace.input_summary` 只能出现 `tokenConfigured=true/false` 等安全摘要；public trace API 不返回 `input_summary`。

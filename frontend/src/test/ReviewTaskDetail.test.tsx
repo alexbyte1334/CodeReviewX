@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReviewTaskDetail } from '../components/ReviewTaskDetail';
-import type { ReviewIssue, ReviewTask } from '../types/reviewTask';
+import type { CommentPreview, ReviewIssue, ReviewTask, ToolTraceItem } from '../types/reviewTask';
 
 const mockIssues: ReviewIssue[] = [
   {
@@ -87,12 +87,79 @@ const baseProps = {
   summary: 'Review #5 · HIGH',
 };
 
+const mockCommentPreviews: CommentPreview[] = [
+  {
+    id: 101,
+    issueId: 'ISSUE-1',
+    filePath: 'src/App.java',
+    line: 42,
+    draftBody: 'Consider checking null before dereference.',
+    selectedForPublish: false,
+    publishStatus: 'NOT_PUBLISHED',
+    githubCommentId: null,
+    publishErrorMessage: null,
+  },
+  {
+    id: 102,
+    issueId: 'ISSUE-2',
+    filePath: 'src/Service.java',
+    line: 76,
+    draftBody: 'Split this service method before adding more behavior.',
+    selectedForPublish: true,
+    publishStatus: 'FAILED',
+    githubCommentId: null,
+    publishErrorMessage: 'GitHub rejected the comment target.',
+  },
+  {
+    id: 103,
+    issueId: 'ISSUE-3',
+    filePath: 'src/Published.java',
+    line: 12,
+    draftBody: 'Already published.',
+    selectedForPublish: true,
+    publishStatus: 'PUBLISHED',
+    githubCommentId: 98765,
+    publishErrorMessage: null,
+  },
+];
+
+const mockToolTraceItems: ToolTraceItem[] = [
+  {
+    id: 201,
+    toolName: 'github.pr.metadata.load',
+    status: 'SUCCESS',
+    startedAt: '2026-06-27T08:00:00',
+    finishedAt: '2026-06-27T08:00:00.125',
+    durationMs: 125,
+    outputSummary: 'Loaded PR title, head/base refs, and changed file counts.',
+    errorCode: null,
+  },
+  {
+    id: 202,
+    toolName: 'mimo.ai1.gate',
+    status: 'FAILED',
+    startedAt: '2026-06-27T08:00:02',
+    finishedAt: '2026-06-27T08:00:03',
+    durationMs: 1000,
+    outputSummary: 'MiMo gatekeeper rejected candidate review',
+    errorCode: 'MIMO_GATE_REJECTED',
+  },
+];
+
 async function expandSummaryPanel(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /expand review summary panel/i }));
 }
 
 async function expandIssuesPanel(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /expand issue details panel/i }));
+}
+
+async function expandCommentPreviewPanel(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /expand comment previews panel/i }));
+}
+
+async function expandAgentTracePanel(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /expand agent trace panel/i }));
 }
 
 async function expandAllIssueCards(user: ReturnType<typeof userEvent.setup>) {
@@ -246,6 +313,67 @@ describe('ReviewTaskDetail', () => {
     render(<ReviewTaskDetail {...baseProps} task={mockTaskNoIssues} summary="Review #6" />);
     await expandSummaryPanel(user);
     expect(screen.getByText('NONE')).toBeInTheDocument();
+  });
+
+  it('renders comment previews with publish state', async () => {
+    const user = userEvent.setup();
+    render(
+      <ReviewTaskDetail
+        {...baseProps}
+        task={{ ...mockTask, commentPreviewCount: 3 }}
+        commentPreviews={mockCommentPreviews}
+      />,
+    );
+
+    await expandCommentPreviewPanel(user);
+
+    expect(screen.getByText('Consider checking null before dereference.')).toBeInTheDocument();
+    expect(screen.getByText('FAILED')).toBeInTheDocument();
+    expect(screen.getByText('GitHub rejected the comment target.')).toBeInTheDocument();
+    expect(screen.getByText('GitHub comment #98765')).toBeInTheDocument();
+  });
+
+  it('lets users select a comment preview and publish selected previews', async () => {
+    const user = userEvent.setup();
+    const onSelectionChange = vi.fn();
+    const onPublishSelected = vi.fn();
+    render(
+      <ReviewTaskDetail
+        {...baseProps}
+        task={{ ...mockTask, commentPreviewCount: 2 }}
+        commentPreviews={mockCommentPreviews.slice(0, 2)}
+        onCommentPreviewSelectionChange={onSelectionChange}
+        onPublishSelectedCommentPreviews={onPublishSelected}
+      />,
+    );
+
+    await expandCommentPreviewPanel(user);
+    await user.click(screen.getAllByRole('checkbox')[0]);
+    await user.click(screen.getByRole('button', { name: /publish selected/i }));
+
+    expect(onSelectionChange).toHaveBeenCalledWith(101, true);
+    expect(onPublishSelected).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders agent trace timeline with status, duration, and error code', async () => {
+    const user = userEvent.setup();
+    render(
+      <ReviewTaskDetail
+        {...baseProps}
+        task={{ ...mockTask, traceSummary: { toolCount: 2, failedToolCount: 1, providerFallback: false } }}
+        toolTraceItems={mockToolTraceItems}
+      />,
+    );
+
+    await expandAgentTracePanel(user);
+
+    expect(screen.getByText('GitHub PR metadata')).toBeInTheDocument();
+    expect(screen.getByText('AI-1 gatekeeper')).toBeInTheDocument();
+    expect(screen.getByText('MIMO_GATE_REJECTED')).toBeInTheDocument();
+    expect(screen.getByText('125 ms')).toBeInTheDocument();
+    expect(screen.getByText('1.0 s')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('Agent step timeline')).queryByText(/Authorization/i))
+      .not.toBeInTheDocument();
   });
 
   it('renders loading state', () => {

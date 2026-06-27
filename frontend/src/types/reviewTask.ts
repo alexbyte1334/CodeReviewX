@@ -2,6 +2,10 @@ export type ReviewTaskStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED';
 
 export type RiskLevel = 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH';
 
+export type PublishStatus = 'NOT_PUBLISHED' | 'PUBLISHING' | 'PUBLISHED' | 'FAILED';
+
+export type ToolTraceStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+
 export type IssueSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export type IssueCategory =
@@ -41,6 +45,12 @@ export interface ReviewIssue {
   recommendation: string;
 }
 
+export interface TraceSummary {
+  toolCount: number;
+  failedToolCount: number;
+  providerFallback: boolean;
+}
+
 export interface ReviewTask {
   id: number;
   repoUrl: string;
@@ -56,6 +66,40 @@ export interface ReviewTask {
   requestedProvider?: HistoricalReviewProvider;
   providerUsed?: HistoricalReviewProvider;
   providerHit?: boolean;
+  latestRunId?: number | null;
+  traceSummary?: TraceSummary | null;
+  commentPreviewCount?: number;
+}
+
+export interface CommentPreview {
+  id: number;
+  issueId: string;
+  filePath: string;
+  line: number | null;
+  draftBody: string;
+  selectedForPublish: boolean;
+  publishStatus: PublishStatus;
+  githubCommentId?: number | null;
+  publishErrorMessage?: string | null;
+}
+
+export interface CommentPreviewListResponse {
+  items: CommentPreview[];
+}
+
+export interface ToolTraceItem {
+  id: number;
+  toolName: string;
+  status: ToolTraceStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  outputSummary: string | null;
+  errorCode: string | null;
+}
+
+export interface ToolTraceListResponse {
+  items: ToolTraceItem[];
 }
 
 export interface CreateReviewTaskRequest {

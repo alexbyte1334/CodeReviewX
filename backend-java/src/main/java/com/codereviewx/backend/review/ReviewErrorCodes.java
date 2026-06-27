@@ -9,6 +9,9 @@ public final class ReviewErrorCodes {
     public static final String GITHUB_RATE_LIMITED = "GITHUB_RATE_LIMITED";
     public static final String GITHUB_METADATA_LOAD_FAILED = "GITHUB_METADATA_LOAD_FAILED";
     public static final String GITHUB_DIFF_RUNTIME_NOT_READY = "GITHUB_DIFF_RUNTIME_NOT_READY";
+    public static final String GITHUB_DIFF_LOAD_FAILED = "GITHUB_DIFF_LOAD_FAILED";
+    public static final String GITHUB_DIFF_TOO_LARGE = "GITHUB_DIFF_TOO_LARGE";
+    public static final String GITHUB_DIFF_UNAVAILABLE = "GITHUB_DIFF_UNAVAILABLE";
     public static final String MIMO_AUTH_MISSING = "MIMO_AUTH_MISSING";
     public static final String MIMO_PLAN_INVALID = "MIMO_PLAN_INVALID";
     public static final String MIMO_REVIEW_INVALID = "MIMO_REVIEW_INVALID";

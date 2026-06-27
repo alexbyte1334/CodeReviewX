@@ -1,0 +1,28 @@
+{
+  "id": "case-001-null-pointer",
+  "title": "Null pointer risk in user profile lookup",
+  "repoUrl": "https://github.com/example/codereviewx-evals",
+  "prNumber": 101,
+  "diffText": "diff --git a/src/UserController.java b/src/UserController.java\n@@ -39,6 +39,7 @@ class UserController {\n+    UserProfile profile = profileService.findById(userId);\n+    return profile.getDisplayName().trim();\n }",
+  "expectedFindings": [
+    {
+      "severity": "HIGH",
+      "category": "BUG",
+      "filePath": "src/UserController.java",
+      "startLine": 42,
+      "keywords": ["profile", "null"],
+      "recommendationKeywords": ["guard", "null"]
+    }
+  ],
+  "baselineFindings": [
+    {
+      "severity": "HIGH",
+      "category": "BUG",
+      "filePath": "src/UserController.java",
+      "startLine": 42,
+      "title": "Potential null dereference on profile lookup",
+      "description": "profileService.findById may return null, but the code immediately dereferences profile.",
+      "recommendation": "Add a null guard or return a not-found response before using profile."
+    }
+  ]
+}

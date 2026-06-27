@@ -419,7 +419,7 @@ VITE_API_BASE_URL=http://localhost:8080
 
 ## 14. Stage 2 架构扩展（Round 16-18）
 
-Stage 2 在 Stage 1.5 基线上增加 run/trace 持久化层，并在 Round 18 为 `GITHUB_PR` 增加第一个 bounded agent ingestion 步骤：GitHub PR metadata loader。
+Stage 2 在 Stage 1.5 基线上增加 run/trace 持久化层，并为 `GITHUB_PR` 增加 bounded agent ingestion：GitHub PR metadata loader 与 GitHub PR diff loader。
 
 ```text
 review_task (shell)
@@ -428,7 +428,7 @@ review_task (shell)
         ├── review_tool_trace
         ├── review_provider_trace
         ├── review_issue (optional review_run_id)
-        └── review_comment_preview (NOT_PUBLISHED only)
+        └── review_comment_preview (NOT_PUBLISHED / PUBLISHING / PUBLISHED / FAILED)
 ```
 
 ### 14.1 数据库 Migration
@@ -446,16 +446,17 @@ GET /api/review-runs/{runId}/comment-previews
 ```
 
 Review task 响应增加 `latestRunId`、`reviewMode`、`ingestionSummary`、`traceSummary`、`commentPreviewCount`。
+Trace API 返回 sanitized timeline：GitHub ingestion steps、MiMo planner/executor/gatekeeper steps、issue generation、comment preview build。响应只包含步骤名、状态、时间、耗时、安全输出摘要和错误码。
 
 ### 14.3 安全与 Redaction
 
 - GitHub token 不入库、不出 API、不写 trace
 - API 不返回 raw prompt、raw model output、未截断 diff、`snapshotJson`
-- Comment preview 仅 `NOT_PUBLISHED`，无 PR comment 写回
+- Comment preview 发布仅在人工选择并确认后执行；API 不返回 token 或 Authorization header
 
 ### 14.4 GitHub Token 策略
 
-单用户本地 token（`GITHUB_TOKEN`），最低权限：`repo read` + `pull request read`。无 OAuth / GitHub App / 多租户。
+单用户本地 token（`GITHUB_TOKEN`），最低权限：Contents read + Pull requests read/write。无 OAuth / GitHub App / 多租户。
 
 本地配置：
 
@@ -463,11 +464,14 @@ Review task 响应增加 `latestRunId`、`reviewMode`、`ingestionSummary`、`tr
 codereviewx.github.api-base-url=${GITHUB_API_BASE_URL:https://api.github.com}
 codereviewx.github.token=${GITHUB_TOKEN:}
 codereviewx.github.timeout-seconds=${GITHUB_TIMEOUT_SECONDS:20}
+codereviewx.github.max-changed-files=${GITHUB_MAX_CHANGED_FILES:50}
+codereviewx.github.max-diff-bytes=${GITHUB_MAX_DIFF_BYTES:512000}
+codereviewx.github.per-file-patch-max-bytes=${GITHUB_PER_FILE_PATCH_MAX_BYTES:20000}
 ```
 
 应用启动不要求 token。缺 token 是一次可恢复的 failed run（`GITHUB_AUTH_MISSING`），并会写入 sanitized `github.pr.metadata.load` tool trace。
 
-### 14.5 Round 18 GITHUB_PR Metadata Path
+### 14.5 GITHUB_PR Metadata + Diff Path
 
 ```text
 POST /api/review-tasks (reviewMode=GITHUB_PR)
@@ -475,19 +479,45 @@ POST /api/review-tasks (reviewMode=GITHUB_PR)
   -> run.status=INGESTING
   -> github.pr.metadata.load
   -> persist review_tool_trace
-  -> on metadata success: persist sanitized review_input_snapshot
+  -> github.pr.diff.load
+  -> persist review_tool_trace
+  -> on metadata + diff success: persist sanitized review_input_snapshot
   -> run.status=REVIEWING
-  -> execute MiMo dual-AI agent pipeline with bounded PR context
-  -> persist review_issue, review_provider_trace, and local review_comment_preview rows
+  -> execute MiMo dual-AI agent pipeline with bounded PR diff context
+     -> mimo.ai1.plan
+     -> mimo.ai2.execute
+     -> mimo.ai1.gate
+     -> issue.generate
+  -> persist review_issue, review_provider_trace, provider step traces
+  -> run.status=BUILDING_PREVIEW
+  -> comment.preview.build
+  -> persist local review_comment_preview rows
   -> run.status=SUCCESS
 ```
 
-当前 `GITHUB_PR` MVP 不拉取 PR diff，不读取 repository context，不写回 GitHub；它只使用 bounded PR metadata 启动 MiMo 双 AI agent review，并生成本地 comment preview。
+当前 `GITHUB_PR` MVP 拉取 PR metadata 与 files patch，不读取 repository context，不 clone 仓库；snapshot 只保存 sanitized metadata/diff summary，完整 diff 只作为本次 MiMo pipeline 输入。
 
-### 14.6 默认边界
+### 14.6 Comment Preview Publish Path
+
+```text
+GET /api/review-runs/{runId}/comment-previews
+  -> frontend renders local draft comments
+PATCH /api/review-runs/{runId}/comment-previews/selection
+  -> persist selected_for_publish
+POST /api/review-runs/{runId}/comment-previews/publish-selected
+  -> require confirmed=true
+  -> require selected_for_publish=true
+  -> publish GitHub PR review comments
+  -> persist publish_status, github_comment_id, publish_error_message
+```
+
+发布失败不会回滚已保存的 review result；失败 preview 会保存 `FAILED` 和 sanitized 错误信息，供用户修正权限或目标行后重试。
+
+### 14.7 默认边界
 
 - 最多 50 个变更文件
 - 总 diff 500KB
+- 单文件 patch 20KB 截断
 - raw prompt / model output 默认不持久化
 
-仍未实现：GitHub PR diff loader、repository context loader、RAG、MCP、Memory、PR write-back、OAuth。
+仍未实现：repository context loader、RAG、MCP、Memory、OAuth。

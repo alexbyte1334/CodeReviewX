@@ -1584,6 +1584,282 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
+.comment-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.comment-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.comment-preview-count {
+  color: var(--label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.comment-preview-publish-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--apple-blue);
+  color: white;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    transform var(--transition-fast),
+    opacity var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.comment-preview-publish-button:hover:not(:disabled) {
+  background: var(--apple-blue-dark);
+}
+
+.comment-preview-publish-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.comment-preview-publish-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.comment-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comment-preview-card {
+  display: grid;
+  grid-template-columns: minmax(76px, auto) 1fr;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.44);
+  box-shadow: var(--float-ring), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.comment-preview-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  min-height: 28px;
+  color: var(--label-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.comment-preview-select input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--apple-blue);
+}
+
+.comment-preview-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comment-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.comment-preview-location {
+  min-width: 0;
+  color: var(--label-secondary);
+  font-size: 12px;
+  font-family: 'SF Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.comment-preview-status {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(60, 60, 67, 0.1);
+  color: var(--label-secondary);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.comment-preview-status--publishing {
+  background: rgba(175, 82, 222, 0.12);
+  color: var(--apple-purple);
+}
+
+.comment-preview-status--published {
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--apple-green);
+}
+
+.comment-preview-status--failed {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--apple-red);
+}
+
+.comment-preview-body {
+  color: var(--label-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-preview-result,
+.comment-preview-error {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.comment-preview-result {
+  color: var(--apple-green);
+  font-weight: 650;
+}
+
+.comment-preview-error {
+  color: var(--apple-red);
+}
+
+.agent-trace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agent-trace-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.agent-trace-item {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  position: relative;
+  padding-bottom: 12px;
+}
+
+.agent-trace-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 17px;
+  bottom: -1px;
+  width: 1px;
+  background: rgba(60, 60, 67, 0.16);
+}
+
+.agent-trace-marker {
+  width: 13px;
+  height: 13px;
+  margin-top: 12px;
+  border-radius: 50%;
+  background: var(--apple-blue);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+}
+
+.agent-trace-content {
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.44);
+  box-shadow: var(--float-ring), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.agent-trace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-trace-title {
+  color: var(--label-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.agent-trace-name {
+  margin-top: 3px;
+  color: var(--label-tertiary);
+  font-family: 'SF Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.agent-trace-status {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(60, 60, 67, 0.1);
+  color: var(--label-secondary);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.agent-trace-status--running {
+  background: rgba(255, 149, 0, 0.12);
+  color: var(--apple-orange);
+}
+
+.agent-trace-status--success {
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--apple-green);
+}
+
+.agent-trace-status--failed {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--apple-red);
+}
+
+.agent-trace-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.agent-trace-meta span {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(60, 60, 67, 0.08);
+  color: var(--label-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.agent-trace-summary {
+  margin-top: 10px;
+  color: var(--label-primary);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .task-error-panel {
   background: rgba(255, 59, 48, 0.08);
   backdrop-filter: blur(12px);
@@ -2014,6 +2290,20 @@ html[data-theme='dark'] .issue-card {
 
 html[data-theme='dark'] .issue-card-trigger:hover {
   background: rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme='dark'] .comment-preview-card {
+  background: rgba(44, 44, 46, 0.58);
+  box-shadow: var(--float-ring), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .agent-trace-content {
+  background: rgba(44, 44, 46, 0.58);
+  box-shadow: var(--float-ring), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .agent-trace-item:not(:last-child)::before {
+  background: rgba(235, 235, 245, 0.14);
 }
 
 html[data-theme='dark'] .metric-card {

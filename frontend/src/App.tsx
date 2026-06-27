@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ReviewTask } from './types/reviewTask';
-import { getHealth, getReviewTask, listReviewTasks } from './api/reviewTaskApi';
+import type { CommentPreview, ReviewTask, ToolTraceItem } from './types/reviewTask';
+import {
+  getCommentPreviews,
+  getHealth,
+  getReviewTask,
+  getToolTrace,
+  listReviewTasks,
+  publishSelectedCommentPreviews,
+  updateCommentPreviewSelection,
+} from './api/reviewTaskApi';
 import { ReviewTaskCreateForm } from './components/ReviewTaskCreateForm';
 import { ReviewTaskDetail } from './components/ReviewTaskDetail';
 import { ReviewTaskList } from './components/ReviewTaskList';
@@ -30,6 +38,13 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState<ReviewTask | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [commentPreviews, setCommentPreviews] = useState<CommentPreview[]>([]);
+  const [commentPreviewLoading, setCommentPreviewLoading] = useState(false);
+  const [commentPreviewError, setCommentPreviewError] = useState<string | null>(null);
+  const [commentPublishing, setCommentPublishing] = useState(false);
+  const [toolTraceItems, setToolTraceItems] = useState<ToolTraceItem[]>([]);
+  const [toolTraceLoading, setToolTraceLoading] = useState(false);
+  const [toolTraceError, setToolTraceError] = useState<string | null>(null);
   const workspaceRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -96,11 +111,21 @@ export default function App() {
     expandPanel('findings');
     setDetailLoading(true);
     setDetailError(null);
+    setCommentPreviewError(null);
+    setCommentPreviews([]);
+    setToolTraceError(null);
+    setToolTraceItems([]);
     setSelectedTask(null);
     try {
       const res = await getReviewTask(task.id);
       if (res.success && res.data) {
         setSelectedTask(res.data);
+        if (res.data.latestRunId) {
+          await Promise.all([
+            loadCommentPreviews(res.data.latestRunId),
+            loadToolTrace(res.data.latestRunId),
+          ]);
+        }
       } else {
         setDetailError(res.message || 'Task not found.');
       }
@@ -110,6 +135,82 @@ export default function App() {
       );
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function loadToolTrace(runId: number) {
+    setToolTraceLoading(true);
+    setToolTraceError(null);
+    try {
+      const res = await getToolTrace(runId);
+      if (res.success && res.data) {
+        setToolTraceItems(res.data.items);
+      } else {
+        setToolTraceError(res.message || 'Failed to load agent trace.');
+        setToolTraceItems([]);
+      }
+    } catch {
+      setToolTraceError('Backend is unavailable. Agent trace could not be loaded.');
+      setToolTraceItems([]);
+    } finally {
+      setToolTraceLoading(false);
+    }
+  }
+
+  async function loadCommentPreviews(runId: number) {
+    setCommentPreviewLoading(true);
+    setCommentPreviewError(null);
+    try {
+      const res = await getCommentPreviews(runId);
+      if (res.success && res.data) {
+        setCommentPreviews(res.data.items);
+      } else {
+        setCommentPreviewError(res.message || 'Failed to load comment previews.');
+        setCommentPreviews([]);
+      }
+    } catch {
+      setCommentPreviewError('Backend is unavailable. Comment previews could not be loaded.');
+      setCommentPreviews([]);
+    } finally {
+      setCommentPreviewLoading(false);
+    }
+  }
+
+  async function handleCommentPreviewSelection(previewId: number, selected: boolean) {
+    if (!selectedTask?.latestRunId) return;
+    const selectedPreviewIds = commentPreviews
+      .filter((preview) => (preview.id === previewId ? selected : preview.selectedForPublish))
+      .map((preview) => preview.id);
+    setCommentPreviewError(null);
+    try {
+      const res = await updateCommentPreviewSelection(selectedTask.latestRunId, selectedPreviewIds);
+      if (res.success && res.data) {
+        setCommentPreviews(res.data.items);
+      } else {
+        setCommentPreviewError(res.message || 'Failed to update selected comments.');
+      }
+    } catch {
+      setCommentPreviewError('Backend is unavailable. Selected comments could not be updated.');
+    }
+  }
+
+  async function handlePublishSelectedCommentPreviews() {
+    if (!selectedTask?.latestRunId) return;
+    const confirmed = window.confirm('Publish selected comments to GitHub?');
+    if (!confirmed) return;
+    setCommentPublishing(true);
+    setCommentPreviewError(null);
+    try {
+      const res = await publishSelectedCommentPreviews(selectedTask.latestRunId);
+      if (res.success && res.data) {
+        setCommentPreviews(res.data.items);
+      } else {
+        setCommentPreviewError(res.message || 'Failed to publish selected comments.');
+      }
+    } catch {
+      setCommentPreviewError('Backend is unavailable. Selected comments could not be published.');
+    } finally {
+      setCommentPublishing(false);
     }
   }
 
@@ -292,6 +393,15 @@ export default function App() {
                   task={selectedTask}
                   loading={detailLoading}
                   error={detailError}
+                  commentPreviews={commentPreviews}
+                  commentPreviewLoading={commentPreviewLoading}
+                  commentPreviewError={commentPreviewError}
+                  commentPublishing={commentPublishing}
+                  toolTraceItems={toolTraceItems}
+                  toolTraceLoading={toolTraceLoading}
+                  toolTraceError={toolTraceError}
+                  onCommentPreviewSelectionChange={handleCommentPreviewSelection}
+                  onPublishSelectedCommentPreviews={handlePublishSelectedCommentPreviews}
                 />
               </section>
             </div>

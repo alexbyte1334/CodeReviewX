@@ -1,0 +1,62 @@
+{
+  "generatedAt": "2026-06-27T03:32:00.048Z",
+  "summary": {
+    "caseCount": 3,
+    "expectedFindingCount": 3,
+    "actualFindingCount": 3,
+    "schemaPassRate": 1,
+    "expectedFindingHitRate": 1,
+    "severityMatchRate": 1,
+    "categoryMatchRate": 1,
+    "falsePositiveCount": 0,
+    "gateRejectionCount": 0,
+    "issueCountDelta": 0
+  },
+  "cases": [
+    {
+      "id": "case-001-null-pointer",
+      "title": "Null pointer risk in user profile lookup",
+      "source": "baselineFindings",
+      "expectedCount": 1,
+      "actualCount": 1,
+      "validFindingCount": 1,
+      "schemaPassRate": 1,
+      "expectedHits": 1,
+      "severityMatches": 1,
+      "categoryMatches": 1,
+      "falsePositiveCount": 0,
+      "gateRejected": false,
+      "validationErrors": []
+    },
+    {
+      "id": "case-002-secret-leak",
+      "title": "Demo token accidentally committed to configuration",
+      "source": "baselineFindings",
+      "expectedCount": 1,
+      "actualCount": 1,
+      "validFindingCount": 1,
+      "schemaPassRate": 1,
+      "expectedHits": 1,
+      "severityMatches": 1,
+      "categoryMatches": 1,
+      "falsePositiveCount": 0,
+      "gateRejected": false,
+      "validationErrors": []
+    },
+    {
+      "id": "case-003-sql-injection",
+      "title": "String-concatenated SQL query from request parameter",
+      "source": "baselineFindings",
+      "expectedCount": 1,
+      "actualCount": 1,
+      "validFindingCount": 1,
+      "schemaPassRate": 1,
+      "expectedHits": 1,
+      "severityMatches": 1,
+      "categoryMatches": 1,
+      "falsePositiveCount": 0,
+      "gateRejected": false,
+      "validationErrors": []
+    }
+  ]
+}
