@@ -7,6 +7,9 @@ import com.codereviewx.backend.review.enums.ToolTraceStatus;
 import com.codereviewx.backend.review.github.GithubPrCommentPublishRequest;
 import com.codereviewx.backend.review.github.GithubPrCommentPublishResult;
 import com.codereviewx.backend.review.github.GithubPrCommentPublisher;
+import com.codereviewx.backend.review.dto.PublishCommentPreviewRequest;
+import com.codereviewx.backend.review.dto.UpdateCommentPreviewSelectionRequest;
+import com.codereviewx.backend.review.exception.ReviewRequestInvalidException;
 import com.codereviewx.backend.review.persistence.entity.ReviewCommentPreviewEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewInputSnapshotEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewProviderTraceEntity;
@@ -20,6 +23,7 @@ import com.codereviewx.backend.review.persistence.repository.ReviewProviderTrace
 import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
+import com.codereviewx.backend.review.service.ReviewRunService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,10 +36,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -72,6 +78,9 @@ class ReviewRunControllerTest {
 
     @Autowired
     private ReviewTaskRepository reviewTaskRepository;
+
+    @Autowired
+    private ReviewRunService reviewRunService;
 
     @MockBean
     private GithubPrCommentPublisher githubPrCommentPublisher;
@@ -138,6 +147,15 @@ class ReviewRunControllerTest {
     }
 
     @Test
+    void updateCommentPreviewSelection_serviceRejectsMissingSelectedIds() {
+        UpdateCommentPreviewSelectionRequest request = new UpdateCommentPreviewSelectionRequest();
+
+        assertThatThrownBy(() -> reviewRunService.updateCommentPreviewSelection(seededRunId, request))
+                .isInstanceOf(ReviewRequestInvalidException.class)
+                .hasMessage("selectedPreviewIds is required");
+    }
+
+    @Test
     void publishCommentPreview_rejectsUnselectedPreview() throws Exception {
         mockMvc.perform(post("/api/review-runs/" + seededRunId
                         + "/comment-previews/" + seededPreviewId + "/publish")
@@ -159,6 +177,17 @@ class ReviewRunControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success", is(false)))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("confirmed")));
+    }
+
+    @Test
+    void publishSelectedCommentPreviews_serviceRejectsMissingConfirmation() {
+        selectSeededPreview();
+        PublishCommentPreviewRequest request = new PublishCommentPreviewRequest();
+        request.setConfirmed(false);
+
+        assertThatThrownBy(() -> reviewRunService.publishSelectedCommentPreviews(seededRunId, request))
+                .isInstanceOf(ReviewRequestInvalidException.class)
+                .hasMessage("confirmed must be true before publishing GitHub comments");
     }
 
     @Test
@@ -209,6 +238,24 @@ class ReviewRunControllerTest {
     }
 
     @Test
+    void publishSelectedCommentPreviews_prevalidatesAllTargetsBeforePublishing() throws Exception {
+        selectSeededPreview();
+        seedInvalidSelectedPreviewWithoutLine();
+
+        mockMvc.perform(post("/api/review-runs/" + seededRunId + "/comment-previews/publish-selected")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmed\":true}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.message", is("Comment preview must include file path and line before publishing")));
+
+        ReviewCommentPreviewEntity validPreview = commentPreviewRepository.findById(seededPreviewId).orElseThrow();
+        assertThat(validPreview.getPublishStatus()).isEqualTo(PublishStatus.NOT_PUBLISHED);
+        assertThat(validPreview.getGithubCommentId()).isNull();
+        verify(githubPrCommentPublisher, never()).publish(any());
+    }
+
+    @Test
     void getRun_notFound_returnsError() throws Exception {
         mockMvc.perform(get("/api/review-runs/99999"))
                 .andExpect(status().isNotFound())
@@ -220,6 +267,21 @@ class ReviewRunControllerTest {
         ReviewCommentPreviewEntity preview = commentPreviewRepository.findById(seededPreviewId).orElseThrow();
         preview.setSelectedForPublish(true);
         preview.setUpdatedAt(LocalDateTime.now());
+        commentPreviewRepository.save(preview);
+    }
+
+    private void seedInvalidSelectedPreviewWithoutLine() {
+        LocalDateTime now = LocalDateTime.now();
+        ReviewCommentPreviewEntity preview = new ReviewCommentPreviewEntity();
+        preview.setReviewRunId(seededRunId);
+        preview.setIssueKey("ISSUE-2");
+        preview.setFilePath("src/Broken.java");
+        preview.setLineNumber(null);
+        preview.setDraftBody("Missing target line should block the batch before publish.");
+        preview.setSelectedForPublish(true);
+        preview.setPublishStatus(PublishStatus.NOT_PUBLISHED);
+        preview.setCreatedAt(now);
+        preview.setUpdatedAt(now);
         commentPreviewRepository.save(preview);
     }
 

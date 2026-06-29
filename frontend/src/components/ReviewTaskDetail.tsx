@@ -249,8 +249,10 @@ function CommentPreviewPanel({
   onSelectionChange?: (previewId: number, selected: boolean) => void;
   onPublishSelected?: () => void;
 }) {
-  const selectedCount = previews.filter((preview) => preview.selectedForPublish).length;
-  const canPublish = selectedCount > 0 && !publishing && Boolean(onPublishSelected);
+  const publishableSelectedCount = previews.filter(
+    (preview) => preview.selectedForPublish && preview.publishStatus !== 'PUBLISHED',
+  ).length;
+  const canPublish = publishableSelectedCount > 0 && !publishing && Boolean(onPublishSelected);
 
   return (
     <div className="comment-preview-panel">
@@ -265,7 +267,7 @@ function CommentPreviewPanel({
         <>
           <div className="comment-preview-toolbar">
             <span className="comment-preview-count">
-              {selectedCount} selected
+              {publishableSelectedCount} ready to publish
             </span>
             <button
               type="button"

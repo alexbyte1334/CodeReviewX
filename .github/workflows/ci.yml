@@ -25,8 +25,7 @@ jobs:
           test -f docs/DATABASE.md
           test -f docs/STATIC_ANALYSIS.md
           test -f docs/SECURITY_CHECKLIST.md
-          test -f docs/AGENT_RULES.md
-          test -f docs/HANDOFF_TEMPLATE.md
+          test -f docs/PROJECT_SUMMARY_AND_NEXT_STEPS.md
           test -f backend-java/README.md
           test -f ai-service/README.md
           test -f frontend/README.md
@@ -63,6 +62,22 @@ jobs:
 
       - name: Run static analysis
         run: REQUIRE_SEMGREP=1 node scripts/static-scan.mjs
+
+  evals:
+    name: Evals
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run evals
+        run: node scripts/run-evals.mjs
 
   backend:
     name: Backend Tests

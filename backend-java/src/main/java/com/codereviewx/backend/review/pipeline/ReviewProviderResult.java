@@ -12,7 +12,7 @@ public class ReviewProviderResult {
     private final String providerName;
     private final boolean successful;
     private final String message;
-    /** Requested provider slug: {@code mock} or {@code mimo}. */
+    /** Requested provider slug. New review tasks currently use {@code mimo}. */
     private final String requestedProvider;
     /** Whether the requested provider was actually used (no fallback). */
     private final boolean providerHit;
@@ -66,9 +66,13 @@ public class ReviewProviderResult {
         if (providerName == null) {
             return null;
         }
-        if (providerName.toLowerCase().contains("mimo")) {
+        String normalizedProviderName = providerName.toLowerCase();
+        if (normalizedProviderName.contains("mimo")) {
             return "mimo";
         }
-        return "mock";
+        if (normalizedProviderName.contains("mock")) {
+            return "mock";
+        }
+        return null;
     }
 }

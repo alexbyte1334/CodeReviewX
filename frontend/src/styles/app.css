@@ -46,7 +46,7 @@
   --glass-fill-deep: rgba(255, 255, 255, 0.82);
   --glass-sidebar: rgba(255, 255, 255, 0.22);
 
-  /* Stage Manager floating depth */
+  /* Floating panel depth */
   --float-ring: 0 0 0 0.5px rgba(0, 0, 0, 0.06);
   --float-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.92);
   --float-shadow-sm:
@@ -1026,7 +1026,7 @@ body {
   line-height: 1.5;
 }
 
-/* ── Task List (Stage Manager tiles) ── */
+/* Task list tiles */
 .task-list {
   list-style: none;
   display: flex;

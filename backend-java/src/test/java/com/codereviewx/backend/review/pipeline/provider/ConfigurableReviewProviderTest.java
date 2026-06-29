@@ -44,4 +44,22 @@ class ConfigurableReviewProviderTest {
         assertThat(result.isProviderHit()).isTrue();
         verify(xiaomiMiMoReviewProvider).review(context);
     }
+
+    @Test
+    void review_unknownProviderNameDoesNotPretendMockFallback() {
+        ReviewProviderResult unknownResult = new ReviewProviderResult(
+                java.util.List.of(),
+                "UnexpectedProvider",
+                true,
+                null
+        );
+        when(xiaomiMiMoReviewProvider.review(context)).thenReturn(unknownResult);
+
+        ReviewProviderResult result = provider.review(context);
+
+        assertThat(result.getProviderName()).isEqualTo("UnexpectedProvider");
+        assertThat(result.getRequestedProvider()).isEqualTo("mimo");
+        assertThat(result.getProviderUsed()).isNull();
+        assertThat(result.isProviderHit()).isFalse();
+    }
 }

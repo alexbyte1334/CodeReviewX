@@ -355,6 +355,27 @@ describe('ReviewTaskDetail', () => {
     expect(onPublishSelected).toHaveBeenCalledTimes(1);
   });
 
+  it('does not enable publishing when only already published previews are selected', async () => {
+    const user = userEvent.setup();
+    const onPublishSelected = vi.fn();
+    render(
+      <ReviewTaskDetail
+        {...baseProps}
+        task={{ ...mockTask, commentPreviewCount: 1 }}
+        commentPreviews={[mockCommentPreviews[2]]}
+        onPublishSelectedCommentPreviews={onPublishSelected}
+      />,
+    );
+
+    await expandCommentPreviewPanel(user);
+    const publishButton = screen.getByRole('button', { name: /publish selected/i });
+
+    expect(screen.getByText('0 ready to publish')).toBeInTheDocument();
+    expect(publishButton).toBeDisabled();
+    await user.click(publishButton);
+    expect(onPublishSelected).not.toHaveBeenCalled();
+  });
+
   it('renders agent trace timeline with status, duration, and error code', async () => {
     const user = userEvent.setup();
     render(

@@ -4,7 +4,6 @@ import org.springframework.stereotype.Service;
 
 /**
  * Orchestrates review execution by invoking the configured provider.
- * Round 09: provider selection via {@link com.codereviewx.backend.review.pipeline.provider.ConfigurableReviewProvider}.
  */
 @Service
 public class ReviewPipelineService {

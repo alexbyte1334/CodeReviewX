@@ -8,7 +8,6 @@ import com.codereviewx.backend.review.enums.ReviewMode;
 
 /**
  * Input context for a review pipeline run.
- * Round 10: optional pasted PR diff text for AI review grounding.
  */
 public class ReviewContext {
 
