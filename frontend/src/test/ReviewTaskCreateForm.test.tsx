@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReviewTaskCreateForm } from '../components/ReviewTaskCreateForm';
-import { MAX_DIFF_TEXT_LENGTH } from '../types/reviewTask';
+import { MAX_DIFF_TEXT_LENGTH, MAX_PR_NUMBER } from '../types/reviewTask';
 import * as reviewTaskApi from '../api/reviewTaskApi';
 
 const defaultProps = {
@@ -29,8 +29,9 @@ describe('ReviewTaskCreateForm', () => {
     render(<ReviewTaskCreateForm {...defaultProps} />);
     expect(screen.getByLabelText(/optional pr diff/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/paste a unified diff to let the review agent inspect actual code changes/i),
+      screen.getByText(/paste a unified diff to review exact code changes/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/bounded github pr diff with github_token/i)).toBeInTheDocument();
   });
 
   it('renders character counter for diff textarea', () => {
@@ -100,7 +101,7 @@ describe('ReviewTaskCreateForm', () => {
     await userEvent.click(screen.getByRole('button', { name: /^run review$/i }));
 
     await waitFor(() => {
-    expect(reviewTaskApi.createReviewTask).toHaveBeenCalledWith({
+      expect(reviewTaskApi.createReviewTask).toHaveBeenCalledWith({
         repoUrl: 'https://github.com/example/repo',
         prNumber: 10,
         provider: 'mimo',
@@ -164,6 +165,34 @@ describe('ReviewTaskCreateForm', () => {
     expect(screen.getByText(/pr diff is too large/i)).toBeInTheDocument();
   });
 
+  it('blocks decimal PR numbers instead of truncating them', async () => {
+    const createSpy = vi.spyOn(reviewTaskApi, 'createReviewTask');
+
+    render(<ReviewTaskCreateForm {...defaultProps} />);
+    await userEvent.type(screen.getByLabelText(/repository url/i), 'https://github.com/example/repo');
+    fireEvent.change(screen.getByLabelText(/pull request number/i), {
+      target: { value: '1.5' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: /^run review$/i }));
+
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(screen.getByText(/pr number must be a positive integer/i)).toBeInTheDocument();
+  });
+
+  it('blocks PR numbers above the backend integer limit', async () => {
+    const createSpy = vi.spyOn(reviewTaskApi, 'createReviewTask');
+
+    render(<ReviewTaskCreateForm {...defaultProps} />);
+    await userEvent.type(screen.getByLabelText(/repository url/i), 'https://github.com/example/repo');
+    fireEvent.change(screen.getByLabelText(/pull request number/i), {
+      target: { value: String(MAX_PR_NUMBER + 1) },
+    });
+    await userEvent.click(screen.getByRole('button', { name: /^run review$/i }));
+
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(screen.getByText(/pr number must be a positive integer/i)).toBeInTheDocument();
+  });
+
   it('shows submitting loading state', async () => {
     vi.spyOn(reviewTaskApi, 'createReviewTask').mockImplementation(
       () => new Promise(() => {}),
@@ -209,6 +238,12 @@ describe('ReviewTaskCreateForm', () => {
 
   it('disables submit when backend is unavailable', () => {
     render(<ReviewTaskCreateForm {...defaultProps} backendAvailable={false} />);
+    expect(screen.getByRole('button', { name: /^run review$/i })).toBeDisabled();
+  });
+
+  it('disables submit when MiMo is not configured', () => {
+    render(<ReviewTaskCreateForm {...defaultProps} mimoConfigured={false} />);
+    expect(screen.getByText(/mimo requires planner and executor api keys/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^run review$/i })).toBeDisabled();
   });
 });

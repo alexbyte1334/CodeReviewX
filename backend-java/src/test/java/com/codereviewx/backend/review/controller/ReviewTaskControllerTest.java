@@ -184,6 +184,20 @@ class ReviewTaskControllerTest {
     }
 
     @Test
+    void createTask_blankProvider_treatedAsDefaultMimo() throws Exception {
+        String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"\",\"diffText\":\""
+                + SAMPLE_DIFF + "\"}";
+
+        mockMvc.perform(post(BASE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requestedProvider", is("mimo")))
+                .andExpect(jsonPath("$.data.providerUsed", is("mimo")))
+                .andExpect(jsonPath("$.data.providerHit", is(true)));
+    }
+
+    @Test
     void createTask_mockProvider_returnsValidationError() throws Exception {
         String body = "{\"repoUrl\":\"https://github.com/example/repo\",\"prNumber\":123,\"provider\":\"mock\",\"diffText\":\""
                 + SAMPLE_DIFF + "\"}";

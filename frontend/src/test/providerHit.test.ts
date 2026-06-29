@@ -11,4 +11,10 @@ describe('formatProviderHitLabel', () => {
       '未命中 · 请求 MiMo，实际使用 Historical Mock',
     );
   });
+
+  it('does not label unknown provider strings as historical mock', () => {
+    expect(formatProviderHitLabel(false, 'mimo', 'experimental')).toBe(
+      '未命中 · 请求 MiMo，实际使用 Unknown Provider',
+    );
+  });
 });

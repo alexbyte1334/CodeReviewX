@@ -27,15 +27,26 @@ This module contains the Spring Boot 3 + Java 17 + Maven backend service for Cod
 - Spring Data JPA repositories:
   - `ReviewTaskRepository`
   - `ReviewIssueRepository`
+  - `ReviewRunRepository`
+  - `ReviewInputSnapshotRepository`
+  - `ReviewToolTraceRepository`
+  - `ReviewProviderTraceRepository`
+  - `ReviewCommentPreviewRepository`
 - JPA entities:
   - `ReviewTaskEntity` (manual `diffText` is optional and not exposed in public API; GitHub-loaded diff is not persisted here)
   - `ReviewIssueEntity`
+  - `ReviewRunEntity`
+  - `ReviewInputSnapshotEntity`
+  - `ReviewToolTraceEntity`
+  - `ReviewProviderTraceEntity`
+  - `ReviewCommentPreviewEntity`
 - DTOs:
   - `CreateReviewTaskRequest` (optional `diffText`, max 20000 characters)
   - `ReviewTaskResponse`
   - `ReviewIssueResponse`
   - `IssueSummaryResponse`
-- Issue sources: `MOCK`, `MIMO` (plus reserved `SEMGREP`, `LLM`, `MANUAL`)
+- Issue sources: new review tasks use `MIMO`; `SEMGREP`, `LLM`, and `MANUAL`
+  are reserved for future integrations.
 - Backend-computed `issueSummary`
 - `ReviewTaskResponse.riskLevel` derived from `issueSummary.riskLevel`
 
@@ -88,7 +99,7 @@ When MiMo succeeds, findings use `source: MIMO`. Valid empty `[]` from MiMo mean
 
 **Never commit MiMo API keys.** Read them only from environment variables.
 
-## Review Agent Flow (Round 10)
+## Review Agent Flow
 
 ```text
 ReviewTaskService.createTask
@@ -106,7 +117,7 @@ ReviewTaskService.createTask
   -> compute issueSummary and riskLevel
 ```
 
-Round 10 adds optional pasted PR diff context:
+Current review input behavior:
 
 - `POST /api/review-tasks` accepts optional `diffText`.
 - Blank or whitespace-only `diffText` is treated as absent.
@@ -209,17 +220,17 @@ Expected response shape:
     "updatedAt": "2026-06-23T10:00:00",
     "issues": [
       {
-        "id": "ISSUE-1",
+        "id": "MIMO-ISSUE-1",
         "severity": "HIGH",
         "category": "SECURITY",
-        "source": "MOCK",
+        "source": "MIMO",
         "status": "OPEN",
-        "filePath": "src/main/java/com/codereviewx/backend/review/controller/ReviewTaskController.java",
+        "filePath": "src/main/java/com/example/SensitiveController.java",
         "startLine": 42,
         "endLine": 48,
-        "title": "Potential missing authorization check",
-        "description": "This demo issue indicates that a sensitive endpoint should explicitly check authorization before processing the request.",
-        "recommendation": "Add an authorization guard before the business logic and cover the behavior with a controller test."
+        "title": "Authorization check is missing before sensitive operation",
+        "description": "The changed endpoint performs a sensitive operation before verifying that the caller is allowed to access the target resource.",
+        "recommendation": "Check authorization before executing the operation and cover the denied path with a controller test."
       }
     ],
     "issueSummary": {
@@ -273,15 +284,12 @@ Expected response:
 | JUnit 5 | - | Testing |
 | Maven | 3.8+ | Build tool |
 
-## Planned Technology
-
-| Technology | Purpose |
-|---|---|
-| MySQL or PostgreSQL | Production database |
-| Spring WebClient / RestClient | Xiaomi MiMo API calls (Round 09) |
-
 ## Module Boundaries
 
-- Does: provide REST API, manage ReviewTask lifecycle, persist ReviewTask and ReviewIssue data, accept optional pasted diff context, run configurable mock or Xiaomi MiMo review provider.
-- Does not: automatically fetch GitHub PRs, install a GitHub App, access private repositories, clone repositories, perform full repository analysis, execute Semgrep, or expose provider internals, raw diff, prompts, or model output through the public API.
-- Does not: write PR comments, provide RAG/MCP/Function Calling/memory features, execute issue status workflows, authentication, team workflows, or human review workflows.
+- Does: provide REST API, manage ReviewTask and ReviewRun lifecycle, persist tasks/issues/traces/snapshots/comment previews, accept optional pasted diff context, load bounded GitHub PR metadata and files patch, run the Xiaomi MiMo dual-agent provider, and publish selected comment previews after explicit user confirmation.
+- Does not: install a GitHub App, clone repositories, perform full repository analysis, execute Semgrep inside the review task pipeline, or expose provider internals, raw full diff, prompts, model output, GitHub token, or MiMo keys through the public API.
+- Does not: provide RAG/MCP/Function Calling/memory features, production authentication, team workflows, issue resolution workflows, async queue processing, cancellation, or retry workers.
+
+## Production Expansion Notes
+
+The current backend is intentionally local-first and uses H2 file storage. A production version should replace H2 with PostgreSQL or MySQL, add managed secret storage, introduce async review execution, and move long-running repository context analysis into a separately deployable worker or service.

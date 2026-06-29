@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReviewTask } from '../types/reviewTask';
-import { MAX_DIFF_TEXT_LENGTH } from '../types/reviewTask';
+import { MAX_DIFF_TEXT_LENGTH, MAX_PR_NUMBER } from '../types/reviewTask';
 import { createReviewTask } from '../api/reviewTaskApi';
 import { formatProviderHitLabel } from '../utils/providerHit';
 import { LoadingState } from './LoadingState';
@@ -17,10 +17,22 @@ interface ReviewTaskCreateFormProps {
 
 type FormState = 'idle' | 'submitting' | 'success' | 'error';
 
+function parsePositiveInteger(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed > MAX_PR_NUMBER) {
+    return null;
+  }
+  return parsed;
+}
+
 export function ReviewTaskCreateForm({
   onCreated,
   backendAvailable = true,
-  mimoConfigured = false,
+  mimoConfigured = true,
   expanded,
   onToggle,
 }: ReviewTaskCreateFormProps) {
@@ -49,11 +61,8 @@ export function ReviewTaskCreateForm({
     }
     if (!prNumber.trim()) {
       errors.prNumber = 'PR Number is required.';
-    } else {
-      const num = parseInt(prNumber, 10);
-      if (isNaN(num) || num <= 0) {
-        errors.prNumber = 'PR Number must be a positive integer.';
-      }
+    } else if (parsePositiveInteger(prNumber) == null) {
+      errors.prNumber = 'PR Number must be a positive integer.';
     }
     if (diffText.length > MAX_DIFF_TEXT_LENGTH) {
       errors.diffText = `PR diff is too large. Maximum length is ${MAX_DIFF_TEXT_LENGTH} characters.`;
@@ -74,7 +83,7 @@ export function ReviewTaskCreateForm({
     const trimmedDiff = diffText.trim();
     const payload = {
       repoUrl: repoUrl.trim(),
-      prNumber: parseInt(prNumber, 10),
+      prNumber: parsePositiveInteger(prNumber) as number,
       provider: 'mimo' as const,
       ...(trimmedDiff ? { diffText: trimmedDiff } : {}),
     };
@@ -167,6 +176,7 @@ export function ReviewTaskCreateForm({
             onChange={(e) => setPrNumber(e.target.value)}
             placeholder="123"
             min={1}
+            max={MAX_PR_NUMBER}
             disabled={isSubmitting}
             aria-describedby={validationErrors.prNumber ? 'prNumber-error' : undefined}
           />
@@ -193,8 +203,8 @@ export function ReviewTaskCreateForm({
             aria-invalid={diffOverLimit}
           />
           <p id="diffText-help" className="field-help">
-            Paste a unified diff to let the review agent inspect actual code changes. Leave empty
-            to run a metadata-only review.
+            Paste a unified diff to review exact code changes. Leave empty to let the backend
+            load bounded GitHub PR diff with GITHUB_TOKEN.
           </p>
           {validationErrors.diffText && (
             <span id="diffText-error" className="field-error">{validationErrors.diffText}</span>
@@ -203,7 +213,7 @@ export function ReviewTaskCreateForm({
 
         <button
           type="submit"
-          disabled={isSubmitting || !backendAvailable}
+          disabled={isSubmitting || !backendAvailable || !mimoConfigured}
           className="btn-primary"
         >
           {isSubmitting ? 'Running review…' : 'Run Review'}

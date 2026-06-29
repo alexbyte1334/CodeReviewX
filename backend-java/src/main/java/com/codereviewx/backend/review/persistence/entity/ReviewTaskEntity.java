@@ -67,7 +67,7 @@ public class ReviewTaskEntity {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
-    @OneToMany(mappedBy = "reviewTask", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "reviewTask", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<ReviewIssueEntity> issues = new ArrayList<>();
 
     public ReviewTaskEntity() {

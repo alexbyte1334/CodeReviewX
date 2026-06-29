@@ -10,6 +10,7 @@ import com.codereviewx.backend.review.enums.IssueStatus;
 import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.enums.ReviewTaskStatus;
 import com.codereviewx.backend.review.enums.RiskLevel;
+import com.codereviewx.backend.review.exception.ReviewRequestInvalidException;
 import com.codereviewx.backend.review.exception.ReviewTaskNotFoundException;
 import com.codereviewx.backend.review.persistence.entity.ReviewIssueEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewCommentPreviewRepository;
@@ -82,6 +83,69 @@ class ReviewTaskServiceTest {
         request.setPrNumber(prNumber);
         request.setDiffText(SAMPLE_DIFF);
         return request;
+    }
+
+    private void assertCreateTaskRejected(CreateReviewTaskRequest request, String message) {
+        assertThatThrownBy(() -> service.createTask(request))
+                .isInstanceOf(ReviewRequestInvalidException.class)
+                .hasMessage(message);
+        assertThat(reviewTaskRepository.findAll()).isEmpty();
+        assertThat(reviewRunRepository.findAll()).isEmpty();
+        assertThat(reviewIssueRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void createTask_serviceRejectsNullRequest() {
+        assertCreateTaskRejected(null, "request is required");
+    }
+
+    @Test
+    void createTask_serviceRejectsBlankRepoUrl() {
+        CreateReviewTaskRequest request = manualDiffRequest(1);
+        request.setRepoUrl("   ");
+
+        assertCreateTaskRejected(request, "repoUrl is required");
+    }
+
+    @Test
+    void createTask_serviceRejectsMissingPrNumber() {
+        CreateReviewTaskRequest request = manualDiffRequest(1);
+        request.setPrNumber(null);
+
+        assertCreateTaskRejected(request, "prNumber must be positive");
+    }
+
+    @Test
+    void createTask_serviceRejectsNonPositivePrNumber() {
+        CreateReviewTaskRequest request = manualDiffRequest(1);
+        request.setPrNumber(0);
+
+        assertCreateTaskRejected(request, "prNumber must be positive");
+    }
+
+    @Test
+    void createTask_serviceRejectsOversizedDiffText() {
+        CreateReviewTaskRequest request = manualDiffRequest(1);
+        request.setDiffText("x".repeat(CreateReviewTaskRequest.MAX_DIFF_TEXT_LENGTH + 1));
+
+        assertCreateTaskRejected(request, "diffText is too large. Maximum length is 20000 characters.");
+    }
+
+    @Test
+    void createTask_serviceRejectsUnsupportedProvider() {
+        CreateReviewTaskRequest request = manualDiffRequest(1);
+        request.setProvider("mock");
+
+        assertCreateTaskRejected(request, "provider must be mimo");
+    }
+
+    @Test
+    void createTask_serviceRejectsManualDiffWithoutDiffText() {
+        CreateReviewTaskRequest request = manualDiffRequest(1);
+        request.setReviewMode(ReviewMode.MANUAL_DIFF);
+        request.setDiffText("   ");
+
+        assertCreateTaskRejected(request, "MANUAL_DIFF requires non-blank diffText");
     }
 
     @Test

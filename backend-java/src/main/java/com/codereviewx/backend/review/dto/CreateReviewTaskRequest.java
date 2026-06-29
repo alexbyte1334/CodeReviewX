@@ -23,7 +23,7 @@ public class CreateReviewTaskRequest {
     /**
      * Optional legacy provider field. The review pipeline is MiMo-only; only {@code mimo} is accepted.
      */
-    @Pattern(regexp = "^(?i)(mimo)$", message = "provider must be mimo")
+    @Pattern(regexp = "(?i)^(mimo)?$", message = "provider must be mimo")
     private String provider;
 
     /**

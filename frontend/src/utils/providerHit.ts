@@ -2,7 +2,10 @@ import type { HistoricalReviewProvider } from '../types/reviewTask';
 
 export function formatProviderSlug(provider?: string | null): string {
   if (!provider) return '—';
-  return provider.toLowerCase() === 'mimo' ? 'MiMo' : 'Historical Mock';
+  const normalized = provider.toLowerCase();
+  if (normalized === 'mimo') return 'MiMo';
+  if (normalized === 'mock') return 'Historical Mock';
+  return 'Unknown Provider';
 }
 
 export function formatProviderHitLabel(

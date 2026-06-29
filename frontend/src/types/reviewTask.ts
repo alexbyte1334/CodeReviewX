@@ -110,6 +110,7 @@ export interface CreateReviewTaskRequest {
 }
 
 export const MAX_DIFF_TEXT_LENGTH = 20000;
+export const MAX_PR_NUMBER = 2147483647;
 
 export interface HealthData {
   status: string;

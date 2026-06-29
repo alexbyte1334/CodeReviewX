@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "codereviewx.ai.mimo.planner-api-key=",
         "codereviewx.ai.mimo.executor-api-key="
 })
-class ReviewPipelineFallbackIntegrationTest {
+class ReviewPipelineFailFastIntegrationTest {
 
     @Autowired
     private ReviewTaskService reviewTaskService;

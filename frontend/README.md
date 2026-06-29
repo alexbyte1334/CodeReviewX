@@ -1,210 +1,101 @@
-# CodeReviewX — Frontend
+# CodeReviewX Frontend
 
-**Manual Diff-Grounded AI Code Review Agent MVP**
+React + TypeScript + Vite workspace for the local CodeReviewX review agent.
 
----
+## Current Role
 
-## Overview
+The frontend is a thin review console. It calls `backend-java` only and never
+talks directly to GitHub, Xiaomi MiMo, or any LLM provider.
 
-CodeReviewX is a locally runnable AI-assisted code review agent prototype. The frontend lets you create review tasks with repository URL, PR number, and optional pasted PR diff context, then inspect structured agent findings with risk level and recommendations.
+Main capabilities:
 
----
+- Check backend health and MiMo readiness.
+- Create review tasks from `repoUrl + prNumber` with optional pasted unified
+  diff.
+- List review history and load task details.
+- Display risk level, issue summary, structured findings, provider hit state,
+  agent trace, and comment previews.
+- Let the user select comment previews and confirm publishing to GitHub.
 
 ## Tech Stack
 
-- React 18 + TypeScript + Vite
+- React 18
+- TypeScript
+- Vite
 - Vitest + React Testing Library
 
----
+## Configuration
 
-## Prerequisites
+The backend base URL is read from:
 
-- Node.js 18+
-- `backend-java` running on port `8080`
-
----
-
-## Install
-
-```bash
-npm install
-```
-
----
-
-## Dev
-
-```bash
-npm run dev
-```
-
-Opens at [http://localhost:5173](http://localhost:5173).
-
-With explicit host binding:
-
-```bash
-npm run dev -- --host 127.0.0.1
-```
-
----
-
-## Build
-
-```bash
-npm run build
-```
-
----
-
-## Typecheck
-
-```bash
-npm run typecheck
-```
-
----
-
-## Test
-
-```bash
-npm test -- --run
-```
-
----
-
-## API Base URL Configuration
-
-The frontend reads the backend base URL from:
-
-```
+```text
 VITE_API_BASE_URL=http://localhost:8080
 ```
 
-If the variable is not set, it defaults to `http://localhost:8080`.
+When unset, the frontend defaults to `http://localhost:8080`.
 
-To override, create a `.env.local` file in `frontend/`:
+Do not set `VITE_API_BASE_URL` to `/api`; requests already include `/api/...`.
 
-```
-VITE_API_BASE_URL=http://your-backend-host:8080
-```
+## Local Development
 
-> **Important:** Do not set `VITE_API_BASE_URL` to `/api`. This would cause requests to become `/api/api/...` and fail. Always use the full `http://host:port` form.
-
----
-
-## Required Backend
-
-Start backend (mock mode default):
+Start backend first:
 
 ```bash
 cd backend-java
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 ```
 
-Health check:
+Start frontend:
 
 ```bash
-curl http://localhost:8080/api/health
+cd frontend
+npm install
+npm run dev -- --host 127.0.0.1
 ```
 
----
+Open:
 
-## Basic User Flow
+```text
+http://localhost:5173
+```
 
-1. Open [http://localhost:5173](http://localhost:5173).
-2. Check backend status in the sidebar **Status** widget and the workspace toolbar chip.
-3. Use sidebar nav or toolbar quick pills to expand **Run Review**, **Review History**, or **Findings** (panels start collapsed for a cleaner workspace).
-4. Enter Repository URL and Pull Request Number.
-5. Optionally paste a unified diff for diff-grounded review.
-6. Click **Run Review**.
-7. The created task appears in Review History; findings display when **Findings** is expanded.
-8. Click any task to reload and inspect full review results.
-9. Toggle light/dark mode from the sun/moon control in the top window chrome.
+## User Flow
 
----
+1. Open the workspace.
+2. Confirm backend status and MiMo readiness.
+3. Enter repository URL and PR number.
+4. Optionally paste unified diff.
+5. Run review.
+6. Inspect summary, findings, trace, and comment previews.
+7. Select previews to publish.
+8. Confirm publish action.
 
-## Create Form Behavior
+If `diffText` is blank, the backend uses `GITHUB_PR` mode and requires
+`GITHUB_TOKEN` to load PR metadata and bounded file patches.
 
-- **Repository URL** and **Pull Request Number** are required.
-- **Optional PR Diff** accepts pasted unified diff text.
-- Leave diff empty to run a metadata-only review.
-- Whitespace-only diff is omitted on submit.
-- Diff over 20,000 characters is blocked client-side (backend is source of truth).
-- Character counter shows current diff length.
+## Scripts
 
----
+```bash
+npm run typecheck
+npm run build
+npm test -- --run
+```
 
-## Review Summary
+## API Surface Used
 
-The detail panel shows:
+- `GET /api/health`
+- `POST /api/review-tasks`
+- `GET /api/review-tasks`
+- `GET /api/review-tasks/{id}`
+- `GET /api/review-runs/{runId}/trace`
+- `GET /api/review-runs/{runId}/comment-previews`
+- `PATCH /api/review-runs/{runId}/comment-previews/selection`
+- `POST /api/review-runs/{runId}/comment-previews/publish-selected`
 
-- **Review Summary** with risk level (HIGH / MEDIUM / LOW / NONE)
-- **Findings** count and severity breakdown
-- **Reviewed Target** (repo URL + PR number)
-- **Provider Source** (Mock Provider or Xiaomi MiMo)
-- Created timestamp
+## Limits
 
----
-
-## Issue Cards
-
-Each finding card displays:
-
-- Severity, category, source, and status badges
-- Title
-- Location (file path + line range)
-- Description
-- Recommendation
-
-Source labels:
-
-- `MOCK` → Mock Provider
-- `MIMO` → Xiaomi MiMo
-
----
-
-## Provider Modes
-
-- **Mock mode (default):** deterministic mock findings, no API key required.
-- **MiMo mode:** configure backend with `MIMO_API_KEY` and `--codereviewx.review.provider=mimo`.
-
-See [backend-java/README.md](../backend-java/README.md) for provider configuration.
-
----
-
-## Known Limitations
-
-- No automatic GitHub PR fetching
-- No GitHub App integration
-- No private repository access
-- No repository clone
-- No full repository analysis or production-grade review claim
-- No PR comment write-back
-- Mock provider is the safe default
-- MiMo mode requires local environment configuration
-- No visual diff viewer or syntax highlighting
-- No RAG
-- No MCP
-- No Function Calling
-- No Memory system
-- No production auth/team model
-
----
-
-## Post-MVP Roadmap (Future Work Only)
-
-1. GitHub PR ingestion
-2. Project rules / review policy
-3. RAG / knowledge context
-4. Function Calling / tool use
-5. MCP integration
-6. Memory system
-7. PR comment workflow
-
-These are documented as future directions only — not implemented in the MVP.
-
----
-
-## Data Persistence
-
-Review tasks and issues are persisted in the backend H2 database. Data survives backend restarts.
+- No direct GitHub or provider calls from the browser.
+- No user login or team model.
+- No visual diff viewer yet.
+- No route-based deep linking yet.
+- No direct raw prompt, raw model output, or raw full diff display.

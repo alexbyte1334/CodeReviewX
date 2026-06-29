@@ -16,7 +16,7 @@ The static scan runs secret scan, dependency hygiene scan, and Semgrep when avai
 
 - `.env`
 - `.env.*` except `.env.example`
-- `docs/mimo_api_key.md`
+- local key notes or credential scratch files
 - `backend-java/data/`
 - `frontend/dist/`
 - `backend-java/target/`
@@ -80,4 +80,4 @@ Before pushing to GitHub:
 4. Run `npm run typecheck`, `npm run build`, and `npm test -- --run` in `frontend/`.
 5. Run `node scripts/run-evals.mjs`.
 6. Confirm `git status --short` does not include ignored local secrets or generated build output.
-7. Confirm README and roadmap describe only implemented capabilities as implemented.
+7. Confirm README and public docs describe only implemented capabilities as implemented.

@@ -27,7 +27,6 @@ const excludedFiles = new Set([
   '.env.local',
   '.env.development',
   '.env.production',
-  'docs/mimo_api_key.md',
 ]);
 
 const placeholderValues = [
