@@ -4,6 +4,7 @@ const SOURCE_LABELS: Record<IssueSource, string> = {
   MOCK: 'Historical Mock',
   MIMO: 'Xiaomi MiMo',
   SEMGREP: 'Semgrep',
+  DEPENDENCY: 'Dependency Scan',
   LLM: 'LLM',
   MANUAL: 'Manual',
 };

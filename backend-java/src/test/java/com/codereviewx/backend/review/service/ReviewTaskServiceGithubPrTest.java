@@ -5,6 +5,9 @@ import com.codereviewx.backend.review.dto.ReviewTaskResponse;
 import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.enums.ReviewTaskStatus;
 import com.codereviewx.backend.review.enums.ToolTraceStatus;
+import com.codereviewx.backend.review.github.GithubRepositoryContentHttpClient;
+import com.codereviewx.backend.review.github.GithubRepositoryFileContent;
+import com.codereviewx.backend.review.github.GithubRepositoryFileContentHttpResponse;
 import com.codereviewx.backend.review.github.GithubPrDiff;
 import com.codereviewx.backend.review.github.GithubPrDiffFile;
 import com.codereviewx.backend.review.github.GithubPrDiffLoadResult;
@@ -75,6 +78,9 @@ class ReviewTaskServiceGithubPrTest {
     private GithubPrDiffLoader githubPrDiffLoader;
 
     @MockBean
+    private GithubRepositoryContentHttpClient githubRepositoryContentHttpClient;
+
+    @MockBean
     private XiaomiMiMoClient xiaomiMiMoClient;
 
     @BeforeEach
@@ -95,6 +101,26 @@ class ReviewTaskServiceGithubPrTest {
                 .thenReturn(GithubPrMetadataLoadResult.success(metadata()));
         when(githubPrDiffLoader.load(metadata()))
                 .thenReturn(GithubPrDiffLoadResult.success(diff()));
+        when(githubRepositoryContentHttpClient.fetchFileContent(
+                eq("https://api.github.com"),
+                eq(new com.codereviewx.backend.review.github.GithubRepositoryRef("example", "repo")),
+                eq("src/App.ts"),
+                eq("head-sha"),
+                eq("test-token"),
+                eq(20),
+                eq(12000)
+        )).thenReturn(new GithubRepositoryFileContentHttpResponse(
+                200,
+                false,
+                new GithubRepositoryFileContent(
+                        "src/App.ts",
+                        "export function readPassword(request) {\n"
+                                + "  return request.query.password;\n"
+                                + "}\n",
+                        79,
+                        false
+                )
+        ));
 
         ReviewTaskResponse response = service.createTask(githubPrRequest());
 
@@ -102,20 +128,24 @@ class ReviewTaskServiceGithubPrTest {
         assertThat(response.getReviewMode()).isEqualTo(ReviewMode.GITHUB_PR);
         assertThat(response.getErrorCode()).isNull();
         assertThat(response.getErrorMessage()).isNull();
-        assertThat(response.getIssues()).hasSize(3);
+        assertThat(response.getIssues()).hasSize(4);
+        assertThat(response.getIssues()).anySatisfy(issue -> {
+            assertThat(issue.getSource().name()).isEqualTo("SEMGREP");
+            assertThat(issue.getTitle()).contains("Secret-like request parameter");
+        });
         assertThat(response.getLatestRunId()).isNotNull();
         assertThat(response.getIngestionSummary()).isNotNull();
         assertThat(response.getIngestionSummary().getHeadSha()).isEqualTo("head-sha");
         assertThat(response.getIngestionSummary().getBaseSha()).isEqualTo("base-sha");
         assertThat(response.getIngestionSummary().getChangedFiles()).isEqualTo(3);
-        assertThat(response.getTraceSummary().getToolCount()).isEqualTo(7);
+        assertThat(response.getTraceSummary().getToolCount()).isEqualTo(9);
         assertThat(response.getTraceSummary().getFailedToolCount()).isEqualTo(0);
         assertThat(response.getTraceSummary().isProviderFallback()).isFalse();
-        assertThat(response.getCommentPreviewCount()).isEqualTo(3);
+        assertThat(response.getCommentPreviewCount()).isEqualTo(4);
 
         List<ReviewToolTraceEntity> traces =
                 toolTraceRepository.findByReviewRunIdOrderBySequenceNumberAsc(response.getLatestRunId());
-        assertThat(traces).hasSize(7);
+        assertThat(traces).hasSize(9);
         assertThat(traces.get(0).getToolName()).isEqualTo(GithubPrMetadataLoader.TOOL_NAME);
         assertThat(traces.get(0).getStatus()).isEqualTo(ToolTraceStatus.SUCCESS);
         assertThat(traces.get(0).getInputSummary()).contains("tokenConfigured=true");
@@ -125,16 +155,22 @@ class ReviewTaskServiceGithubPrTest {
         assertThat(traces.get(1).getStatus()).isEqualTo(ToolTraceStatus.SUCCESS);
         assertThat(traces.get(1).getOutputSummary()).contains("fileCount=1");
         assertThat(traces.get(1).getInputSummary()).doesNotContain("test-token");
-        assertThat(traces.get(2).getToolName()).isEqualTo("mimo.ai1.plan");
-        assertThat(traces.get(3).getToolName()).isEqualTo("mimo.ai2.execute");
-        assertThat(traces.get(4).getToolName()).isEqualTo("mimo.ai1.gate");
-        assertThat(traces.get(5).getToolName()).isEqualTo("issue.generate");
-        assertThat(traces.get(6).getToolName()).isEqualTo("comment.preview.build");
-        assertThat(traces.subList(2, 7))
+        assertThat(traces.get(2).getToolName()).isEqualTo(RepositoryContextIndexService.TOOL_NAME);
+        assertThat(traces.get(2).getOutputSummary()).contains("Indexed 1 repository context file");
+        assertThat(traces.get(3).getToolName()).isEqualTo(ReviewStaticAnalysisService.TOOL_NAME);
+        assertThat(traces.get(3).getOutputSummary()).contains("1 Semgrep/dependency finding");
+        assertThat(traces.get(4).getToolName()).isEqualTo("mimo.ai1.plan");
+        assertThat(traces.get(5).getToolName()).isEqualTo("mimo.ai2.execute");
+        assertThat(traces.get(6).getToolName()).isEqualTo("mimo.ai1.gate");
+        assertThat(traces.get(7).getToolName()).isEqualTo("issue.generate");
+        assertThat(traces.get(8).getToolName()).isEqualTo("comment.preview.build");
+        assertThat(traces.subList(2, 9))
                 .allSatisfy(trace -> {
                     assertThat(trace.getStatus()).isEqualTo(ToolTraceStatus.SUCCESS);
                     assertThat(trace.getInputSummary()).isNull();
-                    assertThat(trace.getOutputSummary()).doesNotContain("request.query.password");
+                    if (!RepositoryContextIndexService.TOOL_NAME.equals(trace.getToolName())) {
+                        assertThat(trace.getOutputSummary()).doesNotContain("request.query.password");
+                    }
                     assertThat(trace.getOutputSummary()).doesNotContain("test-token");
                     assertThat(trace.getDurationMs()).isNotNull();
                 });
@@ -166,7 +202,7 @@ class ReviewTaskServiceGithubPrTest {
                     assertThat(trace.getFindingCount()).isEqualTo(3);
                 });
         assertThat(commentPreviewRepository.findByReviewRunIdOrderByIdAsc(response.getLatestRunId()))
-                .hasSize(3)
+                .hasSize(4)
                 .allSatisfy(preview -> assertThat(preview.getDraftBody()).contains("Suggestion:"));
 
         ArgumentCaptor<String> executorPrompt = ArgumentCaptor.forClass(String.class);
@@ -174,6 +210,7 @@ class ReviewTaskServiceGithubPrTest {
                 executorPrompt.capture(), eq("test-executor-key"));
         assertThat(executorPrompt.getValue()).contains("request.query.password");
         assertThat(executorPrompt.getValue()).contains("--- PR DIFF START ---");
+        assertThat(executorPrompt.getValue()).contains("--- REPOSITORY CONTEXT INDEX START ---");
     }
 
     @Test

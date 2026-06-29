@@ -10,17 +10,20 @@ CodeReviewX is a locally runnable AI code review agent MVP for pull request
 review workflows. It demonstrates a complete engineering loop:
 
 1. Create a review task from a GitHub PR or pasted unified diff.
-2. Load bounded GitHub PR metadata and files patch when needed.
-3. Run a Xiaomi MiMo dual-agent review workflow.
-4. Normalize approved model output into structured issues.
-5. Generate local comment previews.
-6. Let the user select and explicitly confirm comments before publishing them
+2. Load bounded GitHub PR metadata, files patch, and changed-file context when
+   needed.
+3. Run request-time Semgrep-style and dependency hygiene finding checks.
+4. Run a Xiaomi MiMo dual-agent review workflow.
+5. Normalize approved model output and static findings into structured issues.
+6. Generate local comment previews.
+7. Let the user select and explicitly confirm comments before publishing them
    back to GitHub.
-7. Preserve safe trace, snapshot, and provider summaries for observability.
+8. Preserve safe trace, snapshot, and provider summaries for observability.
 
 The project is not positioned as a production SaaS. It intentionally omits
-multi-user authentication, GitHub App installation, queue workers, repository
-clone/indexing, RAG, and production database infrastructure.
+multi-user authentication, GitHub App installation, queue workers, full
+repository clone/indexing, semantic/vector RAG, and production database
+infrastructure.
 
 ## 2. Current Runtime Shape
 
@@ -54,10 +57,14 @@ extraction point for heavier repository analysis or provider workers.
 - `GITHUB_PR` mode when no manual `diffText` is provided.
 - GitHub PR metadata loader.
 - GitHub PR files patch loader.
+- Bounded changed-file repository context index at PR head SHA.
 - Bounded ingestion:
   - changed files: 50 by default
   - total diff bytes: 512000 by default
   - per-file patch bytes: 20000 by default
+  - context files: 8 by default
+  - per-file context bytes: 12000 by default
+  - total context bytes: 48000 by default
 - Sanitized input snapshot persistence; raw full diff and tokens are not
   exposed through public APIs.
 
@@ -66,6 +73,8 @@ extraction point for heavier repository analysis or provider workers.
 ```text
 github.pr.metadata.load
   -> github.pr.diff.load
+  -> repository.context.index
+  -> static.analysis.findings
   -> mimo.ai1.plan
   -> mimo.ai2.execute
   -> mimo.ai1.gate
@@ -77,6 +86,8 @@ github.pr.metadata.load
 - AI-2 Executor performs the review.
 - AI-1 Gatekeeper accepts or rejects the candidate review.
 - MiMoIssueGenerator maps approved JSON into deterministic structured issues.
+- Request-time static findings are persisted with `SEMGREP` or `DEPENDENCY`
+  source provenance.
 - New tasks do not silently fall back to mock results.
 
 ### Human-in-the-Loop Publish
@@ -106,6 +117,8 @@ github.pr.metadata.load
 - Secret scan.
 - Dependency hygiene scan.
 - Semgrep rules via `.semgrep.yml`.
+- Request-time lightweight Semgrep-style and dependency hygiene finding
+  services.
 
 ## 4. Security Boundaries
 
@@ -157,25 +170,29 @@ Use this project to explain:
 - why raw model output should not directly mutate application state;
 - how trace and snapshot tables make the review workflow observable without
   leaking secrets;
+- why the project uses a bounded changed-file context index now, and what is
+  still required for full semantic repository understanding;
 - how human confirmation reduces risk before external side effects;
 - how bounded GitHub diff loading controls cost, latency, and privacy.
 
 ## 7. Next Engineering Steps
 
-### Repository Context Loader
+### Full Repository Context Worker
 
-Load limited neighboring context for touched files, related tests, and config
-files. Keep strict byte limits and store only sanitized summaries.
+Extend the current changed-file context index into a separate worker that can
+clone or checkout repositories safely, index related files/tests/config, and
+return sanitized bounded context to the review pipeline.
 
 ### Live Eval Capture
 
 Capture sanitized real backend/MiMo outputs into an ignored or reviewed eval
 artifact folder, then compare prompt/model changes over time.
 
-### Static Analysis in Review Runs
+### Richer Static Analysis in Review Runs
 
-Move Semgrep or dependency findings from offline tooling into the persisted
-review task pipeline as a separate source with clear provenance.
+Replace the current lightweight heuristics with a controlled external Semgrep
+and dependency-analysis worker. Preserve the existing source provenance and
+safe-summary rules.
 
 ### Production Readiness
 

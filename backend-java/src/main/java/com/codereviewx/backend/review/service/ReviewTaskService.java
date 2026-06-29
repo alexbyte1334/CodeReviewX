@@ -8,6 +8,7 @@ import com.codereviewx.backend.review.enums.ReviewTaskStatus;
 import com.codereviewx.backend.review.enums.ToolTraceStatus;
 import com.codereviewx.backend.review.exception.ReviewRequestInvalidException;
 import com.codereviewx.backend.review.exception.ReviewTaskNotFoundException;
+import com.codereviewx.backend.review.github.GithubPrDiff;
 import com.codereviewx.backend.review.github.GithubPrMetadataLoadResult;
 import com.codereviewx.backend.review.github.GithubPrDiffLoadResult;
 import com.codereviewx.backend.review.github.GithubPrDiffLoader;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +47,8 @@ public class ReviewTaskService {
     private final ReviewInputSnapshotService reviewInputSnapshotService;
     private final CommentPreviewBuilder commentPreviewBuilder;
     private final ReviewTaskResponseAssembler responseAssembler;
+    private final RepositoryContextIndexService repositoryContextIndexService;
+    private final ReviewStaticAnalysisService staticAnalysisService;
 
     public ReviewTaskService(ReviewTaskRepository reviewTaskRepository,
                              ReviewIssueRepository reviewIssueRepository,
@@ -55,7 +59,9 @@ public class ReviewTaskService {
                              ReviewTraceRecorder reviewTraceRecorder,
                              ReviewInputSnapshotService reviewInputSnapshotService,
                              CommentPreviewBuilder commentPreviewBuilder,
-                             ReviewTaskResponseAssembler responseAssembler) {
+                             ReviewTaskResponseAssembler responseAssembler,
+                             RepositoryContextIndexService repositoryContextIndexService,
+                             ReviewStaticAnalysisService staticAnalysisService) {
         this.reviewTaskRepository = reviewTaskRepository;
         this.reviewIssueRepository = reviewIssueRepository;
         this.reviewRunRepository = reviewRunRepository;
@@ -66,6 +72,8 @@ public class ReviewTaskService {
         this.reviewInputSnapshotService = reviewInputSnapshotService;
         this.commentPreviewBuilder = commentPreviewBuilder;
         this.responseAssembler = responseAssembler;
+        this.repositoryContextIndexService = repositoryContextIndexService;
+        this.staticAnalysisService = staticAnalysisService;
     }
 
     /**
@@ -101,7 +109,11 @@ public class ReviewTaskService {
             return completeGithubPrIngestion(savedTask, savedRun, normalizedProvider);
         }
 
-        return completeProviderReview(savedTask, savedRun, normalizedDiffText, normalizedProvider);
+        List<ReviewFinding> staticFindings = staticAnalysisService.analyze(
+                new GithubPrDiff(normalizedDiffText, null, null, false, Collections.emptyList()),
+                RepositoryContextIndexResult.empty()
+        );
+        return completeProviderReview(savedTask, savedRun, normalizedDiffText, normalizedProvider, staticFindings);
     }
 
     private void validateCreateRequest(CreateReviewTaskRequest request) {
@@ -171,7 +183,44 @@ public class ReviewTaskService {
 
         reviewInputSnapshotService.persistGithubPrSnapshot(
                 run.getId(), task, result.getMetadata(), diffResult.getDiff(), diffFinishedAt);
-        return completeProviderReview(task, run, diffResult.getDiff().diffText(), normalizedProvider);
+
+        LocalDateTime contextStartedAt = LocalDateTime.now();
+        RepositoryContextIndexResult repositoryContext =
+                repositoryContextIndexService.index(result.getMetadata(), diffResult.getDiff());
+        LocalDateTime contextFinishedAt = LocalDateTime.now();
+        reviewTraceRecorder.recordToolTrace(run.getId(),
+                reviewTraceRecorder.countToolTraces(run.getId()) + 1,
+                RepositoryContextIndexService.TOOL_NAME,
+                ToolTraceStatus.SUCCESS,
+                "Indexed " + repositoryContext.fileCount()
+                        + " repository context file(s), contextBytes=" + repositoryContext.contextBytes()
+                        + ", truncated=" + repositoryContext.truncated() + ".",
+                null,
+                null,
+                contextStartedAt,
+                contextFinishedAt);
+
+        LocalDateTime staticStartedAt = LocalDateTime.now();
+        List<ReviewFinding> staticFindings = staticAnalysisService.analyze(diffResult.getDiff(), repositoryContext);
+        LocalDateTime staticFinishedAt = LocalDateTime.now();
+        reviewTraceRecorder.recordToolTrace(run.getId(),
+                reviewTraceRecorder.countToolTraces(run.getId()) + 1,
+                ReviewStaticAnalysisService.TOOL_NAME,
+                ToolTraceStatus.SUCCESS,
+                "Static analysis produced " + staticFindings.size()
+                        + " Semgrep/dependency finding(s).",
+                null,
+                null,
+                staticStartedAt,
+                staticFinishedAt);
+
+        return completeProviderReview(
+                task,
+                run,
+                augmentReviewContext(diffResult.getDiff().diffText(), repositoryContext),
+                normalizedProvider,
+                staticFindings
+        );
     }
 
     private ReviewTaskResponse completeFailedGithubPrIngestion(ReviewTaskEntity task,
@@ -201,7 +250,8 @@ public class ReviewTaskService {
     private ReviewTaskResponse completeProviderReview(ReviewTaskEntity task,
                                                       ReviewRunEntity run,
                                                       String normalizedDiffText,
-                                                      String normalizedProvider) {
+                                                      String normalizedProvider,
+                                                      List<ReviewFinding> supplementalFindings) {
         LocalDateTime reviewStartedAt = LocalDateTime.now();
         run.setStatus(ReviewRunStatus.REVIEWING);
         run.setUpdatedAt(reviewStartedAt);
@@ -235,8 +285,11 @@ public class ReviewTaskService {
         run.setUpdatedAt(reviewFinishedAt);
         reviewRunRepository.save(run);
 
+        List<ReviewFinding> allFindings = new ArrayList<>(providerResult.getFindings());
+        allFindings.addAll(supplementalFindings == null ? Collections.emptyList() : supplementalFindings);
+
         task.setStatus(ReviewTaskStatus.SUCCESS);
-        task.setSummary(buildSummary(task.getPrNumber(), providerResult));
+        task.setSummary(buildSummary(task.getPrNumber(), allFindings));
         task.setRequestedProvider(providerResult.getRequestedProvider());
         task.setProviderUsed(providerResult.getProviderUsed());
         task.setProviderHit(providerResult.isProviderHit());
@@ -245,7 +298,7 @@ public class ReviewTaskService {
         ReviewTaskEntity completedTask = reviewTaskRepository.save(task);
 
         Long runId = run.getId();
-        List<ReviewIssueEntity> issueEntities = providerResult.getFindings().stream()
+        List<ReviewIssueEntity> issueEntities = allFindings.stream()
                 .map(finding -> toIssueEntity(finding, completedTask, runId, reviewFinishedAt))
                 .collect(Collectors.toList());
         reviewIssueRepository.saveAll(issueEntities);
@@ -317,6 +370,13 @@ public class ReviewTaskService {
         return "mimo";
     }
 
+    private String augmentReviewContext(String diffText, RepositoryContextIndexResult repositoryContext) {
+        if (repositoryContext == null || !repositoryContext.hasContext()) {
+            return diffText;
+        }
+        return diffText + "\n\n" + repositoryContext.contextText();
+    }
+
     private ReviewMode resolveReviewMode(CreateReviewTaskRequest request, String normalizedDiffText) {
         if (request.getReviewMode() != null) {
             return request.getReviewMode();
@@ -324,8 +384,8 @@ public class ReviewTaskService {
         return normalizedDiffText != null ? ReviewMode.MANUAL_DIFF : ReviewMode.GITHUB_PR;
     }
 
-    private String buildSummary(int prNumber, ReviewProviderResult providerResult) {
-        if (providerResult.getFindings().isEmpty()) {
+    private String buildSummary(int prNumber, List<ReviewFinding> findings) {
+        if (findings == null || findings.isEmpty()) {
             return "Review completed for PR #" + prNumber + " with no findings from the available context.";
         }
         return "Review completed for PR #" + prNumber + " with generated findings.";

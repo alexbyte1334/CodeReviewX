@@ -4,6 +4,7 @@ public enum IssueSource {
     MOCK,
     MIMO,
     SEMGREP,
+    DEPENDENCY,
     LLM,
     MANUAL
 }

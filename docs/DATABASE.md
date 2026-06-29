@@ -93,7 +93,7 @@ Important fields:
 | `issue_key` | public stable id such as `MIMO-ISSUE-1` |
 | `severity` | `HIGH`, `MEDIUM`, `LOW` |
 | `category` | bug/security/performance/maintainability/style/test |
-| `source` | currently `MIMO` for new AI findings |
+| `source` | `MIMO`, `SEMGREP`, or `DEPENDENCY` finding provenance |
 | `status` | currently `OPEN`; reserved for future workflows |
 | `file_path` | target file path |
 | `start_line` / `end_line` | target line range |
@@ -120,6 +120,8 @@ Stores ordered execution events such as:
 ```text
 github.pr.metadata.load
 github.pr.diff.load
+repository.context.index
+static.analysis.findings
 mimo.ai1.plan
 mimo.ai2.execute
 mimo.ai1.gate
