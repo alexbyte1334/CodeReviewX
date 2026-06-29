@@ -453,6 +453,25 @@ class ReviewTaskServiceTest {
     }
 
     @Test
+    void createTask_manualDiff_mergesStaticAnalysisFindings() {
+        CreateReviewTaskRequest request = new CreateReviewTaskRequest();
+        request.setRepoUrl("https://github.com/example/repo");
+        request.setPrNumber(10);
+        request.setDiffText("diff --git a/src/App.ts b/src/App.ts\n"
+                + "@@ -1 +1 @@\n"
+                + "+const password = request.query.password;\n");
+
+        ReviewTaskResponse response = service.createTask(request);
+
+        assertThat(response.getIssues()).hasSize(4);
+        assertThat(response.getIssues()).anySatisfy(issue -> {
+            assertThat(issue.getSource()).isEqualTo(IssueSource.SEMGREP);
+            assertThat(issue.getTitle()).contains("Secret-like request parameter");
+        });
+        assertThat(reviewIssueRepository.findByReviewTaskIdOrderByIdAsc(response.getId())).hasSize(4);
+    }
+
+    @Test
     void createTask_withoutDiffText_returnsGithubAuthMissing() {
         CreateReviewTaskRequest request = new CreateReviewTaskRequest();
         request.setRepoUrl("https://github.com/example/repo");

@@ -43,10 +43,13 @@ CodeReviewX addresses these problems:
 - Optional pasted unified diff review.
 - Default GitHub PR mode when no diff is supplied.
 - GitHub PR metadata and bounded files patch loading.
+- Bounded changed-file repository context index for GitHub PR mode.
 - Xiaomi MiMo dual-agent review:
   - AI-1 Planner,
   - AI-2 Executor,
   - AI-1 Gatekeeper.
+- Request-time Semgrep-style and dependency hygiene findings merged into review
+  task results with explicit source provenance.
 - Deterministic issue generation from approved structured output.
 - Persisted review tasks, runs, issues, input snapshots, tool traces, provider
   traces, and comment previews.
@@ -62,8 +65,9 @@ CodeReviewX addresses these problems:
 - Production secret management.
 - Full repository clone and cross-file semantic analysis.
 - Queue workers, retries, cancellation, and progress streaming.
-- RAG, durable memory, MCP, or function-calling tool orchestration.
-- Semgrep findings automatically merged into review task results.
+- Semantic/vector RAG, durable memory, MCP, or function-calling tool
+  orchestration.
+- External Semgrep execution as a long-running review worker.
 - Production database deployment.
 
 ## 5. User Stories
@@ -88,6 +92,7 @@ Acceptance:
 
 - missing `GITHUB_TOKEN` fails with a clear `GITHUB_AUTH_MISSING` error,
 - PR metadata and files patch are represented in sanitized snapshots,
+- changed-file contents are fetched under strict file and byte limits,
 - overly large or unavailable diffs fail or truncate according to configured
   limits.
 
@@ -132,8 +137,8 @@ Reasonable next steps:
 
 1. Async review execution with status polling and retries.
 2. GitHub App or OAuth-based installation.
-3. Repository context loader for broader code understanding.
-4. Semgrep findings merged into persisted review results.
+3. Full-repository semantic index for broader code understanding.
+4. External Semgrep/dependency worker with richer rule coverage.
 5. Production database and deployment profile.
 6. Role-based auth and team workflows.
-7. Optional RAG over project rules and historical review decisions.
+7. Optional vector RAG over project rules and historical review decisions.

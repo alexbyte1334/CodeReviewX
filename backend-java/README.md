@@ -1,6 +1,6 @@
 # backend-java
 
-> Current Status: MiMo dual-AI review with manual diff, GitHub PR metadata/diff ingestion, and selected comment preview publishing.
+> Current Status: MiMo dual-AI review with manual diff, GitHub PR metadata/diff ingestion, bounded changed-file context indexing, request-time static findings, and selected comment preview publishing.
 
 ## Current State
 
@@ -23,6 +23,11 @@ This module contains the Spring Boot 3 + Java 17 + Maven backend service for Cod
   - `ConfigurableReviewProvider` — routes review requests to the configured provider
   - `XiaomiMiMoReviewProvider` — Xiaomi MiMo AI provider (`review/pipeline/provider/mimo/`)
   - `ReviewPromptBuilder`, `XiaomiMiMoClient`, `XiaomiMiMoFindingParser`
+- GitHub PR context services:
+  - `GithubPrMetadataLoader`
+  - `GithubPrDiffLoader`
+  - `RepositoryContextIndexService`
+  - `ReviewStaticAnalysisService`
 - `ApiResponse<T>` response wrapper
 - Spring Data JPA repositories:
   - `ReviewTaskRepository`
@@ -45,8 +50,11 @@ This module contains the Spring Boot 3 + Java 17 + Maven backend service for Cod
   - `ReviewTaskResponse`
   - `ReviewIssueResponse`
   - `IssueSummaryResponse`
-- Issue sources: new review tasks use `MIMO`; `SEMGREP`, `LLM`, and `MANUAL`
-  are reserved for future integrations.
+- Issue sources:
+  - `MIMO` for MiMo dual-agent findings,
+  - `SEMGREP` for request-time Semgrep-style changed-line findings,
+  - `DEPENDENCY` for request-time dependency hygiene findings from indexed
+    changed files.
 - Backend-computed `issueSummary`
 - `ReviewTaskResponse.riskLevel` derived from `issueSummary.riskLevel`
 
@@ -84,6 +92,13 @@ Environment variables (optional overrides):
 | `MIMO_BASE_URL` | MiMo API base URL |
 | `MIMO_MODEL` | MiMo model name |
 | `MIMO_TIMEOUT_SECONDS` | MiMo HTTP connect/read timeout (default `60`) |
+| `GITHUB_TOKEN` | GitHub PR metadata/diff/context read and comment publish token |
+| `GITHUB_MAX_CHANGED_FILES` | GitHub PR diff maximum changed files (default `50`) |
+| `GITHUB_MAX_DIFF_BYTES` | GitHub PR diff maximum bytes (default `512000`) |
+| `GITHUB_PER_FILE_PATCH_MAX_BYTES` | Single patch truncation threshold (default `20000`) |
+| `GITHUB_MAX_CONTEXT_FILES` | Changed-file context maximum files (default `8`) |
+| `GITHUB_PER_FILE_CONTEXT_MAX_BYTES` | Single context file truncation threshold (default `12000`) |
+| `GITHUB_MAX_CONTEXT_BYTES` | Total context index byte limit (default `48000`) |
 
 ### Xiaomi MiMo mode
 
@@ -106,6 +121,8 @@ ReviewTaskService.createTask
   -> normalize optional diffText
   -> persist ReviewTaskEntity (optional diffText)
   -> GITHUB_PR mode: github.pr.metadata.load + github.pr.diff.load
+                    + repository.context.index
+  -> static.analysis.findings
   -> ReviewPipelineService.run(ReviewContext with manual or GitHub-loaded diff)
   -> ConfigurableReviewProvider
       -> XiaomiMiMoReviewProvider
@@ -123,7 +140,11 @@ Current review input behavior:
 - Blank or whitespace-only `diffText` is treated as absent.
 - Maximum `diffText` length is 20000 characters.
 - MiMo prompt uses pasted diff as primary review context when provided.
-- GITHUB_PR mode uses the auto-loaded bounded GitHub diff when `diffText` is absent.
+- GITHUB_PR mode uses the auto-loaded bounded GitHub diff and changed-file context when `diffText` is absent.
+- MANUAL_DIFF mode can produce Semgrep-style static findings from changed
+  diff lines.
+- GITHUB_PR mode can produce Semgrep-style findings from changed diff lines and
+  dependency hygiene findings from indexed changed files.
 - Public API responses do not expose raw `diffText`, prompts, or model output.
 - Public API responses do not expose GitHub token, Authorization header, raw full diff, or `snapshotJson`.
 - `GET /api/review-runs/{runId}/trace` exposes sanitized step status/timing only.
@@ -132,12 +153,13 @@ Current review input behavior:
 Current limitations:
 
 - No GitHub App integration.
-- No repository is cloned or parsed.
+- No repository is cloned or fully parsed.
 - No full repository analysis or production-grade review claim.
 - No visual diff viewer or syntax highlighting.
-- No RAG, MCP, Function Calling, or memory system.
+- No semantic/vector RAG, MCP, Function Calling, or memory system.
 - No production auth or team model.
-- No Semgrep process is executed.
+- No external Semgrep process is executed in the request path; the pipeline uses
+  lightweight built-in Semgrep-style heuristics.
 - No status update, resolve, false-positive, or human review workflow exists.
 
 Successful MiMo reviews persist normalized issue keys such as `MIMO-ISSUE-1`; public responses do not expose internal database ids.
@@ -286,9 +308,9 @@ Expected response:
 
 ## Module Boundaries
 
-- Does: provide REST API, manage ReviewTask and ReviewRun lifecycle, persist tasks/issues/traces/snapshots/comment previews, accept optional pasted diff context, load bounded GitHub PR metadata and files patch, run the Xiaomi MiMo dual-agent provider, and publish selected comment previews after explicit user confirmation.
-- Does not: install a GitHub App, clone repositories, perform full repository analysis, execute Semgrep inside the review task pipeline, or expose provider internals, raw full diff, prompts, model output, GitHub token, or MiMo keys through the public API.
-- Does not: provide RAG/MCP/Function Calling/memory features, production authentication, team workflows, issue resolution workflows, async queue processing, cancellation, or retry workers.
+- Does: provide REST API, manage ReviewTask and ReviewRun lifecycle, persist tasks/issues/traces/snapshots/comment previews, accept optional pasted diff context, load bounded GitHub PR metadata/files patch/changed-file context, run request-time lightweight static finding checks, run the Xiaomi MiMo dual-agent provider, and publish selected comment previews after explicit user confirmation.
+- Does not: install a GitHub App, clone repositories, perform full repository analysis, execute the external Semgrep binary in the request path, or expose provider internals, raw full diff, prompts, model output, GitHub token, or MiMo keys through the public API.
+- Does not: provide semantic/vector RAG, MCP/Function Calling/memory features, production authentication, team workflows, issue resolution workflows, async queue processing, cancellation, or retry workers.
 
 ## Production Expansion Notes
 

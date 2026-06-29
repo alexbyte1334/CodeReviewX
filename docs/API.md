@@ -86,7 +86,8 @@ Mode resolution:
 3. Otherwise the backend uses `GITHUB_PR`.
 
 `MANUAL_DIFF` requires non-blank `diffText`. `GITHUB_PR` requires a configured
-`GITHUB_TOKEN` so the backend can load PR metadata and bounded file patches.
+`GITHUB_TOKEN` so the backend can load PR metadata, bounded file patches, and
+bounded changed-file repository context.
 
 Response:
 
@@ -125,6 +126,14 @@ Response:
 
 The response does not expose raw `diffText`, GitHub token, raw full diff, raw
 prompt, or raw model output.
+
+Issue `source` values currently include:
+
+| Source | Meaning |
+|---|---|
+| `MIMO` | MiMo dual-agent finding after gate approval |
+| `SEMGREP` | request-time Semgrep-style changed-line finding |
+| `DEPENDENCY` | request-time dependency hygiene finding from indexed files |
 
 ### List Review Tasks
 
@@ -174,6 +183,8 @@ Successful GitHub PR runs usually include:
 ```text
 github.pr.metadata.load
 github.pr.diff.load
+repository.context.index
+static.analysis.findings
 mimo.ai1.plan
 mimo.ai2.execute
 mimo.ai1.gate

@@ -11,6 +11,9 @@ public class GithubProperties {
     private int maxChangedFiles = 50;
     private int maxDiffBytes = 512000;
     private int perFilePatchMaxBytes = 20000;
+    private int maxContextFiles = 8;
+    private int perFileContextMaxBytes = 12000;
+    private int maxContextBytes = 48000;
 
     public String getApiBaseUrl() {
         return apiBaseUrl;
@@ -60,6 +63,30 @@ public class GithubProperties {
         this.perFilePatchMaxBytes = perFilePatchMaxBytes;
     }
 
+    public int getMaxContextFiles() {
+        return maxContextFiles;
+    }
+
+    public void setMaxContextFiles(int maxContextFiles) {
+        this.maxContextFiles = maxContextFiles;
+    }
+
+    public int getPerFileContextMaxBytes() {
+        return perFileContextMaxBytes;
+    }
+
+    public void setPerFileContextMaxBytes(int perFileContextMaxBytes) {
+        this.perFileContextMaxBytes = perFileContextMaxBytes;
+    }
+
+    public int getMaxContextBytes() {
+        return maxContextBytes;
+    }
+
+    public void setMaxContextBytes(int maxContextBytes) {
+        this.maxContextBytes = maxContextBytes;
+    }
+
     public boolean hasToken() {
         return token != null && !token.isBlank();
     }
@@ -73,6 +100,9 @@ public class GithubProperties {
                 + ", maxChangedFiles=" + maxChangedFiles
                 + ", maxDiffBytes=" + maxDiffBytes
                 + ", perFilePatchMaxBytes=" + perFilePatchMaxBytes
+                + ", maxContextFiles=" + maxContextFiles
+                + ", perFileContextMaxBytes=" + perFileContextMaxBytes
+                + ", maxContextBytes=" + maxContextBytes
                 + '}';
     }
 }

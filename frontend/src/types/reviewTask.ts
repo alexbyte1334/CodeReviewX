@@ -16,7 +16,7 @@ export type IssueCategory =
   | 'STYLE'
   | 'TEST';
 
-export type IssueSource = 'MOCK' | 'MIMO' | 'SEMGREP' | 'LLM' | 'MANUAL';
+export type IssueSource = 'MOCK' | 'MIMO' | 'SEMGREP' | 'DEPENDENCY' | 'LLM' | 'MANUAL';
 
 export type ReviewProviderChoice = 'mimo';
 export type HistoricalReviewProvider = ReviewProviderChoice | 'mock';

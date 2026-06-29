@@ -10,6 +10,10 @@ describe('providerLabels', () => {
     expect(formatIssueSourceLabel('MIMO')).toBe('Xiaomi MiMo');
   });
 
+  it('maps dependency scan findings', () => {
+    expect(formatIssueSourceLabel('DEPENDENCY')).toBe('Dependency Scan');
+  });
+
   it('resolves single provider source', () => {
     expect(resolveProviderSourceLabel(['MOCK'])).toBe('Historical Mock');
   });

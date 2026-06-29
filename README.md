@@ -7,7 +7,7 @@
 
 面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。
 
-> 当前版本为可本地运行的 MVP：支持手动 diff 上下文、GitHub PR diff 自动拉取、小米 MiMo 双 AI agent、本地 comment preview 与人工确认后发布 GitHub PR 评论。
+> 当前版本为可本地运行的 MVP：支持手动 diff、GitHub PR metadata/diff 自动拉取、changed-file repository context index、小米 MiMo 双 AI agent、Semgrep-style/dependency finding 合并、本地 comment preview 与人工确认后发布 GitHub PR 评论。
 
 ![CodeReviewX review workspace](docs/assets/codereviewx-review-workspace.jpg)
 
@@ -18,7 +18,9 @@
 - **审查任务管理** — 创建、列表、详情查询，任务与问题持久化到本地 H2 数据库
 - **Diff 上下文** — 可选粘贴 unified diff（最大 20,000 字符），为 AI 审查提供代码变更依据
 - **GitHub PR Diff Loader** — `GITHUB_PR` 模式自动拉取 PR files patch，按文件数和 diff 大小做安全限制
+- **Repository Context Index** — `GITHUB_PR` 模式按 PR head SHA 拉取受限 changed-file 内容，作为 lexical repository context 输入 MiMo
 - **MiMo 双 AI agent** — AI-1 负责 task plan 与质量 gate，AI-2 负责执行审查，获批 JSON 由 IssueGenerator 生成 issues
+- **Static Finding 合并** — 手动 diff 与 GitHub PR 变更会生成 Semgrep-style finding；GitHub PR changed-file context 会补充 dependency hygiene finding
 - **Human-in-the-loop 评论发布** — 前端选择 comment preview，确认后调用 GitHub PR review comment API
 - **Provider 命中反馈** — 每次审查返回 `requestedProvider`、`providerUsed`、`providerHit`
 - **Fail fast** — 缺少 MiMo role key、模型 JSON 非法或 gate 拒绝时任务失败，不回退到 Mock
@@ -96,6 +98,9 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 | `GITHUB_MAX_CHANGED_FILES` | GitHub PR diff 最大变更文件数 | `50` |
 | `GITHUB_MAX_DIFF_BYTES` | GitHub PR diff 最大输入大小 | `512000` |
 | `GITHUB_PER_FILE_PATCH_MAX_BYTES` | 单文件 patch 截断阈值 | `20000` |
+| `GITHUB_MAX_CONTEXT_FILES` | repository context index 最大文件数 | `8` |
+| `GITHUB_PER_FILE_CONTEXT_MAX_BYTES` | 单文件 context 内容截断阈值 | `12000` |
+| `GITHUB_MAX_CONTEXT_BYTES` | 单次 review context 总字节上限 | `48000` |
 | `BACKEND_PORT` | 后端端口 | `8080` |
 
 ---
@@ -121,16 +126,84 @@ curl -X POST http://localhost:8080/api/review-tasks \
   }'
 ```
 
-不传 `diffText` 时默认进入 `GITHUB_PR` 模式：后端会使用 `GITHUB_TOKEN` 拉取 PR metadata 与 files patch，保存 sanitized snapshot summary，并把受限 diff 输入 MiMo 双 AI agent。
+不传 `diffText` 时默认进入 `GITHUB_PR` 模式：后端会使用 `GITHUB_TOKEN` 拉取 PR metadata、files patch 和受限 changed-file 内容，保存 sanitized snapshot summary，并把受限 diff + repository context 输入 MiMo 双 AI agent。
 
 **响应要点：**
 
 - 包含 `issueSummary`（总数、各级别计数、`riskLevel`）
 - 含 `requestedProvider`、`providerUsed`、`providerHit`（Provider 是否命中）
-- 每条 `issues[]` 含 `source`（新任务为 `MIMO`）、`severity`、`category`、`title` 等
+- 每条 `issues[]` 含 `source`（`MIMO`、`SEMGREP`、`DEPENDENCY`）、`severity`、`category`、`title` 等
 - **不返回** 原始 `diffText`、GitHub token、完整 PR diff、prompt 或模型原始输出
 
 更多接口细节见 [backend-java/README.md](backend-java/README.md)。
+
+---
+
+## 架构与工作逻辑
+
+```mermaid
+flowchart TD
+    User["Developer / Interview demo"] --> Frontend["React Review Workspace"]
+    Frontend --> Backend["Spring Boot REST API"]
+    Backend --> H2["H2 local database"]
+    Backend --> GitHub["GitHub REST API"]
+    Backend --> MiMo["Xiaomi MiMo API"]
+    GitHub --> Metadata["PR metadata + files patch"]
+    GitHub --> Context["Changed-file content at head SHA"]
+    Metadata --> Backend
+    Context --> Backend
+    Backend --> Static["Semgrep-style + dependency findings"]
+    Backend --> Preview["Local comment previews"]
+    Preview --> Frontend
+    Frontend --> Publish["Explicit publish confirmation"]
+    Publish --> GitHub
+```
+
+核心边界：
+
+- `MANUAL_DIFF`：只使用用户粘贴的 bounded unified diff，额外跑 Semgrep-style 启发式规则。
+- `GITHUB_PR`：读取 PR metadata、files patch，并按文件数/字节限制拉取 changed-file 内容；这是 lightweight lexical context index，不是 full clone，也不是 vector database RAG。
+- `MiMo`：AI-1 生成 plan 和 gate，AI-2 执行审查；只有 gate 通过的 JSON 会被 deterministic IssueGenerator 转为 issue。
+- `Static Analysis`：当前请求链路内置轻量规则，生成 `SEMGREP` / `DEPENDENCY` source 的 persisted issue；项目级 `.semgrep.yml` 仍由本地/CI 静态扫描脚本执行。
+
+## Review Pipeline
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant BE as Backend
+    participant GH as GitHub
+    participant MM as MiMo
+    participant DB as H2
+
+    U->>FE: Create review task
+    FE->>BE: POST /api/review-tasks
+    alt GITHUB_PR mode
+        BE->>GH: github.pr.metadata.load
+        BE->>GH: github.pr.diff.load
+        BE->>GH: repository.context.index
+    else MANUAL_DIFF mode
+        BE->>BE: use pasted bounded diff
+    end
+    BE->>BE: static.analysis.findings
+    BE->>MM: mimo.ai1.plan
+    BE->>MM: mimo.ai2.execute
+    BE->>MM: mimo.ai1.gate
+    BE->>BE: issue.generate
+    BE->>DB: persist issues, traces, snapshots, previews
+    FE->>BE: select previews + confirmed publish
+    BE->>GH: publish selected review comments
+```
+
+## 功能展示
+
+![CodeReviewX review workspace](docs/assets/codereviewx-review-workspace.jpg)
+
+- **Review Workspace**：左侧任务历史，右侧展示风险摘要、issue 列表、agent trace 和 comment preview。
+- **Trace Timeline**：`GITHUB_PR` 成功路径保留 `github.pr.metadata.load -> github.pr.diff.load -> repository.context.index -> static.analysis.findings -> mimo.ai1.plan -> mimo.ai2.execute -> mimo.ai1.gate -> issue.generate -> comment.preview.build`。
+- **Comment Preview**：所有建议先作为本地 draft 保存，只有用户选择并确认后才发布到 GitHub。
+- **Source Provenance**：issue 来源可区分 `MIMO`、`SEMGREP` 和 `DEPENDENCY`，方便面试时解释 AI finding 与静态规则 finding 的边界。
 
 ---
 
@@ -175,18 +248,14 @@ REQUIRE_SEMGREP=1 node scripts/static-scan.mjs
 ```text
 用户提交 repoUrl + prNumber [+ diffText]
         ↓
-GITHUB_PR: github.pr.metadata.load → github.pr.diff.load
+GITHUB_PR: metadata/diff load → repository.context.index
+MANUAL_DIFF: 使用 pasted bounded diff
         ↓
-ReviewPipelineService
+static.analysis.findings
         ↓
-ConfigurableReviewProvider
+MiMo dual-agent: AI-1 plan → AI-2 execute → AI-1 gate
         ↓
-XiaomiMiMoReviewProvider
-   ├─ AI-1 Planner: TaskPlan JSON
-   ├─ AI-2 Executor: CandidateReview JSON
-   └─ AI-1 Gatekeeper: GateDecision JSON
-        ↓
-IssueGenerator → 结构化 findings → comment preview → trace timeline → 返回 ReviewTaskResponse
+IssueGenerator + static findings → 结构化 issues → comment preview → trace timeline → 返回 ReviewTaskResponse
 ```
 
 ---
@@ -198,7 +267,9 @@ IssueGenerator → 结构化 findings → comment preview → trace timeline →
 - **真实输入**：支持手动 diff，也支持通过 GitHub API 拉取 PR metadata 和 files patch。
 - **双 Agent 审查**：AI-1 做 task plan 和 gate，AI-2 执行审查，避免单次模型输出直接落库。
 - **结构化落库**：将获批 JSON 转换为 issue、summary、trace 和 comment preview。
-- **可观测性**：保留 `github.pr.metadata.load -> github.pr.diff.load -> mimo.ai1.plan -> mimo.ai2.execute -> mimo.ai1.gate -> issue.generate -> comment.preview.build` 的安全摘要。
+- **受限仓库上下文**：GitHub PR 模式会读取 changed-file 内容作为 lexical context index，提升 AI 对完整文件上下文的理解，但仍避免 full clone 的成本和隐私风险。
+- **多来源 finding**：MiMo finding 与 Semgrep-style/dependency finding 统一落库，保留 `source` 以解释来源。
+- **可观测性**：保留 `github.pr.metadata.load -> github.pr.diff.load -> repository.context.index -> static.analysis.findings -> mimo.ai1.plan -> mimo.ai2.execute -> mimo.ai1.gate -> issue.generate -> comment.preview.build` 的安全摘要。
 - **Human-in-the-loop**：只发布用户选择并确认过的 comment preview。
 - **安全边界**：API 不返回 GitHub token、MiMo key、raw prompt、raw model output 或 raw full diff。
 
@@ -223,11 +294,11 @@ CodeReviewX/
 ## 运行测试
 
 ```bash
-# 后端（129 tests）
+# 后端（132 tests）
 cd backend-java
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn test
 
-# 前端（62 tests）
+# 前端（63 tests）
 cd frontend
 npm run typecheck
 npm run build
@@ -242,12 +313,12 @@ npm test -- --run
 
 - OAuth / GitHub App
 - 仓库 clone 与全量代码分析
-- 将 Semgrep / dependency scan 结果自动并入 review task
-- RAG、MCP、Function Calling
+- 向量数据库式 semantic RAG、全仓库索引、历史 review memory
+- MCP、Function Calling
 - 生产级认证与团队协作
 - MySQL / PostgreSQL 生产数据库
 
-GitHub PR 模式当前只读取 PR metadata 和 files patch，不 clone 仓库、不读取完整 repository context；超大 PR 会按安全限制截断或失败。
+GitHub PR 模式当前读取 PR metadata、files patch 和 changed-file 内容索引；它不 clone 仓库、不做全量 repository analysis。超大 PR 会按安全限制截断或失败。
 
 ---
 

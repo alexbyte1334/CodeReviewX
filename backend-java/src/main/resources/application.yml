@@ -32,6 +32,9 @@ codereviewx:
     max-changed-files: ${GITHUB_MAX_CHANGED_FILES:50}
     max-diff-bytes: ${GITHUB_MAX_DIFF_BYTES:512000}
     per-file-patch-max-bytes: ${GITHUB_PER_FILE_PATCH_MAX_BYTES:20000}
+    max-context-files: ${GITHUB_MAX_CONTEXT_FILES:8}
+    per-file-context-max-bytes: ${GITHUB_PER_FILE_CONTEXT_MAX_BYTES:12000}
+    max-context-bytes: ${GITHUB_MAX_CONTEXT_BYTES:48000}
   ai:
     mimo:
       base-url: ${MIMO_BASE_URL:https://api.xiaomimimo.com/v1}
