@@ -60,6 +60,18 @@ class PrRetrievalQueryBuilderTest {
     }
 
     @Test
+    void redactsHighEntropyAllUppercaseTokensWithoutRedactingUppercaseConstants() {
+        String alphabeticSecret = "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF";
+        String ordinaryConstant = "MAX_RETRY_COUNT_CONSTANT";
+
+        String query = builder.build(new PrRetrievalQueryBuilder.PrQuery(
+                "Rotate " + alphabeticSecret, List.of("src/" + ordinaryConstant + ".java"),
+                List.of(), List.of(ordinaryConstant), List.of()));
+
+        assertThat(query).contains("[REDACTED]", ordinaryConstant).doesNotContain(alphabeticSecret);
+    }
+
+    @Test
     void failsClosedForNullAndPathologicalValues() {
         assertThat(builder.build(null)).isEmpty();
         assertThat(builder.build(new PrRetrievalQueryBuilder.PrQuery(null, null, null, null, null))).isEmpty();

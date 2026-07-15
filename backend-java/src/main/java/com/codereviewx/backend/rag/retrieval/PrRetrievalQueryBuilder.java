@@ -101,14 +101,25 @@ public final class PrRetrievalQueryBuilder {
         int[] frequencies = new int[128];
         int measured = 0;
         int uppercase = 0;
+        int letters = 0;
+        int caseTransitions = 0;
+        Boolean previousUppercase = null;
         for (char character : token.toCharArray()) {
             char normalized = Character.toLowerCase(character);
             if (normalized < frequencies.length) {
                 frequencies[normalized]++;
                 measured++;
             }
-            if (Character.isUpperCase(character)) {
-                uppercase++;
+            if (Character.isLetter(character)) {
+                boolean currentUppercase = Character.isUpperCase(character);
+                letters++;
+                if (currentUppercase) {
+                    uppercase++;
+                }
+                if (previousUppercase != null && previousUppercase != currentUppercase) {
+                    caseTransitions++;
+                }
+                previousUppercase = currentUppercase;
             }
         }
         if (measured == 0) {
@@ -124,10 +135,13 @@ public final class PrRetrievalQueryBuilder {
             }
         }
         double diversity = (double) distinct / measured;
-        double uppercaseRatio = (double) uppercase / measured;
-        boolean mixedCaseRandom = uppercaseRatio >= 0.25 && uppercaseRatio <= 0.75 && diversity >= 0.5;
-        boolean longLowercaseRandom = uppercaseRatio == 0.0 && entropy >= 4.2 && diversity >= 0.65;
-        return entropy >= 3.5 && (hasDigit || mixedCaseRandom || longLowercaseRandom);
+        double uppercaseRatio = (double) uppercase / letters;
+        double transitionRatio = letters < 2 ? 0.0 : (double) caseTransitions / (letters - 1);
+        boolean mixedCaseRandom = uppercaseRatio >= 0.25 && uppercaseRatio <= 0.75
+                && transitionRatio >= 0.2 && diversity >= 0.5;
+        boolean singleCaseRandom = (uppercase == 0 || uppercase == letters)
+                && entropy >= 4.2 && diversity >= 0.65;
+        return entropy >= 3.5 && (hasDigit || mixedCaseRandom || singleCaseRandom);
     }
 
     public record PrQuery(String title, List<String> changedPaths, List<String> diffHunkHeaders,
