@@ -462,8 +462,8 @@ class RagIndexWorkerIntegrationTest {
 
     @Test
     void productionExecutorHasBoundedDedicatedCapacity() {
-        ThreadPoolTaskExecutor executor = com.codereviewx.backend.rag.config.RagIndexingConfiguration
-                .ragIndexExecutor();
+        ThreadPoolTaskExecutor executor = new com.codereviewx.backend.rag.config.RagIndexingConfiguration()
+                .ragIndexExecutor(new RagIndexLifecycleCoordinator((jobId, attempt) -> true), new RagProperties());
         executor.initialize();
 
         assertThat(executor.getCorePoolSize()).isEqualTo(1);

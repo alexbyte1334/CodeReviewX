@@ -27,6 +27,7 @@ public class RagProperties {
     private long maxTextBytes = 100L * 1024L * 1024L;
     private int maxScannedEntries = 50_000;
     private long maxScannedBytes = 500L * 1024L * 1024L;
+    private int shutdownGraceSeconds = 30;
 
     public void validate() {
         if (embeddingDimensions != V1_EMBEDDING_DIMENSIONS) {
@@ -42,7 +43,7 @@ public class RagProperties {
             throw new IllegalStateException("RAG model retries must not be negative");
         }
         if (workRoot == null || fetchDepth <= 0 || maxFileBytes <= 0 || maxFiles <= 0 || maxTextBytes <= 0
-                || maxScannedEntries <= 0 || maxScannedBytes <= 0) {
+                || maxScannedEntries <= 0 || maxScannedBytes <= 0 || shutdownGraceSeconds <= 0) {
             throw new IllegalStateException("RAG indexing limits must be positive");
         }
         if (enabled && (isBlank(embeddingBaseUrl) || isBlank(rerankBaseUrl))) {
@@ -204,6 +205,14 @@ public class RagProperties {
         this.maxScannedBytes = maxScannedBytes;
     }
 
+    public int getShutdownGraceSeconds() {
+        return shutdownGraceSeconds;
+    }
+
+    public void setShutdownGraceSeconds(int shutdownGraceSeconds) {
+        this.shutdownGraceSeconds = shutdownGraceSeconds;
+    }
+
     @Override
     public String toString() {
         return "RagProperties{"
@@ -220,6 +229,7 @@ public class RagProperties {
                 + ", maxTextBytes=" + maxTextBytes
                 + ", maxScannedEntries=" + maxScannedEntries
                 + ", maxScannedBytes=" + maxScannedBytes
+                + ", shutdownGraceSeconds=" + shutdownGraceSeconds
                 + '}';
     }
 }

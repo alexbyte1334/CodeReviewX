@@ -171,6 +171,15 @@ public class RagIndexJobStore {
                 """, now(), id, expectedAttempt) == 1;
     }
 
+    public boolean releaseForShutdown(long id, int expectedAttempt) {
+        return jdbc.update("""
+                UPDATE rag_index_job
+                SET status='QUEUED', started_at=NULL, heartbeat_at=NULL,
+                    error_code='SHUTDOWN_REQUEUED', error_message=NULL
+                WHERE id=? AND status='RUNNING' AND attempt_count=?
+                """, id, expectedAttempt) == 1;
+    }
+
     public int recoverStale(Duration age, LocalDateTime currentTime) {
         LocalDateTime cutoff = currentTime.minus(age);
         int queued = jdbc.update("""

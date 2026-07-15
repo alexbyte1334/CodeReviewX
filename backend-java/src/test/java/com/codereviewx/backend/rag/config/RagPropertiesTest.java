@@ -31,6 +31,7 @@ class RagPropertiesTest {
         assertThat(properties.getMaxRetries()).isEqualTo(2);
         assertThat(properties.getMaxScannedEntries()).isEqualTo(50_000);
         assertThat(properties.getMaxScannedBytes()).isEqualTo(500L * 1024L * 1024L);
+        assertThat(properties.getShutdownGraceSeconds()).isEqualTo(30);
         assertThat(properties.toString())
                 .doesNotContain("embedding-secret", "rerank-secret", "embedding.private", "rerank.private");
     }
@@ -109,6 +110,7 @@ class RagPropertiesTest {
         assertStartupFailure("codereviewx.rag.max-retries=-1", "retries");
         assertStartupFailure("codereviewx.rag.max-scanned-entries=0", "limits");
         assertStartupFailure("codereviewx.rag.max-scanned-bytes=0", "limits");
+        assertStartupFailure("codereviewx.rag.shutdown-grace-seconds=0", "limits");
     }
 
     private ApplicationContextRunner completeEnabledContext() {

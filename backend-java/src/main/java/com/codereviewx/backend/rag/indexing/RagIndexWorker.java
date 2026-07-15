@@ -61,6 +61,7 @@ public class RagIndexWorker {
     private final int embeddingDimensions;
     private final ThreadPoolTaskExecutor executor;
     private final ScheduledExecutorService heartbeatExecutor;
+    private final RagIndexLifecycleCoordinator lifecycle;
 
     @Autowired
     public RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
@@ -68,17 +69,18 @@ public class RagIndexWorker {
                           RepositoryFileDiscovery discovery, CodeChunker chunker, EmbeddingClient embeddings,
                           TransactionTemplate transactions, RagProperties properties,
                           ThreadPoolTaskExecutor ragIndexExecutor,
-                          @Qualifier("ragHeartbeatExecutor") ScheduledExecutorService heartbeatExecutor) {
+                          @Qualifier("ragHeartbeatExecutor") ScheduledExecutorService heartbeatExecutor,
+                          RagIndexLifecycleCoordinator lifecycle) {
         this(repositories, jobs, documents, chunks, checkoutService, discovery::discover, chunker, embeddings,
                 transactions, Clock.systemUTC(), properties.getEmbeddingModel(),
-                properties.getEmbeddingDimensions(), ragIndexExecutor, heartbeatExecutor);
+                properties.getEmbeddingDimensions(), ragIndexExecutor, heartbeatExecutor, lifecycle);
     }
 
     RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
                    RagChunkStore chunks, Function<CheckedOutRepository, List<RepositoryFile>> fileSource,
                    CodeChunker chunker, EmbeddingClient embeddings, TransactionTemplate transactions, Clock clock) {
         this(repositories, jobs, documents, chunks, null, fileSource, chunker, embeddings, transactions, clock,
-                "test-model", 1024, null, null);
+                "test-model", 1024, null, null, new RagIndexLifecycleCoordinator(jobs::releaseForShutdown));
     }
 
     private RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
@@ -86,7 +88,7 @@ public class RagIndexWorker {
                            Function<CheckedOutRepository, List<RepositoryFile>> fileSource, CodeChunker chunker,
                            EmbeddingClient embeddings, TransactionTemplate transactions, Clock clock,
                            String embeddingModel, int embeddingDimensions, ThreadPoolTaskExecutor executor,
-                           ScheduledExecutorService heartbeatExecutor) {
+                           ScheduledExecutorService heartbeatExecutor, RagIndexLifecycleCoordinator lifecycle) {
         this.repositories = repositories;
         this.jobs = jobs;
         this.documents = documents;
@@ -101,22 +103,29 @@ public class RagIndexWorker {
         this.embeddingDimensions = embeddingDimensions;
         this.executor = executor;
         this.heartbeatExecutor = heartbeatExecutor;
+        this.lifecycle = lifecycle;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void recoverOnStartup() {
+        if (!lifecycle.isAccepting()) {
+            return;
+        }
         recoverStale();
         submitOne();
     }
 
     @Scheduled(fixedDelay = 5000)
     public void pollQueued() {
+        if (!lifecycle.isAccepting()) {
+            return;
+        }
         recoverStale();
         submitOne();
     }
 
     public void submitOne() {
-        if (executor != null) {
+        if (executor != null && lifecycle.isAccepting()) {
             try {
                 executor.execute(this::runOne);
             } catch (TaskRejectedException ignored) { }
@@ -124,9 +133,20 @@ public class RagIndexWorker {
     }
 
     public void runOne() {
+        if (!lifecycle.isAccepting()) {
+            return;
+        }
         RagIndexJob job = transactions.execute(ignored -> jobs.claimNextQueued().orElse(null));
         if (job != null) {
-            process(job);
+            if (!lifecycle.register(job.id(), job.attemptCount())) {
+                jobs.releaseForShutdown(job.id(), job.attemptCount());
+                return;
+            }
+            try {
+                process(job);
+            } finally {
+                lifecycle.unregister(job.id(), job.attemptCount());
+            }
         }
     }
 
