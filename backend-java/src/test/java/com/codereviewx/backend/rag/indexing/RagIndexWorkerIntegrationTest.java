@@ -1,0 +1,277 @@
+package com.codereviewx.backend.rag.indexing;
+
+import com.codereviewx.backend.rag.config.RagProperties;
+import com.codereviewx.backend.rag.embedding.EmbeddingClient;
+import com.codereviewx.backend.rag.model.Language;
+import com.codereviewx.backend.rag.model.RepositoryFile;
+import com.codereviewx.backend.rag.persistence.RagChunkStore;
+import com.codereviewx.backend.rag.persistence.RagDocumentStore;
+import com.codereviewx.backend.rag.persistence.RagIndexJobStore;
+import com.codereviewx.backend.rag.persistence.RagRepositoryStore;
+import com.codereviewx.backend.rag.service.DefaultRagIndexService;
+import com.codereviewx.backend.rag.service.RagIndexJob;
+import com.codereviewx.backend.rag.service.RagIndexResolution;
+import com.codereviewx.backend.review.github.GithubPrMetadata;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.testcontainers.containers.PostgreSQLContainer;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class RagIndexWorkerIntegrationTest {
+
+    private static final String SHA_ONE = "1".repeat(40);
+    private static final String SHA_TWO = "2".repeat(40);
+    private final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("pgvector/pgvector:pg16");
+    private JdbcTemplate jdbc;
+    private TransactionTemplate transactions;
+    private RagRepositoryStore repositories;
+    private RagIndexJobStore jobs;
+    private RagDocumentStore documents;
+    private RagChunkStore chunks;
+    private RagProperties properties;
+    private RecordingEmbeddingClient embeddings;
+    private MutableFiles files;
+    private RagIndexWorker worker;
+    private DefaultRagIndexService service;
+
+    @BeforeAll
+    void startPostgres() {
+        postgres.start();
+        Flyway.configure()
+                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration", "classpath:db/rag/postgresql")
+                .initSql("CREATE SCHEMA IF NOT EXISTS flyway_compat; "
+                        + "DO $$ BEGIN CREATE DOMAIN flyway_compat.CLOB AS TEXT; "
+                        + "EXCEPTION WHEN duplicate_object THEN NULL; END $$; "
+                        + "SET search_path TO public, flyway_compat")
+                .load()
+                .migrate();
+        org.springframework.jdbc.datasource.DriverManagerDataSource dataSource =
+                new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                        postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+        jdbc = new JdbcTemplate(dataSource);
+        transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+    }
+
+    @BeforeEach
+    void setUp() {
+        jdbc.execute("TRUNCATE rag_chunk, rag_document, rag_index_job, rag_repository RESTART IDENTITY CASCADE");
+        repositories = new RagRepositoryStore(jdbc);
+        jobs = new RagIndexJobStore(jdbc);
+        documents = new RagDocumentStore(jdbc);
+        chunks = new RecordingChunkStore(jdbc);
+        properties = new RagProperties();
+        properties.setEmbeddingModel("test-model");
+        properties.setEmbeddingDimensions(1024);
+        properties.setEmbeddingBatchSize(250);
+        embeddings = new RecordingEmbeddingClient();
+        files = new MutableFiles();
+        worker = new RagIndexWorker(repositories, jobs, documents, chunks, ignored -> files.current(),
+                new LineWindowCodeChunker(), embeddings, transactions, Clock.systemUTC());
+        TaskExecutor pausedExecutor = runnable -> { };
+        service = new DefaultRagIndexService(repositories, jobs, worker, pausedExecutor, transactions,
+                properties, Clock.systemUTC());
+    }
+
+    @Test
+    void enforcesStateMachineSingleRunningAndReadyIdempotency() {
+        files.set(file("src/A.java", "class A {}"));
+        RagIndexResolution first = service.ensureIndexed(metadata(SHA_ONE));
+        RagIndexResolution second = service.ensureIndexed(metadata(SHA_TWO));
+
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        assertThat(claimed.status()).isEqualTo(RagIndexJob.Status.RUNNING);
+        Optional<RagIndexJob> blockedClaim = transactions.execute(ignored -> jobs.claimNextQueued());
+        assertThat(blockedClaim).isEmpty();
+        assertThatThrownBy(() -> jobs.transition(claimed.id(), RagIndexJob.Status.READY, RagIndexJob.Status.RUNNING))
+                .isInstanceOf(IllegalStateException.class);
+
+        worker.process(claimed);
+        assertThat(service.getJob(first.jobId()).status()).isEqualTo(RagIndexJob.Status.READY);
+        RagIndexResolution duplicate = service.ensureIndexed(metadata(SHA_ONE));
+        assertThat(duplicate.status()).isEqualTo(RagIndexResolution.Status.READY);
+        assertThat(duplicate.jobId()).isEqualTo(first.jobId());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_job", Integer.class)).isEqualTo(2);
+        assertThat(service.getJob(second.jobId()).status()).isEqualTo(RagIndexJob.Status.QUEUED);
+    }
+
+    @Test
+    void incrementallyReusesUnchangedFilesExcludesDeletesAndLimitsBatches() {
+        files.set(file("same.java", "class Same {}"), file("gone.java", "class Gone {}"));
+        index(metadata(SHA_ONE));
+        embeddings.clear();
+
+        String large = java.util.stream.IntStream.range(0, 205)
+                .mapToObj(index -> "line" + index + "=" + "x".repeat(7900))
+                .reduce((left, right) -> left + "\n" + right).orElseThrow();
+        files.set(file("same.java", "class Same {}"), file("large.java", large));
+        index(metadata(SHA_TWO));
+
+        assertThat(embeddings.batchSizes()).allMatch(size -> size <= 100);
+        assertThat(((RecordingChunkStore) chunks).batchSizes()).allMatch(size -> size <= 100);
+        assertThat(embeddings.totalInputs()).isEqualTo(205);
+        assertThat(count("rag_document", SHA_TWO, "same.java")).isEqualTo(1);
+        assertThat(count("rag_document", SHA_TWO, "gone.java")).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM rag_chunk newer
+                JOIN rag_chunk older ON older.commit_sha = ? AND newer.commit_sha = ?
+                  AND older.path = newer.path AND older.content_hash = newer.content_hash
+                  AND older.embedding = newer.embedding
+                WHERE newer.path = 'same.java'
+                """, Integer.class, SHA_ONE, SHA_TWO)).isEqualTo(1);
+    }
+
+    @Test
+    void failedWriteRollsBackSnapshotAndPreservesPreviousReadyCommit() {
+        files.set(file("stable.java", "class Stable {}"));
+        index(metadata(SHA_ONE));
+        files.set(file("broken.java", "class Broken {}"));
+        chunks = new RagChunkStore(jdbc) {
+            @Override
+            public void insertBatch(long repositoryId, long documentId, String commitSha,
+                                    List<EmbeddedChunk> values) {
+                super.insertBatch(repositoryId, documentId, commitSha, values);
+                throw new IllegalStateException("simulated write failure");
+            }
+        };
+        worker = new RagIndexWorker(repositories, jobs, documents, chunks, ignored -> files.current(),
+                new LineWindowCodeChunker(), embeddings, transactions, Clock.systemUTC());
+
+        RagIndexResolution queued = service.ensureIndexed(metadata(SHA_TWO));
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        worker.process(claimed);
+
+        assertThat(service.getJob(queued.jobId()).status()).isEqualTo(RagIndexJob.Status.FAILED);
+        assertThat(jdbc.queryForObject("SELECT active_commit_sha FROM rag_repository", String.class))
+                .isEqualTo(SHA_ONE);
+        assertThat(jdbc.queryForObject("SELECT index_status FROM rag_repository", String.class))
+                .isEqualTo("READY");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_document WHERE commit_sha = ?",
+                Integer.class, SHA_TWO)).isZero();
+    }
+
+    @Test
+    void recoversStaleRunningJobsUntilThirdAttemptThenFails() {
+        long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
+                "main", properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), 1).id();
+        long retryable = jobs.create(repositoryId, SHA_ONE, "PULL_REQUEST");
+        long exhausted = jobs.create(repositoryId, SHA_TWO, "PULL_REQUEST");
+        jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=2, started_at=? WHERE id=?",
+                LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), retryable);
+        jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=3, started_at=? WHERE id=?",
+                LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), exhausted);
+
+        int recovered = transactions.execute(ignored -> jobs.recoverStale(Duration.ofMinutes(15),
+                LocalDateTime.now(ZoneOffset.UTC)));
+
+        assertThat(recovered).isEqualTo(2);
+        assertThat(jobs.get(retryable).orElseThrow().status()).isEqualTo(RagIndexJob.Status.QUEUED);
+        assertThat(jobs.get(exhausted).orElseThrow().status()).isEqualTo(RagIndexJob.Status.FAILED);
+    }
+
+    @Test
+    void productionExecutorHasBoundedDedicatedCapacity() {
+        ThreadPoolTaskExecutor executor = com.codereviewx.backend.rag.config.RagIndexingConfiguration
+                .ragIndexExecutor();
+        executor.initialize();
+
+        assertThat(executor.getCorePoolSize()).isEqualTo(1);
+        assertThat(executor.getMaxPoolSize()).isEqualTo(2);
+        assertThat(executor.getThreadPoolExecutor().getQueue().remainingCapacity()).isEqualTo(20);
+    }
+
+    private void index(GithubPrMetadata metadata) {
+        service.ensureIndexed(metadata);
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        worker.process(claimed);
+        assertThat(jobs.get(claimed.id()).orElseThrow().status()).isEqualTo(RagIndexJob.Status.READY);
+    }
+
+    private int count(String table, String sha, String path) {
+        return jdbc.queryForObject("SELECT count(*) FROM " + table + " WHERE commit_sha=? AND path=?",
+                Integer.class, sha, path);
+    }
+
+    private static RepositoryFile file(String path, String content) {
+        return new RepositoryFile(path, Language.JAVA, content,
+                content.getBytes(StandardCharsets.UTF_8).length, Hashing.sha256(content));
+    }
+
+    private static GithubPrMetadata metadata(String sha) {
+        return new GithubPrMetadata("owner", "repo", 1, "title", "author", "main", "feature",
+                "0".repeat(40), sha, "open", "", "", 1, 1, 0);
+    }
+
+    private final class MutableFiles {
+        private List<RepositoryFile> current = List.of();
+
+        void set(RepositoryFile... values) {
+            current = List.of(values);
+        }
+
+        List<RepositoryFile> current() {
+            return current;
+        }
+    }
+
+    private static final class RecordingEmbeddingClient implements EmbeddingClient {
+        private final List<Integer> batchSizes = new ArrayList<>();
+
+        @Override
+        public List<float[]> embed(List<String> inputs) {
+            batchSizes.add(inputs.size());
+            return inputs.stream().map(ignored -> new float[1024]).toList();
+        }
+
+        List<Integer> batchSizes() {
+            return List.copyOf(batchSizes);
+        }
+
+        int totalInputs() {
+            return batchSizes.stream().mapToInt(Integer::intValue).sum();
+        }
+
+        void clear() {
+            batchSizes.clear();
+        }
+    }
+
+    private static final class RecordingChunkStore extends RagChunkStore {
+        private final List<Integer> batchSizes = new ArrayList<>();
+
+        private RecordingChunkStore(JdbcTemplate jdbc) {
+            super(jdbc);
+        }
+
+        @Override
+        public void insertBatch(long repositoryId, long documentId, String commitSha,
+                                List<EmbeddedChunk> values) {
+            batchSizes.add(values.size());
+            super.insertBatch(repositoryId, documentId, commitSha, values);
+        }
+
+        List<Integer> batchSizes() {
+            return List.copyOf(batchSizes);
+        }
+    }
+}
