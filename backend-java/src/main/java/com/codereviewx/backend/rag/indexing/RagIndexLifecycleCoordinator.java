@@ -65,6 +65,10 @@ public final class RagIndexLifecycleCoordinator {
         });
     }
 
+    boolean isCancellationRequested(long jobId, int attempt) {
+        return cancellationRequested.containsKey(new LeaseKey(jobId, attempt));
+    }
+
     void releaseTerminated() {
         cancellationRequested.forEach((lease, thread) -> {
             if (!thread.isAlive()) {

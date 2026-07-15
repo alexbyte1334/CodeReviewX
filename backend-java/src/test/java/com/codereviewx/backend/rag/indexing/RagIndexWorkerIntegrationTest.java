@@ -39,6 +39,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -406,6 +407,39 @@ class RagIndexWorkerIntegrationTest {
     }
 
     @Test
+    void forcedShutdownRequeuesInterruptedWorkerAttemptWithoutOverwritingReadySnapshot() throws Exception {
+        files.set(file("stable.java", "class Stable {}"));
+        index(metadata(SHA_ONE));
+
+        files.set(file("next.java", "class Next {}"));
+        RagIndexResolution queued = service.ensureIndexed(metadata(SHA_TWO));
+        InterruptibleEmbeddingClient blockedEmbeddings = new InterruptibleEmbeddingClient();
+        ReflectionTestUtils.setField(worker, "embeddings", blockedEmbeddings);
+
+        RagIndexLifecycleCoordinator lifecycle = (RagIndexLifecycleCoordinator)
+                ReflectionTestUtils.getField(worker, "lifecycle");
+        RagIndexTaskExecutor executor = new RagIndexTaskExecutor(lifecycle, Duration.ofMillis(100));
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(20);
+        executor.initialize();
+        ReflectionTestUtils.setField(worker, "executor", executor);
+
+        worker.submitOne();
+        assertThat(blockedEmbeddings.started.await(1, TimeUnit.SECONDS)).isTrue();
+
+        executor.shutdown();
+
+        assertThat(blockedEmbeddings.interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        RagIndexJob finalJob = jobs.get(queued.jobId()).orElseThrow();
+        assertThat(finalJob.status()).isEqualTo(RagIndexJob.Status.QUEUED);
+        assertThat(finalJob.errorCode()).isEqualTo("SHUTDOWN_REQUEUED");
+        assertThat(jdbc.queryForObject("SELECT active_commit_sha FROM rag_repository", String.class))
+                .isEqualTo(SHA_ONE);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
     void failedWriteRollsBackSnapshotAndPreservesPreviousReadyCommit() {
         files.set(file("stable.java", "class Stable {}"));
         index(metadata(SHA_ONE));
@@ -550,6 +584,23 @@ class RagIndexWorkerIntegrationTest {
 
         void clear() {
             batchSizes.clear();
+        }
+    }
+
+    private static final class InterruptibleEmbeddingClient implements EmbeddingClient {
+        private final CountDownLatch started = new CountDownLatch(1);
+        private final CountDownLatch interrupted = new CountDownLatch(1);
+
+        @Override
+        public List<float[]> embed(List<String> inputs) {
+            started.countDown();
+            try {
+                Thread.sleep(TimeUnit.MINUTES.toMillis(10));
+            } catch (InterruptedException exception) {
+                interrupted.countDown();
+                throw new IllegalStateException("embedding interrupted");
+            }
+            return inputs.stream().map(ignored -> new float[1024]).toList();
         }
     }
 

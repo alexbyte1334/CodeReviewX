@@ -173,7 +173,10 @@ public class RagIndexWorker {
             PreparedSnapshot snapshot = prepare(job, repository, resolvedSha, discovered);
             transactions.executeWithoutResult(ignored -> persist(job, repository, snapshot));
         } catch (Exception exception) {
-            failIfOwned(job, repository, exception);
+            if (!lifecycle.isCancellationRequested(job.id(), job.attemptCount())
+                    || exception instanceof ConfigurationMismatchException) {
+                failIfOwned(job, repository, exception);
+            }
         } finally {
             if (heartbeat != null) {
                 heartbeat.cancel(false);
