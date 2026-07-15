@@ -136,6 +136,26 @@ class HttpRerankClientTest {
     }
 
     @Test
+    void rerankRetriesOversizedRetryableResponseThenSucceeds() {
+        AtomicInteger attempts = new AtomicInteger();
+        List<Long> delays = new ArrayList<>();
+        startServer(exchange -> {
+            if (attempts.getAndIncrement() == 0) {
+                respond(exchange, 502, "private-error-" + "x".repeat(OVERSIZED_RESPONSE_PADDING_BYTES));
+            } else {
+                respond(exchange, 200, "{\"results\":[{\"index\":0,\"relevance_score\":0.8}]}");
+            }
+        });
+
+        List<RerankedChunk> result = client(properties(1), delays::add)
+                .rerank("private query", candidates(1));
+
+        assertThat(result).extracting(RerankedChunk::score).containsExactly(0.8);
+        assertThat(attempts).hasValue(2);
+        assertThat(delays).containsExactly(100L);
+    }
+
+    @Test
     void rerankDoesNotRetryAuthenticationFailureAndRedactsSecrets() {
         AtomicInteger attempts = new AtomicInteger();
         startServer(exchange -> {

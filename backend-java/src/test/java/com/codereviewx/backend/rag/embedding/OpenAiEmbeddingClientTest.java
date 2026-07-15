@@ -144,11 +144,31 @@ class OpenAiEmbeddingClientTest {
     }
 
     @Test
-    void embedDoesNotRetryAuthenticationFailureAndRedactsSecrets() {
+    void embedRetriesOversizedRetryableResponseThenSucceeds() {
+        AtomicInteger attempts = new AtomicInteger();
+        List<Long> delays = new ArrayList<>();
+        startServer(exchange -> {
+            if (attempts.getAndIncrement() == 0) {
+                respond(exchange, 503, "private-error-" + "x".repeat(OVERSIZED_RESPONSE_PADDING_BYTES));
+            } else {
+                respond(exchange, 200, embeddingResponse(List.of(item(0, 9))));
+            }
+        });
+
+        OpenAiEmbeddingClient client = client(properties(1, 1), delays::add);
+
+        assertThat(client.embed(List.of("private input")).get(0)[0]).isEqualTo(9.0f);
+        assertThat(attempts).hasValue(2);
+        assertThat(delays).containsExactly(100L);
+    }
+
+    @Test
+    void embedDoesNotRetryOversizedAuthenticationFailureAndRedactsSecrets() {
         AtomicInteger attempts = new AtomicInteger();
         startServer(exchange -> {
             attempts.incrementAndGet();
-            respond(exchange, 401, "private input embedding-secret");
+            respond(exchange, 401, "private input embedding-secret "
+                    + "x".repeat(OVERSIZED_RESPONSE_PADDING_BYTES));
         });
         OpenAiEmbeddingClient client = client(properties(1, 3), ignored -> { });
 

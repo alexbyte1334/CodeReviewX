@@ -26,6 +26,17 @@ public final class LimitedBodyHandler {
                 responseInfo.headers().firstValueAsLong("Content-Length").orElse(-1L));
     }
 
+    public static HttpResponse.BodyHandler<String> boundedSuccessOrDiscardError(int maxBytes) {
+        if (maxBytes <= 0) {
+            throw new IllegalArgumentException("Response byte limit must be positive");
+        }
+        return responseInfo -> responseInfo.statusCode() >= 200 && responseInfo.statusCode() < 300
+                ? new LimitedUtf8Subscriber(
+                        maxBytes,
+                        responseInfo.headers().firstValueAsLong("Content-Length").orElse(-1L))
+                : HttpResponse.BodySubscribers.replacing("");
+    }
+
     public static boolean isResponseTooLarge(Throwable throwable) {
         Throwable current = throwable;
         for (int depth = 0; current != null && depth < 16; depth++) {

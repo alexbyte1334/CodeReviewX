@@ -86,7 +86,9 @@ public class HttpRerankClient implements RerankClient {
 
     private HttpResponse<String> send(HttpRequest request) {
         try {
-            return httpClient.send(request, LimitedBodyHandler.utf8(LimitedBodyHandler.DEFAULT_MAX_BYTES));
+            return httpClient.send(
+                    request,
+                    LimitedBodyHandler.boundedSuccessOrDiscardError(LimitedBodyHandler.DEFAULT_MAX_BYTES));
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Rerank request interrupted");
