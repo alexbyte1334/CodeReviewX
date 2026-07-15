@@ -14,10 +14,18 @@ import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -59,11 +67,11 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
     public CheckedOutRepository checkout(GithubPrMetadata metadata) {
         validateMetadata(metadata);
         Path checkout = null;
+        Path validatedRoot = null;
         Git git = null;
         try {
-            createOwnerOnlyDirectory(workRoot);
-            checkout = Files.createTempDirectory(workRoot, "checkout-");
-            setOwnerOnly(checkout);
+            validatedRoot = validateAndCreateRoot();
+            checkout = createWorkspace(validatedRoot);
             String uri = localTestUri == null
                     ? canonicalGithubUri(metadata.owner(), metadata.repo())
                     : localTestUri;
@@ -83,15 +91,21 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
             if (head == null || !head.name().equalsIgnoreCase(metadata.headSha())) {
                 throw new IllegalStateException("Unexpected repository revision");
             }
-            lastCheckout = new CheckedOutRepository(checkout, head.name(), git.getRepository());
+            Path leasedRoot = validatedRoot;
+            Path leasedWorkspace = checkout;
+            lastCheckout = new CheckedOutRepository(checkout, head.name(), git.getRepository(),
+                    () -> cleanupWorkspace(leasedRoot, leasedWorkspace));
             git = null;
             return lastCheckout;
         } catch (Exception exception) {
             if (git != null) {
                 git.close();
             }
-            if (checkout != null) {
-                new CheckedOutRepository(checkout, metadata.headSha(), null).close();
+            if (checkout != null && validatedRoot != null) {
+                try {
+                    cleanupWorkspace(validatedRoot, checkout);
+                } catch (Exception ignored) {
+                }
             }
             throw new IllegalStateException("Repository checkout failed");
         }
@@ -165,17 +179,83 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
         }
     }
 
-    private static void createOwnerOnlyDirectory(Path directory) throws Exception {
-        Files.createDirectories(directory);
-        setOwnerOnly(directory);
+    private Path validateAndCreateRoot() throws Exception {
+        Path existing = workRoot;
+        while (existing != null && !Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) {
+            existing = existing.getParent();
+        }
+        if (existing == null || Files.isSymbolicLink(existing) || !existing.toRealPath().equals(existing)) {
+            throw new IllegalStateException("Repository work root is unsafe");
+        }
+        Files.createDirectories(workRoot);
+        if (Files.isSymbolicLink(workRoot)) {
+            throw new IllegalStateException("Repository work root is unsafe");
+        }
+        Path realRoot = workRoot.toRealPath();
+        if (!realRoot.equals(workRoot)) {
+            throw new IllegalStateException("Repository work root is unsafe");
+        }
+        setOwnerOnly(realRoot);
+        return realRoot;
+    }
+
+    private static Path createWorkspace(Path root) throws Exception {
+        Path workspace;
+        FileAttribute<Set<PosixFilePermission>> permissions =
+                PosixFilePermissions.asFileAttribute(OWNER_ONLY);
+        try {
+            workspace = Files.createTempDirectory(root, "checkout-", permissions);
+        } catch (UnsupportedOperationException exception) {
+            workspace = Files.createTempDirectory(root, "checkout-");
+        }
+        setOwnerOnly(workspace);
+        Path normalized = workspace.toAbsolutePath().normalize();
+        if (!normalized.getParent().equals(root) || Files.isSymbolicLink(normalized)
+                || !normalized.toRealPath().equals(normalized)) {
+            throw new IllegalStateException("Repository workspace is unsafe");
+        }
+        return normalized;
     }
 
     private static void setOwnerOnly(Path directory) throws Exception {
-        try {
+        PosixFileAttributeView view = Files.getFileAttributeView(directory, PosixFileAttributeView.class);
+        if (view != null) {
             Files.setPosixFilePermissions(directory, OWNER_ONLY);
-        } catch (UnsupportedOperationException ignored) {
-            // Non-POSIX filesystems do not expose mode bits.
+            if (!Files.getPosixFilePermissions(directory).equals(OWNER_ONLY)) {
+                throw new IllegalStateException("Repository workspace permissions are unsafe");
+            }
         }
+    }
+
+    private void cleanupWorkspace(Path validatedRoot, Path workspace) throws IOException {
+        if (!workRoot.equals(validatedRoot) || Files.isSymbolicLink(workRoot)
+                || !workRoot.toRealPath().equals(validatedRoot)) {
+            throw new IOException("Unsafe repository cleanup boundary");
+        }
+        if (!Files.exists(workspace, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        if (!workspace.toAbsolutePath().normalize().getParent().equals(validatedRoot)
+                || Files.isSymbolicLink(workspace)
+                || !workspace.toRealPath().equals(workspace.toAbsolutePath().normalize())) {
+            throw new IOException("Unsafe repository cleanup boundary");
+        }
+        Files.walkFileTree(workspace, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
+                Files.deleteIfExists(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path directory, IOException failure) throws IOException {
+                if (failure != null) {
+                    throw failure;
+                }
+                Files.deleteIfExists(directory);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     void closeLastCheckoutForTesting() {

@@ -2,12 +2,7 @@ package com.codereviewx.backend.rag.model;
 
 import org.eclipse.jgit.lib.Repository;
 
-import java.io.IOException;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -16,14 +11,14 @@ public final class CheckedOutRepository implements AutoCloseable {
     private final Path path;
     private final String commitSha;
     private final Repository repository;
-    private final boolean cleanup;
+    private final AutoCloseable cleanup;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public CheckedOutRepository(Path path, String commitSha, Repository repository) {
-        this(path, commitSha, repository, true);
+        this(path, commitSha, repository, null);
     }
 
-    private CheckedOutRepository(Path path, String commitSha, Repository repository, boolean cleanup) {
+    public CheckedOutRepository(Path path, String commitSha, Repository repository, AutoCloseable cleanup) {
         this.path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
         this.commitSha = Objects.requireNonNull(commitSha, "commitSha");
         this.repository = repository;
@@ -31,7 +26,7 @@ public final class CheckedOutRepository implements AutoCloseable {
     }
 
     public static CheckedOutRepository unmanaged(Path path, String commitSha) {
-        return new CheckedOutRepository(path, commitSha, null, false);
+        return new CheckedOutRepository(path, commitSha, null);
     }
 
     public Path path() {
@@ -54,34 +49,12 @@ public final class CheckedOutRepository implements AutoCloseable {
         if (repository != null) {
             repository.close();
         }
-        if (cleanup) {
-            deleteTree(path);
-        }
-    }
-
-    private static void deleteTree(Path root) {
-        if (!Files.exists(root)) {
-            return;
-        }
-        try {
-            Files.walkFileTree(root, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
-                    Files.deleteIfExists(file);
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path directory, IOException failure) throws IOException {
-                    if (failure != null) {
-                        throw failure;
-                    }
-                    Files.deleteIfExists(directory);
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException exception) {
-            throw new IllegalStateException("Repository cleanup failed");
+        if (cleanup != null) {
+            try {
+                cleanup.close();
+            } catch (Exception exception) {
+                throw new IllegalStateException("Repository cleanup failed");
+            }
         }
     }
 }

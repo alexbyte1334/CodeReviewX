@@ -1,5 +1,6 @@
 package com.codereviewx.backend.rag.indexing;
 
+import com.codereviewx.backend.rag.config.RagProperties;
 import com.codereviewx.backend.rag.model.CheckedOutRepository;
 import com.codereviewx.backend.rag.model.Language;
 import com.codereviewx.backend.rag.model.RepositoryFile;
@@ -55,6 +56,18 @@ class RepositoryFileDiscoveryTest {
     }
 
     @Test
+    void honorsNestedGitignoreNegation() throws Exception {
+        Path root = initRepository();
+        write(root, "nested/.gitignore", "*.txt\n!important.txt\n");
+        write(root, "nested/ignored.txt", "skip\n");
+        write(root, "nested/important.txt", "keep\n");
+        write(root, "outside.txt", "outside\n");
+
+        assertThat(discover(root)).extracting(RepositoryFile::path)
+                .containsExactly("nested/.gitignore", "nested/important.txt", "outside.txt");
+    }
+
+    @Test
     void skipsGeneratedSensitiveBinaryOversizeAndInvalidUtf8Files() throws Exception {
         Path root = initRepository();
         write(root, "src/good.py", "ok\n");
@@ -70,6 +83,16 @@ class RepositoryFileDiscoveryTest {
         RepositoryFileDiscovery discovery = new RepositoryFileDiscovery(10, 100, 100);
         assertThat(discovery.discover(checked(root))).extracting(RepositoryFile::path)
                 .containsExactly("src/good.py");
+    }
+
+    @Test
+    void skipsUtf8ControlCharacterBinaryButKeepsUnicodeAndSourceWhitespace() throws Exception {
+        Path root = initRepository();
+        Files.write(root.resolve("controls.txt"), new byte[]{1, 2, 3});
+        write(root, "unicode.txt", "你好\tline\nnext\rform\fend");
+
+        assertThat(discover(root)).extracting(RepositoryFile::path)
+                .containsExactly("unicode.txt");
     }
 
     @Test
@@ -97,6 +120,38 @@ class RepositoryFileDiscoveryTest {
         assertThatThrownBy(() -> new RepositoryFileDiscovery(100, 1, 100).discover(checked(root)))
                 .hasMessage("Repository file budget exceeded");
         assertThatThrownBy(() -> new RepositoryFileDiscovery(100, 10, 9).discover(checked(root)))
+                .hasMessage("Repository text budget exceeded");
+    }
+
+    @Test
+    void defaultsAndEqualLimitsMatchProductionContract() throws Exception {
+        RagProperties properties = new RagProperties();
+        assertThat(properties.getMaxFileBytes()).isEqualTo(1024L * 1024L);
+        assertThat(properties.getMaxFiles()).isEqualTo(5000);
+        assertThat(properties.getMaxTextBytes()).isEqualTo(100L * 1024L * 1024L);
+
+        Path fileSizeRoot = initRepository();
+        write(fileSizeRoot, "equal.txt", "12345");
+        write(fileSizeRoot, "over.txt", "123456");
+        assertThat(new RepositoryFileDiscovery(5, 10, 100).discover(checked(fileSizeRoot)))
+                .extracting(RepositoryFile::path).containsExactly("equal.txt");
+
+        Path countRoot = initRepository();
+        write(countRoot, "a.txt", "a");
+        write(countRoot, "b.txt", "b");
+        RepositoryFileDiscovery countLimited = new RepositoryFileDiscovery(10, 2, 100);
+        assertThat(countLimited.discover(checked(countRoot))).hasSize(2);
+        write(countRoot, "c.txt", "c");
+        assertThatThrownBy(() -> countLimited.discover(checked(countRoot)))
+                .hasMessage("Repository file budget exceeded");
+
+        Path textRoot = initRepository();
+        write(textRoot, "a.txt", "1234");
+        write(textRoot, "b.txt", "12345");
+        RepositoryFileDiscovery textLimited = new RepositoryFileDiscovery(10, 10, 9);
+        assertThat(textLimited.discover(checked(textRoot))).hasSize(2);
+        write(textRoot, "c.txt", "1");
+        assertThatThrownBy(() -> textLimited.discover(checked(textRoot)))
                 .hasMessage("Repository text budget exceeded");
     }
 

@@ -67,13 +67,24 @@ public final class LineWindowCodeChunker implements CodeChunker {
     private static void splitLongLine(RepositoryFile file, String sourceLine, int lineNumber,
                                       List<CodeChunk> chunks) {
         int offset = 0;
+        int segmentOrdinal = 0;
+        int previousLength = MAX_CHARS + 1;
         while (offset < sourceLine.length()) {
-            int limit = Math.min(offset + MAX_CHARS, sourceLine.length());
+            int segmentLimit = Math.min(MAX_CHARS - segmentOrdinal, previousLength - 1);
+            if (segmentLimit <= 0) {
+                throw new IllegalStateException("Code line exceeds the supported chunk count");
+            }
+            int limit = Math.min(offset + segmentLimit, sourceLine.length());
             if (limit < sourceLine.length() && limit > offset && Character.isHighSurrogate(sourceLine.charAt(limit - 1))) {
                 limit--;
             }
+            if (limit <= offset) {
+                throw new IllegalStateException("Code chunking could not make progress");
+            }
             chunks.add(createChunk(file, sourceLine.substring(offset, limit), lineNumber, lineNumber));
+            previousLength = limit - offset;
             offset = limit;
+            segmentOrdinal++;
         }
     }
 

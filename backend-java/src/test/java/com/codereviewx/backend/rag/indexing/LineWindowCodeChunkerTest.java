@@ -60,6 +60,23 @@ class LineWindowCodeChunkerTest {
     }
 
     @Test
+    void repeatedPeriodicLongLineStillProducesUniqueExactKeysWithoutDataLoss() {
+        String content = "abcd".repeat(5_001);
+
+        List<CodeChunk> chunks = chunker.chunk(file(content));
+
+        assertThat(chunks).hasSizeGreaterThan(2);
+        assertThat(chunks).allSatisfy(chunk -> assertThat(chunk.content()).hasSizeLessThanOrEqualTo(8_000));
+        assertThat(chunks.stream().map(CodeChunk::content).reduce("", String::concat)).isEqualTo(content);
+        assertThat(chunks).extracting(CodeChunk::chunkKey).doesNotHaveDuplicates();
+        assertThat(chunks).allSatisfy(chunk -> {
+            assertThat(chunk.contentHash()).isEqualTo(sha256(chunk.content()));
+            assertThat(chunk.chunkKey()).isEqualTo(sha256("src/App.java:1:1:" + chunk.contentHash()));
+        });
+        assertThat(chunker.chunk(file(content))).isEqualTo(chunks);
+    }
+
+    @Test
     void partitionsLargeWindowsWithoutTruncationAndIsDeterministic() {
         String content = IntStream.rangeClosed(1, 81)
                 .mapToObj(number -> number + "-" + "z".repeat(300))

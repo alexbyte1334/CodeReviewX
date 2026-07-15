@@ -86,7 +86,7 @@ public final class RepositoryFileDiscovery {
                 }
                 byte[] bytes = Files.readAllBytes(candidate);
                 String content = decodeUtf8(bytes);
-                if (content == null || containsNul(content)) {
+                if (content == null || containsBinaryControl(content)) {
                     continue;
                 }
                 if (files.size() >= maxFiles) {
@@ -190,8 +190,15 @@ public final class RepositoryFileDiscovery {
         }
     }
 
-    private static boolean containsNul(String content) {
-        return content.indexOf('\0') >= 0;
+    private static boolean containsBinaryControl(String content) {
+        for (int index = 0; index < content.length(); index++) {
+            char character = content.charAt(index);
+            if (Character.isISOControl(character)
+                    && character != '\t' && character != '\n' && character != '\r' && character != '\f') {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String relative(Path root, Path path) {

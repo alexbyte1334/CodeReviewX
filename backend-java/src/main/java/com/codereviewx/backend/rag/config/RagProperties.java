@@ -20,7 +20,7 @@ public class RagProperties {
     private String rerankModel = "BAAI/bge-reranker-v2-m3";
     private int timeoutSeconds = 30;
     private int maxRetries = 2;
-    private Path workRoot = Path.of(System.getProperty("java.io.tmpdir"), "codereviewx-rag");
+    private Path workRoot = Path.of(System.getProperty("user.home"), ".codereviewx", "rag-work");
     private int fetchDepth = 50;
     private long maxFileBytes = 1024L * 1024L;
     private int maxFiles = 5000;

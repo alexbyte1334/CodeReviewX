@@ -10,11 +10,17 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JGitRepositoryCheckoutServiceTest {
+
+    private static final Set<PosixFilePermission> OWNER_ONLY = Set.of(
+            PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE);
 
     @TempDir Path tempDir;
 
@@ -41,8 +47,9 @@ class JGitRepositoryCheckoutServiceTest {
     @Test
     void checksOutExactCommitDetachedAndCleansUpIdempotently() throws Exception {
         RepositoryFixture fixture = createRepository();
+        Path root = workRoot("work");
         JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
-                tempDir.resolve("work"), 1, fixture.bare().toUri().toString());
+                root, 1, fixture.bare().toUri().toString());
 
         Path checkoutPath;
         try (CheckedOutRepository checkedOut = service.checkout(metadata(fixture.firstSha()))) {
@@ -53,6 +60,8 @@ class JGitRepositoryCheckoutServiceTest {
                 assertThat(git.getRepository().resolve(Constants.HEAD).name()).isEqualTo(fixture.firstSha());
                 assertThat(git.getRepository().getBranch()).isEqualTo(fixture.firstSha());
             }
+            assertOwnerOnly(root);
+            assertOwnerOnly(checkoutPath);
         }
         assertThat(checkoutPath).doesNotExist();
         service.closeLastCheckoutForTesting();
@@ -63,7 +72,7 @@ class JGitRepositoryCheckoutServiceTest {
     void fallsBackToFetchingExactShaOutsideInitialDepth() throws Exception {
         RepositoryFixture fixture = createRepository();
         JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
-                tempDir.resolve("fallback-work"), 1, fixture.bare().toUri().toString());
+                workRoot("fallback-work"), 1, fixture.bare().toUri().toString());
 
         try (CheckedOutRepository checkedOut = service.checkout(metadata(fixture.firstSha()))) {
             assertThat(checkedOut.commitSha()).isEqualTo(fixture.firstSha());
@@ -73,7 +82,7 @@ class JGitRepositoryCheckoutServiceTest {
 
     @Test
     void failuresCleanTemporaryCheckoutAndNeverLeakToken() throws Exception {
-        Path root = tempDir.resolve("failure-work");
+        Path root = workRoot("failure-work");
         String token = "secret-token-never-print";
         JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
                 root, 1, tempDir.resolve("missing.git").toUri().toString(), token);
@@ -82,6 +91,94 @@ class JGitRepositoryCheckoutServiceTest {
                 .hasMessage("Repository checkout failed")
                 .message().doesNotContain(token, tempDir.toString());
         assertThat(Files.list(root)).isEmpty();
+    }
+
+    @Test
+    void rejectsShortAndNonHexCommitIdsBeforeCreatingWorkspace() throws Exception {
+        Path root = workRoot("invalid-sha-root");
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                root, 1, tempDir.resolve("missing.git").toUri().toString());
+
+        assertThatThrownBy(() -> service.checkout(metadata("abc123")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Repository metadata is invalid");
+        assertThatThrownBy(() -> service.checkout(metadata("g".repeat(40))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Repository metadata is invalid");
+        assertThat(root).doesNotExist();
+    }
+
+    @Test
+    void rejectsSymlinkedConfiguredRootWithoutCreatingOutside() throws Exception {
+        Path outside = workRoot("outside-root");
+        Files.createDirectories(outside);
+        Path symlink = workRoot("linked-root");
+        try {
+            Files.createSymbolicLink(symlink, outside);
+        } catch (UnsupportedOperationException exception) {
+            return;
+        }
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                symlink, 1, tempDir.resolve("missing.git").toUri().toString());
+
+        assertThatThrownBy(() -> service.checkout(metadata("0".repeat(40))))
+                .hasMessage("Repository checkout failed");
+        assertThat(Files.list(outside)).isEmpty();
+    }
+
+    @Test
+    void rejectsSymlinkedParentBeforeCreatingConfiguredRootOutside() throws Exception {
+        Path outside = workRoot("outside-parent");
+        Files.createDirectories(outside);
+        Path safe = workRoot("safe-parent");
+        Files.createDirectories(safe);
+        Path link = safe.resolve("link");
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (UnsupportedOperationException exception) {
+            return;
+        }
+        Path configuredRoot = link.resolve("new-root");
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                configuredRoot, 1, tempDir.resolve("missing.git").toUri().toString());
+
+        assertThatThrownBy(() -> service.checkout(metadata("0".repeat(40))))
+                .hasMessage("Repository checkout failed");
+        assertThat(outside.resolve("new-root")).doesNotExist();
+    }
+
+    @Test
+    void publicModelConstructionCannotDeleteAnArbitraryPath() throws Exception {
+        Path external = tempDir.resolve("must-remain");
+        Files.createDirectories(external);
+        Files.writeString(external.resolve("sentinel.txt"), "safe");
+
+        new CheckedOutRepository(external, "0".repeat(40), null).close();
+
+        assertThat(external.resolve("sentinel.txt")).hasContent("safe");
+    }
+
+    @Test
+    void cleanupRejectsWorkspaceReplacedBySymlinkAndDoesNotDeleteTarget() throws Exception {
+        RepositoryFixture fixture = createRepository();
+        Path root = workRoot("cleanup-root");
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                root, 1, fixture.bare().toUri().toString());
+        CheckedOutRepository checkedOut = service.checkout(metadata(fixture.secondSha()));
+        Path workspace = checkedOut.path();
+        deleteForTest(workspace);
+        Path outside = workRoot("cleanup-outside");
+        Files.createDirectories(outside);
+        Files.writeString(outside.resolve("sentinel.txt"), "safe");
+        try {
+            Files.createSymbolicLink(workspace, outside);
+        } catch (UnsupportedOperationException exception) {
+            return;
+        }
+
+        assertThatThrownBy(checkedOut::close).hasMessage("Repository cleanup failed");
+        assertThat(outside.resolve("sentinel.txt")).hasContent("safe");
+        Files.deleteIfExists(workspace);
     }
 
     private RepositoryFixture createRepository() throws Exception {
@@ -110,6 +207,24 @@ class JGitRepositoryCheckoutServiceTest {
     private GithubPrMetadata metadata(String sha) {
         return new GithubPrMetadata("owner", "repo", 1, "title", "author", "main", "branch",
                 sha, sha, "open", "", "", 1, 1, 0);
+    }
+
+    private static void assertOwnerOnly(Path path) throws Exception {
+        if (Files.getFileAttributeView(path, PosixFileAttributeView.class) != null) {
+            assertThat(Files.getPosixFilePermissions(path)).isEqualTo(OWNER_ONLY);
+        }
+    }
+
+    private static void deleteForTest(Path root) throws Exception {
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        }
+    }
+
+    private Path workRoot(String name) throws Exception {
+        return tempDir.toRealPath().resolve(name);
     }
 
     private record RepositoryFixture(Path bare, String firstSha, String secondSha) {}

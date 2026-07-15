@@ -27,7 +27,7 @@ codereviewx:
     rerank-model: ${RAG_RERANK_MODEL:BAAI/bge-reranker-v2-m3}
     timeout-seconds: ${RAG_MODEL_TIMEOUT_SECONDS:30}
     max-retries: ${RAG_MODEL_MAX_RETRIES:2}
-    work-root: ${RAG_WORK_ROOT:${java.io.tmpdir}/codereviewx-rag}
+    work-root: ${RAG_WORK_ROOT:${user.home}/.codereviewx/rag-work}
     fetch-depth: ${RAG_FETCH_DEPTH:50}
     max-file-bytes: ${RAG_MAX_FILE_BYTES:1048576}
     max-files: ${RAG_MAX_FILES:5000}
