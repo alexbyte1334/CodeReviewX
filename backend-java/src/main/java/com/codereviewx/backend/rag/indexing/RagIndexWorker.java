@@ -39,6 +39,7 @@ import java.util.function.Function;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
 
 @Component
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
@@ -131,8 +132,9 @@ public class RagIndexWorker {
 
     void process(RagIndexJob job) {
         RepositoryRecord repository = repositories.get(job.repositoryId()).orElseThrow();
-        ScheduledFuture<?> heartbeat = startHeartbeat(job);
+        ScheduledFuture<?> heartbeat = null;
         try {
+            heartbeat = startHeartbeat(job);
             validateCapability(job);
             List<RepositoryFile> discovered;
             String resolvedSha;
@@ -273,18 +275,23 @@ public class RagIndexWorker {
         if (heartbeatExecutor == null) {
             return null;
         }
-        return heartbeatExecutor.scheduleAtFixedRate(() -> {
-            try {
-                jobs.heartbeat(job.id(), job.attemptCount());
-            } catch (RuntimeException ignored) { }
-        }, 5, 5, TimeUnit.SECONDS);
+        try {
+            return heartbeatExecutor.scheduleAtFixedRate(() -> {
+                try {
+                    jobs.heartbeat(job.id(), job.attemptCount());
+                } catch (RuntimeException ignored) { }
+            }, 5, 5, TimeUnit.SECONDS);
+        } catch (RejectedExecutionException exception) {
+            throw new HeartbeatUnavailableException();
+        }
     }
 
     private void failIfOwned(RagIndexJob job, RepositoryRecord repository, Exception exception) {
         try {
             transactions.executeWithoutResult(ignored -> {
                 String errorCode = exception instanceof ConfigurationMismatchException
-                        ? "CONFIG_MISMATCH" : "INDEXING_FAILED";
+                        ? "CONFIG_MISMATCH" : exception instanceof HeartbeatUnavailableException
+                        ? "HEARTBEAT_UNAVAILABLE" : "INDEXING_FAILED";
                 jobs.fail(job.id(), job.attemptCount(), errorCode, safeMessage(exception));
                 repositories.markInitialFailure(repository.id());
             });
@@ -317,6 +324,12 @@ public class RagIndexWorker {
     private static final class ConfigurationMismatchException extends IllegalStateException {
         private ConfigurationMismatchException() {
             super("Worker configuration does not match queued index tuple");
+        }
+    }
+
+    private static final class HeartbeatUnavailableException extends IllegalStateException {
+        private HeartbeatUnavailableException() {
+            super("RAG index heartbeat is unavailable");
         }
     }
 }

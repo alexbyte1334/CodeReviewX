@@ -5,6 +5,7 @@ import com.codereviewx.backend.rag.indexing.LineWindowCodeChunker;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -19,6 +20,7 @@ import java.util.concurrent.ScheduledExecutorService;
 public class RagIndexingConfiguration {
 
     @Bean
+    @DependsOn("ragHeartbeatExecutor")
     public static ThreadPoolTaskExecutor ragIndexExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setThreadNamePrefix("rag-index-");

@@ -38,6 +38,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -388,6 +389,23 @@ class RagIndexWorkerIntegrationTest {
     }
 
     @Test
+    void rejectedHeartbeatSchedulingNeverLeavesClaimedJobRunning() {
+        files.set(file("shutdown.java", "class Shutdown {}"));
+        RagIndexResolution queued = service.ensureIndexed(metadata(SHA_ONE));
+        ScheduledExecutorService stoppedHeartbeat = Executors.newSingleThreadScheduledExecutor();
+        stoppedHeartbeat.shutdownNow();
+        ReflectionTestUtils.setField(worker, "heartbeatExecutor", stoppedHeartbeat);
+
+        assertThatCode(worker::runOne).doesNotThrowAnyException();
+
+        RagIndexJob failed = jobs.get(queued.jobId()).orElseThrow();
+        assertThat(failed.status()).isEqualTo(RagIndexJob.Status.FAILED);
+        assertThat(failed.errorCode()).isEqualTo("HEARTBEAT_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_document", Integer.class)).isZero();
+    }
+
+    @Test
     void failedWriteRollsBackSnapshotAndPreservesPreviousReadyCommit() {
         files.set(file("stable.java", "class Stable {}"));
         index(metadata(SHA_ONE));
@@ -422,17 +440,24 @@ class RagIndexWorkerIntegrationTest {
                 "main", properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), 1).id();
         long retryable = jobs.createOrGetActive(repositoryId, SHA_ONE, "PULL_REQUEST", "test-model", 1024, 1);
         long exhausted = jobs.createOrGetActive(repositoryId, SHA_TWO, "PULL_REQUEST", "test-model", 1024, 1);
+        long legacy = jobs.createOrGetActive(repositoryId, "4".repeat(40), "PULL_REQUEST", "test-model", 1024, 1);
         jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=2, started_at=? WHERE id=?",
                 LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), retryable);
         jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=3, started_at=? WHERE id=?",
                 LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), exhausted);
+        jdbc.update("""
+                UPDATE rag_index_job
+                SET status='RUNNING', attempt_count=1, started_at=NULL, heartbeat_at=NULL, created_at=?
+                WHERE id=?
+                """, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), legacy);
 
         int recovered = transactions.execute(ignored -> jobs.recoverStale(Duration.ofMinutes(15),
                 LocalDateTime.now(ZoneOffset.UTC)));
 
-        assertThat(recovered).isEqualTo(2);
+        assertThat(recovered).isEqualTo(3);
         assertThat(jobs.get(retryable).orElseThrow().status()).isEqualTo(RagIndexJob.Status.QUEUED);
         assertThat(jobs.get(exhausted).orElseThrow().status()).isEqualTo(RagIndexJob.Status.FAILED);
+        assertThat(jobs.get(legacy).orElseThrow().status()).isEqualTo(RagIndexJob.Status.QUEUED);
     }
 
     @Test

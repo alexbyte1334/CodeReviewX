@@ -141,6 +141,34 @@ class RepositoryFileDiscoveryTest {
     }
 
     @Test
+    void skippedCandidatesConsumeIndependentScanEntryBudgetBeforeValidTail() throws Exception {
+        Path root = initRepository();
+        for (int index = 0; index < 6; index++) {
+            write(root, ".env.local." + index, "secret");
+        }
+        write(root, "z-valid.txt", "must-not-be-reached");
+
+        RepositoryFileDiscovery discovery = new RepositoryFileDiscovery(100, 10, 100, 4, 1_000);
+
+        assertThatThrownBy(() -> discovery.discover(checked(root)))
+                .hasMessage("Repository scan entry budget exceeded");
+    }
+
+    @Test
+    void binaryCandidatesConsumeIndependentScanByteBudgetBeforeValidTail() throws Exception {
+        Path root = initRepository();
+        for (int index = 0; index < 4; index++) {
+            Files.write(root.resolve("binary-" + index + ".dat"), new byte[]{'a', 0, 'b', 'c'});
+        }
+        write(root, "z-valid.txt", "must-not-be-reached");
+
+        RepositoryFileDiscovery discovery = new RepositoryFileDiscovery(100, 10, 100, 100, 10);
+
+        assertThatThrownBy(() -> discovery.discover(checked(root)))
+                .hasMessage("Repository scan byte budget exceeded");
+    }
+
+    @Test
     void filtersTrackedCredentialFilesWithoutOvermatchingSafeFiles() throws Exception {
         Path root = initRepository();
         for (String sensitive : List.of(
@@ -170,6 +198,8 @@ class RepositoryFileDiscoveryTest {
         assertThat(properties.getMaxFileBytes()).isEqualTo(1024L * 1024L);
         assertThat(properties.getMaxFiles()).isEqualTo(5000);
         assertThat(properties.getMaxTextBytes()).isEqualTo(100L * 1024L * 1024L);
+        assertThat(properties.getMaxScannedEntries()).isEqualTo(50_000);
+        assertThat(properties.getMaxScannedBytes()).isEqualTo(500L * 1024L * 1024L);
 
         Path fileSizeRoot = initRepository();
         write(fileSizeRoot, "equal.txt", "12345");

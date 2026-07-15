@@ -175,14 +175,17 @@ public class RagIndexJobStore {
         LocalDateTime cutoff = currentTime.minus(age);
         int queued = jdbc.update("""
                 UPDATE rag_index_job
-                SET status='QUEUED', started_at=NULL, error_code='STALE_RECOVERED', error_message=NULL
-                WHERE status='RUNNING' AND COALESCE(heartbeat_at, started_at) < ? AND attempt_count < 3
+                SET status='QUEUED', started_at=NULL, heartbeat_at=NULL,
+                    error_code='STALE_RECOVERED', error_message=NULL
+                WHERE status='RUNNING' AND COALESCE(heartbeat_at, started_at, created_at) < ?
+                  AND attempt_count < 3
                 """, cutoff);
         int failed = jdbc.update("""
                 UPDATE rag_index_job
                 SET status='FAILED', finished_at=?, error_code='ATTEMPTS_EXHAUSTED',
-                    error_message='Index job exceeded recovery attempt limit'
-                WHERE status='RUNNING' AND COALESCE(heartbeat_at, started_at) < ? AND attempt_count >= 3
+                    error_message='Index job exceeded recovery attempt limit', heartbeat_at=NULL
+                WHERE status='RUNNING' AND COALESCE(heartbeat_at, started_at, created_at) < ?
+                  AND attempt_count >= 3
                 """, currentTime, cutoff);
         return queued + failed;
     }

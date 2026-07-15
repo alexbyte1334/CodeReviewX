@@ -25,6 +25,8 @@ public class RagProperties {
     private long maxFileBytes = 1024L * 1024L;
     private int maxFiles = 5000;
     private long maxTextBytes = 100L * 1024L * 1024L;
+    private int maxScannedEntries = 50_000;
+    private long maxScannedBytes = 500L * 1024L * 1024L;
 
     public void validate() {
         if (embeddingDimensions != V1_EMBEDDING_DIMENSIONS) {
@@ -39,7 +41,8 @@ public class RagProperties {
         if (maxRetries < 0) {
             throw new IllegalStateException("RAG model retries must not be negative");
         }
-        if (workRoot == null || fetchDepth <= 0 || maxFileBytes <= 0 || maxFiles <= 0 || maxTextBytes <= 0) {
+        if (workRoot == null || fetchDepth <= 0 || maxFileBytes <= 0 || maxFiles <= 0 || maxTextBytes <= 0
+                || maxScannedEntries <= 0 || maxScannedBytes <= 0) {
             throw new IllegalStateException("RAG indexing limits must be positive");
         }
         if (enabled && (isBlank(embeddingBaseUrl) || isBlank(rerankBaseUrl))) {
@@ -185,6 +188,22 @@ public class RagProperties {
         this.maxTextBytes = maxTextBytes;
     }
 
+    public int getMaxScannedEntries() {
+        return maxScannedEntries;
+    }
+
+    public void setMaxScannedEntries(int maxScannedEntries) {
+        this.maxScannedEntries = maxScannedEntries;
+    }
+
+    public long getMaxScannedBytes() {
+        return maxScannedBytes;
+    }
+
+    public void setMaxScannedBytes(long maxScannedBytes) {
+        this.maxScannedBytes = maxScannedBytes;
+    }
+
     @Override
     public String toString() {
         return "RagProperties{"
@@ -199,6 +218,8 @@ public class RagProperties {
                 + ", maxFileBytes=" + maxFileBytes
                 + ", maxFiles=" + maxFiles
                 + ", maxTextBytes=" + maxTextBytes
+                + ", maxScannedEntries=" + maxScannedEntries
+                + ", maxScannedBytes=" + maxScannedBytes
                 + '}';
     }
 }

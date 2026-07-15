@@ -32,3 +32,5 @@ codereviewx:
     max-file-bytes: ${RAG_MAX_FILE_BYTES:1048576}
     max-files: ${RAG_MAX_FILES:5000}
     max-text-bytes: ${RAG_MAX_TEXT_BYTES:104857600}
+    max-scanned-entries: ${RAG_MAX_SCANNED_ENTRIES:50000}
+    max-scanned-bytes: ${RAG_MAX_SCANNED_BYTES:524288000}

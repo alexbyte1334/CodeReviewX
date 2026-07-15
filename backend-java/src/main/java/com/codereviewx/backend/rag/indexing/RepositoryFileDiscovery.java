@@ -33,6 +33,8 @@ public final class RepositoryFileDiscovery {
     private static final long DEFAULT_MAX_FILE_BYTES = 1024L * 1024L;
     private static final int DEFAULT_MAX_FILES = 5000;
     private static final long DEFAULT_MAX_TEXT_BYTES = 100L * 1024L * 1024L;
+    private static final int DEFAULT_MAX_SCANNED_ENTRIES = 50_000;
+    private static final long DEFAULT_MAX_SCANNED_BYTES = 500L * 1024L * 1024L;
     private static final Set<String> SKIPPED_DIRECTORIES = Set.of(
             ".git", "node_modules", "dist", "build", "target", "vendor");
     private static final Set<String> SKIPPED_FILES = Set.of(
@@ -46,23 +48,35 @@ public final class RepositoryFileDiscovery {
     private final long maxFileBytes;
     private final int maxFiles;
     private final long maxTextBytes;
+    private final int maxScannedEntries;
+    private final long maxScannedBytes;
 
     public RepositoryFileDiscovery() {
-        this(DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_FILES, DEFAULT_MAX_TEXT_BYTES);
+        this(DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_FILES, DEFAULT_MAX_TEXT_BYTES,
+                DEFAULT_MAX_SCANNED_ENTRIES, DEFAULT_MAX_SCANNED_BYTES);
     }
 
     @Autowired
     public RepositoryFileDiscovery(RagProperties properties) {
-        this(properties.getMaxFileBytes(), properties.getMaxFiles(), properties.getMaxTextBytes());
+        this(properties.getMaxFileBytes(), properties.getMaxFiles(), properties.getMaxTextBytes(),
+                properties.getMaxScannedEntries(), properties.getMaxScannedBytes());
     }
 
     RepositoryFileDiscovery(long maxFileBytes, int maxFiles, long maxTextBytes) {
-        if (maxFileBytes <= 0 || maxFiles <= 0 || maxTextBytes <= 0) {
+        this(maxFileBytes, maxFiles, maxTextBytes, DEFAULT_MAX_SCANNED_ENTRIES, DEFAULT_MAX_SCANNED_BYTES);
+    }
+
+    RepositoryFileDiscovery(long maxFileBytes, int maxFiles, long maxTextBytes,
+                            int maxScannedEntries, long maxScannedBytes) {
+        if (maxFileBytes <= 0 || maxFiles <= 0 || maxTextBytes <= 0
+                || maxScannedEntries <= 0 || maxScannedBytes <= 0) {
             throw new IllegalArgumentException("Repository discovery limits must be positive");
         }
         this.maxFileBytes = maxFileBytes;
         this.maxFiles = maxFiles;
         this.maxTextBytes = maxTextBytes;
+        this.maxScannedEntries = maxScannedEntries;
+        this.maxScannedBytes = maxScannedBytes;
     }
 
     public List<RepositoryFile> discover(CheckedOutRepository checkedOut) {
@@ -92,11 +106,17 @@ public final class RepositoryFileDiscovery {
     private List<RepositoryFile> discoverWithTreeWalk(Path root, Repository repository) throws Exception {
         List<RepositoryFile> files = new ArrayList<>();
         long totalBytes = 0;
+        int scannedEntries = 0;
+        long scannedBytes = 0;
         try (TreeWalk walk = new TreeWalk(repository)) {
             int indexPosition = walk.addTree(new DirCacheIterator(repository.readDirCache()));
             int worktreePosition = walk.addTree(new FileTreeIterator(repository));
             walk.setRecursive(false);
             while (walk.next()) {
+                scannedEntries++;
+                if (scannedEntries > maxScannedEntries) {
+                    throw new IllegalStateException("Repository scan entry budget exceeded");
+                }
                 WorkingTreeIterator working = walk.getTree(worktreePosition, WorkingTreeIterator.class);
                 if (working == null) {
                     continue;
@@ -116,12 +136,16 @@ public final class RepositoryFileDiscovery {
                 if (mode != FileMode.REGULAR_FILE && mode != FileMode.EXECUTABLE_FILE) {
                     continue;
                 }
+                Path candidate = root.resolve(relative);
+                long size = Files.size(candidate);
+                if (size > maxScannedBytes - scannedBytes) {
+                    throw new IllegalStateException("Repository scan byte budget exceeded");
+                }
+                scannedBytes += size;
                 boolean tracked = walk.getFileMode(indexPosition) != FileMode.MISSING;
                 if ((!tracked && working.isEntryIgnored()) || shouldSkipFile(fileName(relative))) {
                     continue;
                 }
-                Path candidate = root.resolve(relative);
-                long size = Files.size(candidate);
                 if (size > maxFileBytes) {
                     continue;
                 }
