@@ -1,6 +1,5 @@
 package com.codereviewx.backend.rag.indexing;
 
-import com.codereviewx.backend.rag.model.CheckedOutRepository;
 import com.codereviewx.backend.review.github.GithubPrMetadata;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.Constants;
@@ -9,10 +8,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
+import java.net.URI;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -179,6 +184,83 @@ class JGitRepositoryCheckoutServiceTest {
         assertThatThrownBy(checkedOut::close).hasMessage("Repository cleanup failed");
         assertThat(outside.resolve("sentinel.txt")).hasContent("safe");
         Files.deleteIfExists(workspace);
+    }
+
+    @Test
+    void ownerOnlyPermissionsFailClosedOnNonPosixProvider() throws Exception {
+        Path archive = tempDir.resolve("non-posix.zip");
+        try (FileSystem fileSystem = FileSystems.newFileSystem(
+                URI.create("jar:" + archive.toUri()), Map.of("create", "true"))) {
+            Path root = fileSystem.getPath("/work");
+            Files.createDirectories(root);
+
+            assertThatThrownBy(() -> JGitRepositoryCheckoutService.requireOwnerOnly(root))
+                    .hasMessage("Repository workspace permissions are unsafe");
+        }
+    }
+
+    @Test
+    void creationDetectsAncestorSwapAfterSecureRootOpenWithoutWritingOutside() throws Exception {
+        Path root = workRoot("create-race-root");
+        Files.createDirectories(root);
+        Path movedRoot = workRoot("create-race-original");
+        Path outside = workRoot("create-race-outside");
+        Files.createDirectories(outside);
+        Files.writeString(outside.resolve("sentinel.txt"), "safe");
+        JGitRepositoryCheckoutService.WorkspaceBoundaryHook hook = (openedRoot, operation) -> {
+            if (operation == JGitRepositoryCheckoutService.BoundaryOperation.CREATE) {
+                Files.move(root, movedRoot);
+                Files.createSymbolicLink(root, outside);
+            }
+        };
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                root, 1, tempDir.resolve("missing.git").toUri().toString(), hook);
+
+        assertThatThrownBy(() -> service.checkout(metadata("0".repeat(40))))
+                .hasMessage("Repository checkout failed");
+        assertThat(Files.list(outside)).extracting(path -> path.getFileName().toString())
+                .containsExactly("sentinel.txt");
+        assertThat(Files.list(movedRoot)).isEmpty();
+        Files.delete(root);
+    }
+
+    @Test
+    void secureCleanupCannotBeRedirectedByAncestorSwapAfterRootOpen() throws Exception {
+        RepositoryFixture fixture = createRepository();
+        Path root = workRoot("cleanup-race-root");
+        Path movedRoot = workRoot("cleanup-race-original");
+        Path outside = workRoot("cleanup-race-outside");
+        Files.createDirectories(outside);
+        AtomicReference<String> workspaceName = new AtomicReference<>();
+        JGitRepositoryCheckoutService.WorkspaceBoundaryHook hook = (openedRoot, operation) -> {
+            if (operation == JGitRepositoryCheckoutService.BoundaryOperation.CLEANUP) {
+                String name = workspaceName.get();
+                Path fakeWorkspace = outside.resolve(name);
+                Files.createDirectories(fakeWorkspace);
+                Files.writeString(fakeWorkspace.resolve("sentinel.txt"), "safe");
+                Files.move(root, movedRoot);
+                Files.createSymbolicLink(root, outside);
+            }
+        };
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                root, 1, fixture.bare().toUri().toString(), hook);
+        CheckedOutRepository checkedOut = service.checkout(metadata(fixture.secondSha()));
+        workspaceName.set(checkedOut.path().getFileName().toString());
+
+        checkedOut.close();
+
+        assertThat(movedRoot.resolve(workspaceName.get())).doesNotExist();
+        assertThat(outside.resolve(workspaceName.get()).resolve("sentinel.txt")).hasContent("safe");
+        Files.delete(root);
+    }
+
+    @Test
+    void unixProviderOffersSecureDirectoryStreamForCheckoutRoot() throws Exception {
+        Path root = workRoot("secure-stream-root");
+        Files.createDirectories(root);
+        try (var stream = Files.newDirectoryStream(root)) {
+            assertThat(stream).isInstanceOf(SecureDirectoryStream.class);
+        }
     }
 
     private RepositoryFixture createRepository() throws Exception {

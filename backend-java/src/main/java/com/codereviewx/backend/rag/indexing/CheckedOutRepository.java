@@ -1,4 +1,4 @@
-package com.codereviewx.backend.rag.model;
+package com.codereviewx.backend.rag.indexing;
 
 import org.eclipse.jgit.lib.Repository;
 
@@ -14,18 +14,18 @@ public final class CheckedOutRepository implements AutoCloseable {
     private final AutoCloseable cleanup;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    public CheckedOutRepository(Path path, String commitSha, Repository repository) {
+    CheckedOutRepository(Path path, String commitSha, Repository repository) {
         this(path, commitSha, repository, null);
     }
 
-    public CheckedOutRepository(Path path, String commitSha, Repository repository, AutoCloseable cleanup) {
+    CheckedOutRepository(Path path, String commitSha, Repository repository, AutoCloseable cleanup) {
         this.path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
         this.commitSha = Objects.requireNonNull(commitSha, "commitSha");
         this.repository = repository;
         this.cleanup = cleanup;
     }
 
-    public static CheckedOutRepository unmanaged(Path path, String commitSha) {
+    static CheckedOutRepository unmanaged(Path path, String commitSha) {
         return new CheckedOutRepository(path, commitSha, null);
     }
 
@@ -37,7 +37,7 @@ public final class CheckedOutRepository implements AutoCloseable {
         return commitSha;
     }
 
-    public Repository repository() {
+    Repository repository() {
         return repository;
     }
 

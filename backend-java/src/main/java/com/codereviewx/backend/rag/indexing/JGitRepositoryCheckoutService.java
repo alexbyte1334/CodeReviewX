@@ -1,7 +1,6 @@
 package com.codereviewx.backend.rag.indexing;
 
 import com.codereviewx.backend.rag.config.RagProperties;
-import com.codereviewx.backend.rag.model.CheckedOutRepository;
 import com.codereviewx.backend.review.github.GithubPrMetadata;
 import com.codereviewx.backend.review.github.GithubProperties;
 import org.eclipse.jgit.api.Git;
@@ -16,16 +15,21 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URI;
-import java.nio.file.FileVisitResult;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
+import java.nio.file.SecureDirectoryStream;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -36,42 +40,50 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
     private static final Pattern COMMIT_SHA = Pattern.compile("[0-9a-f]{40}");
     private static final Set<PosixFilePermission> OWNER_ONLY = Set.of(
             PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE);
+    private static final WorkspaceBoundaryHook NOOP_HOOK = (root, operation) -> { };
 
     private final Path workRoot;
     private final int depth;
     private final String token;
     private final String localTestUri;
+    private final WorkspaceBoundaryHook boundaryHook;
     private CheckedOutRepository lastCheckout;
 
     @Autowired
     public JGitRepositoryCheckoutService(RagProperties ragProperties, GithubProperties githubProperties) {
-        this(ragProperties.getWorkRoot(), ragProperties.getFetchDepth(), githubProperties.getToken(), null);
+        this(ragProperties.getWorkRoot(), ragProperties.getFetchDepth(), githubProperties.getToken(), null, NOOP_HOOK);
     }
 
-    private JGitRepositoryCheckoutService(Path workRoot, int depth, String token, String localTestUri) {
+    private JGitRepositoryCheckoutService(Path workRoot, int depth, String token, String localTestUri,
+                                          WorkspaceBoundaryHook boundaryHook) {
         this.workRoot = workRoot.toAbsolutePath().normalize();
         this.depth = depth;
         this.token = token == null ? "" : token;
         this.localTestUri = localTestUri;
+        this.boundaryHook = boundaryHook;
     }
 
     static JGitRepositoryCheckoutService forLocalTesting(Path workRoot, int depth, String uri) {
-        return new JGitRepositoryCheckoutService(workRoot, depth, "", uri);
+        return new JGitRepositoryCheckoutService(workRoot, depth, "", uri, NOOP_HOOK);
     }
 
     static JGitRepositoryCheckoutService forLocalTesting(Path workRoot, int depth, String uri, String token) {
-        return new JGitRepositoryCheckoutService(workRoot, depth, token, uri);
+        return new JGitRepositoryCheckoutService(workRoot, depth, token, uri, NOOP_HOOK);
+    }
+
+    static JGitRepositoryCheckoutService forLocalTesting(Path workRoot, int depth, String uri,
+                                                          WorkspaceBoundaryHook boundaryHook) {
+        return new JGitRepositoryCheckoutService(workRoot, depth, "", uri, boundaryHook);
     }
 
     @Override
     public CheckedOutRepository checkout(GithubPrMetadata metadata) {
         validateMetadata(metadata);
-        Path checkout = null;
-        Path validatedRoot = null;
+        WorkspaceLease workspaceLease = null;
         Git git = null;
         try {
-            validatedRoot = validateAndCreateRoot();
-            checkout = createWorkspace(validatedRoot);
+            workspaceLease = createWorkspaceLease();
+            Path checkout = workspaceLease.workspace();
             String uri = localTestUri == null
                     ? canonicalGithubUri(metadata.owner(), metadata.repo())
                     : localTestUri;
@@ -91,19 +103,18 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
             if (head == null || !head.name().equalsIgnoreCase(metadata.headSha())) {
                 throw new IllegalStateException("Unexpected repository revision");
             }
-            Path leasedRoot = validatedRoot;
-            Path leasedWorkspace = checkout;
+            WorkspaceLease managedLease = workspaceLease;
             lastCheckout = new CheckedOutRepository(checkout, head.name(), git.getRepository(),
-                    () -> cleanupWorkspace(leasedRoot, leasedWorkspace));
+                    () -> cleanupWorkspace(managedLease));
             git = null;
             return lastCheckout;
         } catch (Exception exception) {
             if (git != null) {
                 git.close();
             }
-            if (checkout != null && validatedRoot != null) {
+            if (workspaceLease != null) {
                 try {
-                    cleanupWorkspace(validatedRoot, checkout);
+                    cleanupWorkspace(workspaceLease);
                 } catch (Exception ignored) {
                 }
             }
@@ -195,67 +206,152 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
         if (!realRoot.equals(workRoot)) {
             throw new IllegalStateException("Repository work root is unsafe");
         }
-        setOwnerOnly(realRoot);
+        requireOwnerOnly(realRoot);
         return realRoot;
     }
 
-    private static Path createWorkspace(Path root) throws Exception {
-        Path workspace;
+    private WorkspaceLease createWorkspaceLease() throws Exception {
+        Path root = validateAndCreateRoot();
+        Object rootFileKey = requireFileKey(readAttributes(root));
+        try (SecureDirectoryStream<Path> secureRoot = openSecureDirectory(root)) {
+            boundaryHook.run(root, BoundaryOperation.CREATE);
+            verifyRootIdentity(root, rootFileKey);
+            return createWorkspaceInSecureRoot(root, rootFileKey, secureRoot);
+        }
+    }
+
+    private WorkspaceLease createWorkspaceInSecureRoot(Path root, Object rootFileKey,
+                                                       SecureDirectoryStream<Path> secureRoot) throws Exception {
+        Path workspace = null;
+        Path workspaceName = null;
         FileAttribute<Set<PosixFilePermission>> permissions =
                 PosixFilePermissions.asFileAttribute(OWNER_ONLY);
         try {
             workspace = Files.createTempDirectory(root, "checkout-", permissions);
-        } catch (UnsupportedOperationException exception) {
-            workspace = Files.createTempDirectory(root, "checkout-");
+            workspaceName = workspace.getFileName();
+            verifyRootIdentity(root, rootFileKey);
+            requireOwnerOnly(workspace);
+            Path normalized = workspace.toAbsolutePath().normalize();
+            BasicFileAttributes attributes = readRelativeAttributes(secureRoot, workspaceName);
+            Object workspaceFileKey = requireFileKey(attributes);
+            if (!normalized.getParent().equals(root) || attributes.isSymbolicLink() || !attributes.isDirectory()
+                    || !normalized.toRealPath().equals(normalized)) {
+                throw new IllegalStateException("Repository workspace is unsafe");
+            }
+            return new WorkspaceLease(root, normalized, workspaceName, rootFileKey, workspaceFileKey);
+        } catch (Exception exception) {
+            if (workspaceName != null) {
+                deleteRelativeEntryIfPresent(secureRoot, workspaceName);
+            }
+            throw exception;
         }
-        setOwnerOnly(workspace);
-        Path normalized = workspace.toAbsolutePath().normalize();
-        if (!normalized.getParent().equals(root) || Files.isSymbolicLink(normalized)
-                || !normalized.toRealPath().equals(normalized)) {
-            throw new IllegalStateException("Repository workspace is unsafe");
-        }
-        return normalized;
     }
 
-    private static void setOwnerOnly(Path directory) throws Exception {
+    static void requireOwnerOnly(Path directory) {
         PosixFileAttributeView view = Files.getFileAttributeView(directory, PosixFileAttributeView.class);
-        if (view != null) {
+        if (view == null) {
+            throw new IllegalStateException("Repository workspace permissions are unsafe");
+        }
+        try {
             Files.setPosixFilePermissions(directory, OWNER_ONLY);
             if (!Files.getPosixFilePermissions(directory).equals(OWNER_ONLY)) {
                 throw new IllegalStateException("Repository workspace permissions are unsafe");
             }
+        } catch (UnsupportedOperationException | IOException exception) {
+            throw new IllegalStateException("Repository workspace permissions are unsafe");
         }
     }
 
-    private void cleanupWorkspace(Path validatedRoot, Path workspace) throws IOException {
-        if (!workRoot.equals(validatedRoot) || Files.isSymbolicLink(workRoot)
-                || !workRoot.toRealPath().equals(validatedRoot)) {
+    private void cleanupWorkspace(WorkspaceLease lease) throws Exception {
+        if (!workRoot.equals(lease.root())) {
             throw new IOException("Unsafe repository cleanup boundary");
         }
-        if (!Files.exists(workspace, LinkOption.NOFOLLOW_LINKS)) {
-            return;
-        }
-        if (!workspace.toAbsolutePath().normalize().getParent().equals(validatedRoot)
-                || Files.isSymbolicLink(workspace)
-                || !workspace.toRealPath().equals(workspace.toAbsolutePath().normalize())) {
-            throw new IOException("Unsafe repository cleanup boundary");
-        }
-        Files.walkFileTree(workspace, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
-                Files.deleteIfExists(file);
-                return FileVisitResult.CONTINUE;
+        verifyRootIdentity(lease.root(), lease.rootFileKey());
+        try (SecureDirectoryStream<Path> secureRoot = openSecureDirectory(lease.root())) {
+            verifyRootIdentity(lease.root(), lease.rootFileKey());
+            boundaryHook.run(lease.root(), BoundaryOperation.CLEANUP);
+            BasicFileAttributes workspaceAttributes;
+            try {
+                workspaceAttributes = readRelativeAttributes(secureRoot, lease.workspaceName());
+            } catch (NoSuchFileException exception) {
+                return;
             }
+            if (!Objects.equals(workspaceAttributes.fileKey(), lease.workspaceFileKey())
+                    || workspaceAttributes.isSymbolicLink() || !workspaceAttributes.isDirectory()) {
+                throw new IOException("Unsafe repository cleanup boundary");
+            }
+            deleteRelativeDirectory(secureRoot, lease.workspaceName());
+        }
+    }
 
-            @Override
-            public FileVisitResult postVisitDirectory(Path directory, IOException failure) throws IOException {
-                if (failure != null) {
-                    throw failure;
-                }
-                Files.deleteIfExists(directory);
-                return FileVisitResult.CONTINUE;
+    @SuppressWarnings("unchecked")
+    private static SecureDirectoryStream<Path> openSecureDirectory(Path directory) throws IOException {
+        DirectoryStream<Path> stream = Files.newDirectoryStream(directory);
+        if (!(stream instanceof SecureDirectoryStream<?>)) {
+            stream.close();
+            throw new IOException("Secure repository directory operations are unavailable");
+        }
+        return (SecureDirectoryStream<Path>) stream;
+    }
+
+    private static void verifyRootIdentity(Path root, Object expectedFileKey) throws IOException {
+        BasicFileAttributes attributes = readAttributes(root);
+        if (attributes.isSymbolicLink() || !attributes.isDirectory()
+                || !Objects.equals(attributes.fileKey(), expectedFileKey)
+                || !root.toRealPath().equals(root)) {
+            throw new IOException("Unsafe repository root identity");
+        }
+    }
+
+    private static BasicFileAttributes readAttributes(Path path) throws IOException {
+        return Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+    }
+
+    private static BasicFileAttributes readRelativeAttributes(SecureDirectoryStream<Path> directory,
+                                                              Path name) throws IOException {
+        BasicFileAttributeView view = directory.getFileAttributeView(
+                name, BasicFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (view == null) {
+            throw new IOException("Secure repository attributes are unavailable");
+        }
+        return view.readAttributes();
+    }
+
+    private static Object requireFileKey(BasicFileAttributes attributes) throws IOException {
+        if (attributes.fileKey() == null) {
+            throw new IOException("Repository filesystem identity is unavailable");
+        }
+        return attributes.fileKey();
+    }
+
+    private static void deleteRelativeEntryIfPresent(SecureDirectoryStream<Path> parent, Path name) throws IOException {
+        try {
+            BasicFileAttributes attributes = readRelativeAttributes(parent, name);
+            if (attributes.isDirectory() && !attributes.isSymbolicLink()) {
+                deleteRelativeDirectory(parent, name);
+            } else {
+                parent.deleteFile(name);
             }
-        });
+        } catch (NoSuchFileException ignored) {
+        }
+    }
+
+    private static void deleteRelativeDirectory(SecureDirectoryStream<Path> parent, Path name) throws IOException {
+        try (SecureDirectoryStream<Path> child = parent.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)) {
+            List<Path> entries = new ArrayList<>();
+            for (Path entry : child) {
+                entries.add(entry.getFileName());
+            }
+            for (Path entryName : entries) {
+                BasicFileAttributes attributes = readRelativeAttributes(child, entryName);
+                if (attributes.isDirectory() && !attributes.isSymbolicLink()) {
+                    deleteRelativeDirectory(child, entryName);
+                } else {
+                    child.deleteFile(entryName);
+                }
+            }
+        }
+        parent.deleteDirectory(name);
     }
 
     void closeLastCheckoutForTesting() {
@@ -263,4 +359,21 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
             lastCheckout.close();
         }
     }
+
+    enum BoundaryOperation {
+        CREATE, CLEANUP
+    }
+
+    @FunctionalInterface
+    interface WorkspaceBoundaryHook {
+        void run(Path root, BoundaryOperation operation) throws Exception;
+    }
+
+    private record WorkspaceLease(
+            Path root,
+            Path workspace,
+            Path workspaceName,
+            Object rootFileKey,
+            Object workspaceFileKey
+    ) { }
 }

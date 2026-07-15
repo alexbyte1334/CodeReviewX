@@ -1,7 +1,6 @@
 package com.codereviewx.backend.rag.indexing;
 
 import com.codereviewx.backend.rag.config.RagProperties;
-import com.codereviewx.backend.rag.model.CheckedOutRepository;
 import com.codereviewx.backend.rag.model.Language;
 import com.codereviewx.backend.rag.model.RepositoryFile;
 import org.eclipse.jgit.api.Git;
