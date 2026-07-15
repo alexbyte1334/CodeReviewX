@@ -1,13 +1,49 @@
-# docker-compose.yml — Round 01 Placeholder
-#
-# This file is a placeholder for Round 01: Repository Foundation v1.
-# Real service definitions will be added in later rounds once
-# business code is implemented.
-#
-# Planned services (to be defined in later rounds):
-#   - backend-java   (Spring Boot 3, port 8080)
-#   - ai-service     (FastAPI, port 8000)
-#   - frontend       (Vue 3 / React, port 3000)
-#   - mysql          (MySQL 8, port 3306)
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-codereviewx}
+      POSTGRES_USER: ${POSTGRES_USER:-codereviewx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codereviewx}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
-services: {}
+  backend:
+    build:
+      context: ./backend-java
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-codereviewx}
+      POSTGRES_USER: ${POSTGRES_USER:-codereviewx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codereviewx}
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      RAG_EMBEDDING_DIMENSIONS: ${RAG_EMBEDDING_DIMENSIONS:-1024}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-BAAI/bge-m3}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:

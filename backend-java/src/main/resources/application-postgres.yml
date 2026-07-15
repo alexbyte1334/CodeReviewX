@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:codereviewx}
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER:codereviewx}
+    password: ${POSTGRES_PASSWORD:codereviewx}
+  flyway:
+    locations:
+      - classpath:db/migration
+      - classpath:db/rag/postgresql
+    init-sqls:
+      - "CREATE SCHEMA IF NOT EXISTS flyway_compat; DO $$ BEGIN CREATE DOMAIN flyway_compat.CLOB AS TEXT; EXCEPTION WHEN duplicate_object THEN NULL; END $$; SET search_path TO public, flyway_compat"
+  h2:
+    console:
+      enabled: false
+
+codereviewx:
+  rag:
+    enabled: ${RAG_ENABLED:true}
+    embedding-dimensions: ${RAG_EMBEDDING_DIMENSIONS:1024}
+    embedding-model: ${RAG_EMBEDDING_MODEL:BAAI/bge-m3}
