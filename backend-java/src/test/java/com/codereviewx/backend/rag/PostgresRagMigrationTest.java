@@ -269,26 +269,54 @@ class PostgresRagMigrationTest {
                         """))
                         .as("generated search vector")
                         .startsWith("s:")
-                        .contains("to_tsvector('simple'::regconfig");
+                        .contains(
+                                "to_tsvector('simple'::regconfig",
+                                "path",
+                                "symbol_name",
+                                "content"
+                        );
 
                 softly.assertThat(queryNames(statement, """
-                        SELECT conname || ':' || confdeltype::text
-                        FROM pg_constraint
-                        WHERE contype = 'f'
-                          AND conrelid IN ('rag_index_job'::regclass, 'rag_document'::regclass,
-                                           'rag_chunk'::regclass, 'rag_retrieval_trace'::regclass,
-                                           'review_issue_evidence'::regclass)
+                        SELECT constraint_definition.conname || ':' ||
+                               constraint_definition.source_table || ':' ||
+                               constraint_definition.source_columns || ':' ||
+                               constraint_definition.referenced_table || ':' ||
+                               constraint_definition.referenced_columns || ':' ||
+                               constraint_definition.delete_action
+                        FROM (
+                            SELECT c.conname,
+                                   c.conrelid::regclass::text AS source_table,
+                                   (
+                                       SELECT string_agg(a.attname, ',' ORDER BY key_column.position)
+                                       FROM unnest(c.conkey) WITH ORDINALITY key_column(attnum, position)
+                                       JOIN pg_attribute a
+                                         ON a.attrelid = c.conrelid AND a.attnum = key_column.attnum
+                                   ) AS source_columns,
+                                   c.confrelid::regclass::text AS referenced_table,
+                                   (
+                                       SELECT string_agg(a.attname, ',' ORDER BY key_column.position)
+                                       FROM unnest(c.confkey) WITH ORDINALITY key_column(attnum, position)
+                                       JOIN pg_attribute a
+                                         ON a.attrelid = c.confrelid AND a.attnum = key_column.attnum
+                                   ) AS referenced_columns,
+                                   c.confdeltype::text AS delete_action
+                            FROM pg_constraint c
+                            WHERE c.contype = 'f'
+                              AND c.conrelid IN ('rag_index_job'::regclass, 'rag_document'::regclass,
+                                                'rag_chunk'::regclass, 'rag_retrieval_trace'::regclass,
+                                                'review_issue_evidence'::regclass)
+                        ) constraint_definition
                         """))
-                        .as("foreign key delete actions")
+                        .as("foreign key relationships and delete actions")
                         .containsExactlyInAnyOrder(
-                                "fk_rag_index_job_repository:a",
-                                "fk_rag_document_repository:a",
-                                "fk_rag_chunk_repository:a",
-                                "fk_rag_chunk_document:c",
-                                "fk_rag_retrieval_trace_review_run:a",
-                                "fk_rag_retrieval_trace_repository:a",
-                                "fk_review_issue_evidence_issue:c",
-                                "fk_review_issue_evidence_chunk:n"
+                                "fk_rag_index_job_repository:rag_index_job:repository_id:rag_repository:id:a",
+                                "fk_rag_document_repository:rag_document:repository_id:rag_repository:id:a",
+                                "fk_rag_chunk_repository:rag_chunk:repository_id:rag_repository:id:a",
+                                "fk_rag_chunk_document:rag_chunk:document_id:rag_document:id:c",
+                                "fk_rag_retrieval_trace_review_run:rag_retrieval_trace:review_run_id:review_run:id:a",
+                                "fk_rag_retrieval_trace_repository:rag_retrieval_trace:repository_id:rag_repository:id:a",
+                                "fk_review_issue_evidence_issue:review_issue_evidence:review_issue_id:review_issue:id:c",
+                                "fk_review_issue_evidence_chunk:review_issue_evidence:rag_chunk_id:rag_chunk:id:n"
                         );
 
                 softly.assertThat(queryNames(statement, """
