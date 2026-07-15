@@ -17,7 +17,7 @@ public final class LexicalRetriever {
     public List<ReciprocalRankFusion.Candidate> retrieve(HybridRagRetrievalService.SnapshotIdentity snapshot,
                                                          String query, List<String> changedPaths) {
         MapSqlParameterSource parameters = snapshot.parameters()
-                .addValue("query", query.replace("\n", " OR "))
+                .addValue("query", toWebsearchQuery(query))
                 .addValue("changedPaths", String.join("\n", changedPaths))
                 .addValue("changedDirectories", String.join("\n", PathBoost.directories(changedPaths)));
         return jdbc.query("""
@@ -55,6 +55,38 @@ public final class LexicalRetriever {
                 result.getLong("id"), result.getString("path"), result.getString("language"),
                 result.getString("symbol_name"), result.getInt("start_line"), result.getInt("end_line"),
                 result.getString("content_hash"), result.getString("content"), result.getDouble("path_boost")));
+    }
+
+    static String toWebsearchQuery(String query) {
+        if (query == null || query.isBlank()) {
+            return "";
+        }
+        StringBuilder converted = new StringBuilder(PrRetrievalQueryBuilder.MAX_QUERY_CHARS);
+        int cursor = 0;
+        while (cursor <= query.length()) {
+            int lineEnd = query.indexOf('\n', cursor);
+            if (lineEnd < 0) {
+                lineEnd = query.length();
+            }
+            String signal = query.substring(cursor, lineEnd).trim();
+            if (!signal.isEmpty()) {
+                int separatorLength = converted.isEmpty() ? 0 : 4;
+                if (signal.length() > PrRetrievalQueryBuilder.MAX_QUERY_CHARS
+                        || converted.length() + separatorLength + signal.length()
+                        > PrRetrievalQueryBuilder.MAX_QUERY_CHARS) {
+                    break;
+                }
+                if (!converted.isEmpty()) {
+                    converted.append(" OR ");
+                }
+                converted.append(signal);
+            }
+            if (lineEnd == query.length()) {
+                break;
+            }
+            cursor = lineEnd + 1;
+        }
+        return converted.toString();
     }
 }
 
