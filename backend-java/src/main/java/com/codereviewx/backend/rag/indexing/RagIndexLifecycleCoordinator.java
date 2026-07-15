@@ -16,6 +16,7 @@ public final class RagIndexLifecycleCoordinator {
     private final LeaseReleaser leaseReleaser;
     private final AtomicBoolean accepting = new AtomicBoolean(true);
     private final Map<LeaseKey, Thread> active = new ConcurrentHashMap<>();
+    private final Map<LeaseKey, Thread> cancellationRequested = new ConcurrentHashMap<>();
 
     @Autowired
     public RagIndexLifecycleCoordinator(RagIndexJobStore jobs) {
@@ -44,22 +45,57 @@ public final class RagIndexLifecycleCoordinator {
     }
 
     void unregister(long jobId, int attempt) {
-        active.remove(new LeaseKey(jobId, attempt), Thread.currentThread());
+        LeaseKey key = new LeaseKey(jobId, attempt);
+        Thread current = Thread.currentThread();
+        if (cancellationRequested.containsKey(key)) {
+            releaseWhenTerminated(key, current);
+            return;
+        }
+        active.remove(key, current);
     }
 
     void stopAccepting() {
         accepting.set(false);
     }
 
-    void cancelAndReleaseActive() {
+    void requestCancellation() {
         active.forEach((lease, thread) -> {
-            leaseReleaser.release(lease.jobId(), lease.attempt());
+            cancellationRequested.putIfAbsent(lease, thread);
             thread.interrupt();
+        });
+    }
+
+    void releaseTerminated() {
+        cancellationRequested.forEach((lease, thread) -> {
+            if (!thread.isAlive()) {
+                releaseIfTracked(lease, thread);
+            }
         });
     }
 
     int activeCount() {
         return active.size();
+    }
+
+    private void releaseWhenTerminated(LeaseKey lease, Thread thread) {
+        Thread watcher = new Thread(() -> {
+            try {
+                thread.join();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            releaseIfTracked(lease, thread);
+        }, "rag-index-lease-release");
+        watcher.setDaemon(true);
+        watcher.start();
+    }
+
+    private void releaseIfTracked(LeaseKey lease, Thread thread) {
+        if (cancellationRequested.remove(lease, thread)) {
+            active.remove(lease, thread);
+            leaseReleaser.release(lease.jobId(), lease.attempt());
+        }
     }
 
     @FunctionalInterface

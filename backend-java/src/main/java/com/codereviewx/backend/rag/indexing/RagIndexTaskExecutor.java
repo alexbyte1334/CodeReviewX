@@ -38,9 +38,10 @@ public final class RagIndexTaskExecutor extends ThreadPoolTaskExecutor {
         if (awaitTermination(executor, graceMillis)) {
             return;
         }
-        coordinator.cancelAndReleaseActive();
+        coordinator.requestCancellation();
         executor.shutdownNow();
         awaitTermination(executor, Math.min(graceMillis, 1_000L));
+        coordinator.releaseTerminated();
     }
 
     private static boolean awaitTermination(ThreadPoolExecutor executor, long timeoutMillis) {

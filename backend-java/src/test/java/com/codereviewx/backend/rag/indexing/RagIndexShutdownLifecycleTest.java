@@ -9,6 +9,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,7 +49,7 @@ class RagIndexShutdownLifecycleTest {
     }
 
     @Test
-    void closeRequeuesAndInterruptsTaskThatExceedsGraceBeforeHeartbeatStops() throws Exception {
+    void closeRequeuesInterruptResponsiveTaskAfterItTerminates() throws Exception {
         CountDownLatch releasedLease = new CountDownLatch(1);
         CountDownLatch taskStarted = new CountDownLatch(1);
         CountDownLatch blocker = new CountDownLatch(1);
@@ -75,6 +76,49 @@ class RagIndexShutdownLifecycleTest {
         assertThat(releasedLease.await(1, TimeUnit.SECONDS)).isTrue();
         assertThat(coordinator.activeCount()).isZero();
         assertThat(heartbeat.isShutdown()).isTrue();
+    }
+
+    @Test
+    void closeDoesNotReleaseLeaseWhileInterruptedTaskRemainsAlive() throws Exception {
+        AtomicInteger releaseCount = new AtomicInteger();
+        CountDownLatch releasedLease = new CountDownLatch(1);
+        CountDownLatch taskStarted = new CountDownLatch(1);
+        CountDownLatch allowTaskExit = new CountDownLatch(1);
+        CountDownLatch taskExited = new CountDownLatch(1);
+        ScheduledExecutorService heartbeat = Executors.newSingleThreadScheduledExecutor();
+        RagIndexLifecycleCoordinator coordinator = new RagIndexLifecycleCoordinator((jobId, attempt) -> {
+            releaseCount.incrementAndGet();
+            releasedLease.countDown();
+            return true;
+        });
+        AnnotationConfigApplicationContext context = context(Duration.ofMillis(50), coordinator, heartbeat);
+        RagIndexTaskExecutor executor = context.getBean(RagIndexTaskExecutor.class);
+        executor.execute(() -> {
+            coordinator.register(100L, 3);
+            taskStarted.countDown();
+            try {
+                while (allowTaskExit.getCount() > 0) {
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException ignored) { }
+                }
+            } finally {
+                coordinator.unregister(100L, 3);
+                taskExited.countDown();
+            }
+        });
+        assertThat(taskStarted.await(1, TimeUnit.SECONDS)).isTrue();
+
+        context.close();
+
+        assertThat(releaseCount).hasValue(0);
+        assertThat(coordinator.activeCount()).isEqualTo(1);
+
+        allowTaskExit.countDown();
+        assertThat(taskExited.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(releasedLease.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(releaseCount).hasValue(1);
+        assertThat(coordinator.activeCount()).isZero();
     }
 
     private static AnnotationConfigApplicationContext context(
