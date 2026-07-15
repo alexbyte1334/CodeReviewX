@@ -5,6 +5,15 @@ import java.util.Objects;
 
 public record RagEvidenceBundle(List<RagEvidence> evidence, String promptBlock, DegradedReason reason,
                                 RagContextAssembler.RetrievalHealth retrievalHealth) {
+    public RagEvidenceBundle(List<RagEvidence> evidence, String promptBlock, boolean degraded,
+                             DegradedReason reason, boolean legacyFallbackRequired) {
+        this(evidence, promptBlock, reason,
+                legacyFallbackRequired ? RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED
+                        : degraded && reason == DegradedReason.NONE
+                        ? RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED
+                        : RagContextAssembler.RetrievalHealth.HEALTHY);
+    }
+
     public RagEvidenceBundle {
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
         Objects.requireNonNull(promptBlock, "promptBlock");

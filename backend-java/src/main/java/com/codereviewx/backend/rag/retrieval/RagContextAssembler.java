@@ -11,6 +11,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.text.Normalizer;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class RagContextAssembler {
@@ -21,7 +23,8 @@ public final class RagContextAssembler {
     private static final int MAX_CONTENT_CHARACTERS = 36_000;
     private static final double ADJACENT_OVERLAP_THRESHOLD = 0.85;
     private static final double EXACT_CHANGED_PATH_BOOST = 1.25;
-    private static final Pattern TOKEN_SPLITTER = Pattern.compile("[^A-Za-z0-9_]+");
+    private static final Pattern UNICODE_TOKEN = Pattern.compile("[\\p{L}\\p{N}_]+");
+    private static final Pattern EVIDENCE_MARKER = Pattern.compile("(?i)\\[(?=/?EVIDENCE\\b)");
 
     private final RerankClient rerankClient;
 
@@ -154,7 +157,7 @@ public final class RagContextAssembler {
             if (boundedLength == 0) {
                 continue;
             }
-            selected.add(new ScoredMatch(withContent(item.match, item.match.content().substring(0, boundedLength)), item.score));
+            selected.add(bound(item, boundedLength));
             perFile.merge(path, 1, Integer::sum);
             characters += boundedLength;
         }
@@ -176,7 +179,7 @@ public final class RagContextAssembler {
                 if (remaining > 0) {
                     String bounded = changed.match.content().substring(0,
                             Math.min(changed.match.content().length(), remaining));
-                    selected.set(replacement, new ScoredMatch(withContent(changed.match, bounded), changed.score));
+                    selected.set(replacement, bound(changed, bounded.length()));
                     Map<Long, Integer> rankIndex = new HashMap<>();
                     for (int index = 0; index < ranked.size(); index++) {
                         rankIndex.put(ranked.get(index).match.chunkId(), index);
@@ -192,8 +195,13 @@ public final class RagContextAssembler {
         List<RagEvidence> result = new ArrayList<>(selected.size());
         for (int index = 0; index < selected.size(); index++) {
             HybridRagRetrievalService.Match match = selected.get(index).match;
-            result.add(new RagEvidence("C" + (index + 1), match.path(), match.startLine(), match.endLine(),
-                    commitSha, match.content(), selected.get(index).score));
+            String path = canonicalizeField(match.path());
+            String canonicalCommit = canonicalizeField(commitSha);
+            String content = escapeEvidenceMarkers(match.content());
+            boolean escaped = !path.equals(match.path()) || !canonicalCommit.equals(commitSha)
+                    || !content.equals(match.content());
+            result.add(new RagEvidence("C" + (index + 1), path, match.startLine(), match.endLine(),
+                    canonicalCommit, content, selected.get(index).score, selected.get(index).truncated, escaped));
         }
         return List.copyOf(result);
     }
@@ -211,16 +219,11 @@ public final class RagContextAssembler {
         return Double.compare(match.pathBoost(), EXACT_CHANGED_PATH_BOOST) == 0;
     }
 
-    private static HybridRagRetrievalService.Match withContent(HybridRagRetrievalService.Match match, String content) {
-        return new HybridRagRetrievalService.Match(match.chunkId(), match.path(), match.language(), match.symbolName(),
-                match.startLine(), match.endLine(), match.contentHash(), content, match.pathBoost(), match.fusedScore());
-    }
-
     private static double jaccard(String left, String right) {
         Set<String> first = tokens(left);
         Set<String> second = tokens(right);
         if (first.isEmpty() && second.isEmpty()) {
-            return 1.0;
+            return normalized(left).equals(normalized(right)) ? 1.0 : 0.0;
         }
         Set<String> intersection = new HashSet<>(first);
         intersection.retainAll(second);
@@ -231,15 +234,86 @@ public final class RagContextAssembler {
 
     private static Set<String> tokens(String value) {
         Set<String> result = new LinkedHashSet<>();
-        for (String token : TOKEN_SPLITTER.split(value.toLowerCase(Locale.ROOT))) {
-            if (!token.isBlank()) {
+        Matcher matcher = UNICODE_TOKEN.matcher(normalized(value));
+        while (matcher.find()) {
+            String token = matcher.group();
+            if (token.codePoints().anyMatch(Character::isIdeographic)) {
+                int[] codePoints = token.codePoints().toArray();
+                if (codePoints.length == 1) {
+                    result.add(token);
+                } else {
+                    for (int index = 0; index < codePoints.length - 1; index++) {
+                        result.add(new String(codePoints, index, 2));
+                    }
+                }
+            } else {
                 result.add(token);
             }
         }
         return result;
     }
 
-    private record ScoredMatch(HybridRagRetrievalService.Match match, double score) {
+    private static String normalized(String value) {
+        return Normalizer.normalize(value, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT).strip();
+    }
+
+    private static String canonicalizeField(String value) {
+        StringBuilder result = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (character == '\n') {
+                result.append("\\n");
+            } else if (character == '\r') {
+                result.append("\\r");
+            } else if (character == '\t') {
+                result.append("\\t");
+            } else if (Character.isISOControl(character)) {
+                result.append(String.format(Locale.ROOT, "\\u%04X", (int) character));
+            } else {
+                result.append(character);
+            }
+        }
+        return escapeEvidenceMarkers(result.toString());
+    }
+
+    private static String escapeEvidenceMarkers(String value) {
+        return EVIDENCE_MARKER.matcher(value).replaceAll("［");
+    }
+
+    private static ScoredMatch bound(ScoredMatch item, int maxCharacters) {
+        String content = item.match.content();
+        if (content.length() <= maxCharacters) {
+            return item;
+        }
+        int cut = safeCut(content, maxCharacters);
+        int lineBreak = content.lastIndexOf('\n', cut - 1);
+        if (lineBreak > 0) {
+            cut = lineBreak;
+        }
+        String bounded = content.substring(0, cut);
+        int retainedLines = (int) bounded.lines().count();
+        int endLine = bounded.isEmpty() ? item.match.startLine() : item.match.startLine() + retainedLines - 1;
+        HybridRagRetrievalService.Match match = new HybridRagRetrievalService.Match(
+                item.match.chunkId(), item.match.path(), item.match.language(), item.match.symbolName(),
+                item.match.startLine(), endLine, item.match.contentHash(), bounded,
+                item.match.pathBoost(), item.match.fusedScore());
+        return new ScoredMatch(match, item.score, true);
+    }
+
+    private static int safeCut(String content, int maxCharacters) {
+        int cut = Math.min(maxCharacters, content.length());
+        if (cut > 0 && cut < content.length()
+                && Character.isHighSurrogate(content.charAt(cut - 1))
+                && Character.isLowSurrogate(content.charAt(cut))) {
+            return cut - 1;
+        }
+        return cut;
+    }
+
+    private record ScoredMatch(HybridRagRetrievalService.Match match, double score, boolean truncated) {
+        private ScoredMatch(HybridRagRetrievalService.Match match, double score) {
+            this(match, score, false);
+        }
     }
 
     public enum RetrievalHealth {
