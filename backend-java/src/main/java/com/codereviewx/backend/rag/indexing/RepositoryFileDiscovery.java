@@ -39,6 +39,8 @@ public final class RepositoryFileDiscovery {
             ".env", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "pnpm-lock.yml",
             "composer.lock", "cargo.lock", "gemfile.lock", "poetry.lock",
             ".npmrc", ".pypirc", ".netrc", ".dockercfg", ".git-credentials");
+    private static final Set<String> SAFE_ENV_TEMPLATES = Set.of(
+            ".env.example", ".env.sample", ".env.template");
     private static final Map<String, Language> LANGUAGES = languages();
 
     private final long maxFileBytes;
@@ -90,8 +92,6 @@ public final class RepositoryFileDiscovery {
     private List<RepositoryFile> discoverWithTreeWalk(Path root, Repository repository) throws Exception {
         List<RepositoryFile> files = new ArrayList<>();
         long totalBytes = 0;
-        int candidates = 0;
-        int candidateLimit = (int) Math.min(Integer.MAX_VALUE, (long) maxFiles * 2L);
         try (TreeWalk walk = new TreeWalk(repository)) {
             int indexPosition = walk.addTree(new DirCacheIterator(repository.readDirCache()));
             int worktreePosition = walk.addTree(new FileTreeIterator(repository));
@@ -115,9 +115,6 @@ public final class RepositoryFileDiscovery {
                 }
                 if (mode != FileMode.REGULAR_FILE && mode != FileMode.EXECUTABLE_FILE) {
                     continue;
-                }
-                if (candidates++ >= candidateLimit) {
-                    throw new IllegalStateException("Repository candidate budget exceeded");
                 }
                 boolean tracked = walk.getFileMode(indexPosition) != FileMode.MISSING;
                 if ((!tracked && working.isEntryIgnored()) || shouldSkipFile(fileName(relative))) {
@@ -163,7 +160,7 @@ public final class RepositoryFileDiscovery {
     private static boolean shouldSkipFile(String fileName) {
         String lower = fileName.toLowerCase(Locale.ROOT);
         return SKIPPED_FILES.contains(lower)
-                || lower.startsWith(".env.")
+                || (lower.startsWith(".env.") && !SAFE_ENV_TEMPLATES.contains(lower))
                 || lower.endsWith(".min.js")
                 || lower.endsWith(".min.css")
                 || lower.endsWith(".pem")

@@ -123,14 +123,21 @@ class RepositoryFileDiscoveryTest {
     }
 
     @Test
-    void rejectsCandidateTreesBeforeRetainingUnboundedPaths() throws Exception {
+    void skippedCandidatesDoNotConsumeAcceptedFileBudget() throws Exception {
         Path root = initRepository();
-        write(root, ".env.a", "a");
-        write(root, ".env.b", "b");
-        write(root, "c.txt", "c");
+        Files.createDirectories(root.resolve(".git/info"));
+        Files.writeString(root.resolve(".git/info/exclude"), "ignored-*.txt\n");
+        for (int index = 0; index < 10; index++) {
+            write(root, ".env.local." + index, "secret");
+            write(root, "ignored-" + index + ".txt", "ignored");
+            write(root, "large-" + index + ".txt", "x".repeat(11));
+            write(root, "node_modules/pkg-" + index + "/index.js", "generated");
+            Files.write(root.resolve("binary-" + index + ".dat"), new byte[]{'a', 0, 'b'});
+        }
+        write(root, "z-valid.txt", "valid");
 
-        assertThatThrownBy(() -> new RepositoryFileDiscovery(100, 1, 100).discover(checked(root)))
-                .hasMessage("Repository candidate budget exceeded");
+        assertThat(new RepositoryFileDiscovery(10, 1, 100).discover(checked(root)))
+                .extracting(RepositoryFile::path).containsExactly("z-valid.txt");
     }
 
     @Test
@@ -141,6 +148,9 @@ class RepositoryFileDiscoveryTest {
                 "certificate.p12", "certificate.pfx", "keystore.jks", "application.keystore")) {
             write(root, sensitive, "secret\n");
         }
+        write(root, ".env.example", "TOKEN=\n");
+        write(root, ".env.sample", "TOKEN=\n");
+        write(root, ".env.template", "TOKEN=\n");
         write(root, "credentials-guide.md", "safe documentation\n");
         write(root, "src/environment.java", "class Environment {}\n");
         try (Git git = Git.open(root.toFile())) {
@@ -149,7 +159,9 @@ class RepositoryFileDiscoveryTest {
         }
 
         assertThat(discover(root)).extracting(RepositoryFile::path)
-                .containsExactly("credentials-guide.md", "src/environment.java");
+                .containsExactly(
+                        ".env.example", ".env.sample", ".env.template",
+                        "credentials-guide.md", "src/environment.java");
     }
 
     @Test

@@ -7,11 +7,13 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 class LineWindowCodeChunkerTest {
 
@@ -60,6 +62,17 @@ class LineWindowCodeChunkerTest {
     }
 
     @Test
+    void singleLineCharacterWindowsAlwaysAdvance() {
+        String content = "a".repeat(5_000) + "\n" + "b".repeat(5_000);
+
+        List<CodeChunk> chunks = assertTimeoutPreemptively(Duration.ofSeconds(1),
+                () -> chunker.chunk(file(content)));
+
+        assertThat(chunks).extracting(CodeChunk::startLine).containsExactly(1, 2);
+        assertThat(chunks).extracting(CodeChunk::endLine).containsExactly(1, 2);
+    }
+
+    @Test
     void repeatedPeriodicLongLineStillProducesUniqueExactKeysWithoutDataLoss() {
         String content = "abcd".repeat(5_001);
 
@@ -77,7 +90,7 @@ class LineWindowCodeChunkerTest {
     }
 
     @Test
-    void partitionsLargeWindowsWithoutTruncationAndIsDeterministic() {
+    void characterLimitedWindowsAboveOverlapContractKeepTwentyLines() {
         String content = IntStream.rangeClosed(1, 81)
                 .mapToObj(number -> number + "-" + "z".repeat(300))
                 .reduce((left, right) -> left + "\n" + right).orElseThrow();
@@ -88,19 +101,18 @@ class LineWindowCodeChunkerTest {
 
         assertThat(first).isEqualTo(second);
         assertThat(first).allSatisfy(chunk -> assertThat(chunk.content().length()).isLessThanOrEqualTo(8_000));
-        assertThat(first).extracting(CodeChunk::startLine).contains(1, 61);
-        assertThat(first).extracting(CodeChunk::endLine).contains(81);
         for (int index = 1; index < first.size(); index++) {
             CodeChunk previous = first.get(index - 1);
             CodeChunk current = first.get(index);
             int previousLines = previous.endLine() - previous.startLine() + 1;
-            int overlap = Math.min(20, Math.max(1, previousLines / 4));
-            assertThat(current.startLine()).isEqualTo(previous.endLine() - overlap + 1);
+            assertThat(previousLines).isGreaterThan(20);
+            assertThat(previous.endLine() - current.startLine() + 1).isEqualTo(20);
         }
+        assertThat(first.get(first.size() - 1).endLine()).isEqualTo(81);
     }
 
     @Test
-    void characterLimitedSmallWindowsUseBoundedAdaptiveOverlap() {
+    void characterCapConflictUsesBoundedAdaptiveOverlapWhenTwentyLinesCannotProgress() {
         String content = IntStream.rangeClosed(1, 200)
                 .mapToObj(number -> String.format("L%03d:%s", number, "x".repeat(395)))
                 .reduce((left, right) -> left + "\n" + right).orElseThrow();
@@ -118,8 +130,11 @@ class LineWindowCodeChunkerTest {
             }
             if (index > 0) {
                 CodeChunk previous = chunks.get(index - 1);
+                int previousLines = previous.endLine() - previous.startLine() + 1;
                 int overlap = previous.endLine() - chunk.startLine() + 1;
+                assertThat(previousLines).isLessThanOrEqualTo(20);
                 assertThat(overlap).isBetween(1, 5);
+                assertThat(overlap).isLessThan(previousLines);
             }
         }
         assertThat(covered).containsOnly(true);
