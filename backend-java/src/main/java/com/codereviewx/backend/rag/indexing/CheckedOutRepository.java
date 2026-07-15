@@ -4,7 +4,6 @@ import org.eclipse.jgit.lib.Repository;
 
 import java.nio.file.Path;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class CheckedOutRepository implements AutoCloseable {
 
@@ -12,7 +11,8 @@ public final class CheckedOutRepository implements AutoCloseable {
     private final String commitSha;
     private final Repository repository;
     private final AutoCloseable cleanup;
-    private final AtomicBoolean closed = new AtomicBoolean();
+    private boolean repositoryClosed;
+    private boolean closed;
 
     CheckedOutRepository(Path path, String commitSha, Repository repository) {
         this(path, commitSha, repository, null);
@@ -42,12 +42,13 @@ public final class CheckedOutRepository implements AutoCloseable {
     }
 
     @Override
-    public void close() {
-        if (!closed.compareAndSet(false, true)) {
+    public synchronized void close() {
+        if (closed) {
             return;
         }
-        if (repository != null) {
+        if (repository != null && !repositoryClosed) {
             repository.close();
+            repositoryClosed = true;
         }
         if (cleanup != null) {
             try {
@@ -56,5 +57,6 @@ public final class CheckedOutRepository implements AutoCloseable {
                 throw new IllegalStateException("Repository cleanup failed");
             }
         }
+        closed = true;
     }
 }

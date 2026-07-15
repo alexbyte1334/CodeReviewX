@@ -123,6 +123,36 @@ class RepositoryFileDiscoveryTest {
     }
 
     @Test
+    void rejectsCandidateTreesBeforeRetainingUnboundedPaths() throws Exception {
+        Path root = initRepository();
+        write(root, ".env.a", "a");
+        write(root, ".env.b", "b");
+        write(root, "c.txt", "c");
+
+        assertThatThrownBy(() -> new RepositoryFileDiscovery(100, 1, 100).discover(checked(root)))
+                .hasMessage("Repository candidate budget exceeded");
+    }
+
+    @Test
+    void filtersTrackedCredentialFilesWithoutOvermatchingSafeFiles() throws Exception {
+        Path root = initRepository();
+        for (String sensitive : List.of(
+                ".env.production", ".npmrc", ".pypirc", ".netrc", ".dockercfg", ".git-credentials",
+                "certificate.p12", "certificate.pfx", "keystore.jks", "application.keystore")) {
+            write(root, sensitive, "secret\n");
+        }
+        write(root, "credentials-guide.md", "safe documentation\n");
+        write(root, "src/environment.java", "class Environment {}\n");
+        try (Git git = Git.open(root.toFile())) {
+            git.add().addFilepattern(".").call();
+            git.commit().setMessage("tracked credentials").setAuthor("test", "test@example.com").call();
+        }
+
+        assertThat(discover(root)).extracting(RepositoryFile::path)
+                .containsExactly("credentials-guide.md", "src/environment.java");
+    }
+
+    @Test
     void defaultsAndEqualLimitsMatchProductionContract() throws Exception {
         RagProperties properties = new RagProperties();
         assertThat(properties.getMaxFileBytes()).isEqualTo(1024L * 1024L);

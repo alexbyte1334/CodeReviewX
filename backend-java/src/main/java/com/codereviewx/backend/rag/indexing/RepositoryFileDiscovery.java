@@ -3,10 +3,13 @@ package com.codereviewx.backend.rag.indexing;
 import com.codereviewx.backend.rag.config.RagProperties;
 import com.codereviewx.backend.rag.model.Language;
 import com.codereviewx.backend.rag.model.RepositoryFile;
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.Status;
+import org.eclipse.jgit.dircache.DirCacheIterator;
+import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
+import org.eclipse.jgit.treewalk.FileTreeIterator;
+import org.eclipse.jgit.treewalk.TreeWalk;
+import org.eclipse.jgit.treewalk.WorkingTreeIterator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -15,15 +18,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,7 +37,8 @@ public final class RepositoryFileDiscovery {
             ".git", "node_modules", "dist", "build", "target", "vendor");
     private static final Set<String> SKIPPED_FILES = Set.of(
             ".env", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "pnpm-lock.yml",
-            "composer.lock", "cargo.lock", "gemfile.lock", "poetry.lock");
+            "composer.lock", "cargo.lock", "gemfile.lock", "poetry.lock",
+            ".npmrc", ".pypirc", ".netrc", ".dockercfg", ".git-credentials");
     private static final Map<String, Language> LANGUAGES = languages();
 
     private final long maxFileBytes;
@@ -66,19 +65,65 @@ public final class RepositoryFileDiscovery {
 
     public List<RepositoryFile> discover(CheckedOutRepository checkedOut) {
         Path root = checkedOut.path().toAbsolutePath().normalize();
+        Repository repository = checkedOut.repository();
+        boolean closeRepository = false;
         try {
             root.toRealPath();
-            Set<String> ignored = ignoredUntrackedPaths(checkedOut, root);
-            List<Path> candidates = collectCandidates(root);
-            candidates.sort(Comparator.comparing(path -> relative(root, path)));
+            if (repository == null) {
+                repository = new FileRepositoryBuilder().findGitDir(root.toFile()).build();
+                closeRepository = true;
+            }
+            return discoverWithTreeWalk(root, repository);
+        } catch (UnsafeSymbolicLinkException exception) {
+            throw new IllegalStateException("Repository contains an unsafe symbolic link");
+        } catch (IllegalStateException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalStateException("Repository file discovery failed");
+        } finally {
+            if (closeRepository && repository != null) {
+                repository.close();
+            }
+        }
+    }
 
-            List<RepositoryFile> files = new ArrayList<>();
-            long totalBytes = 0;
-            for (Path candidate : candidates) {
-                String relative = relative(root, candidate);
-                if (isIgnored(relative, ignored) || shouldSkipFile(candidate.getFileName().toString())) {
+    private List<RepositoryFile> discoverWithTreeWalk(Path root, Repository repository) throws Exception {
+        List<RepositoryFile> files = new ArrayList<>();
+        long totalBytes = 0;
+        int candidates = 0;
+        int candidateLimit = (int) Math.min(Integer.MAX_VALUE, (long) maxFiles * 2L);
+        try (TreeWalk walk = new TreeWalk(repository)) {
+            int indexPosition = walk.addTree(new DirCacheIterator(repository.readDirCache()));
+            int worktreePosition = walk.addTree(new FileTreeIterator(repository));
+            walk.setRecursive(false);
+            while (walk.next()) {
+                WorkingTreeIterator working = walk.getTree(worktreePosition, WorkingTreeIterator.class);
+                if (working == null) {
                     continue;
                 }
+                String relative = walk.getPathString();
+                FileMode mode = walk.getFileMode(worktreePosition);
+                if (mode == FileMode.TREE) {
+                    if (!SKIPPED_DIRECTORIES.contains(fileName(relative))) {
+                        walk.enterSubtree();
+                    }
+                    continue;
+                }
+                if (mode == FileMode.SYMLINK) {
+                    rejectEscapingSymlink(root, root.resolve(relative));
+                    continue;
+                }
+                if (mode != FileMode.REGULAR_FILE && mode != FileMode.EXECUTABLE_FILE) {
+                    continue;
+                }
+                if (candidates++ >= candidateLimit) {
+                    throw new IllegalStateException("Repository candidate budget exceeded");
+                }
+                boolean tracked = walk.getFileMode(indexPosition) != FileMode.MISSING;
+                if ((!tracked && working.isEntryIgnored()) || shouldSkipFile(fileName(relative))) {
+                    continue;
+                }
+                Path candidate = root.resolve(relative);
                 long size = Files.size(candidate);
                 if (size > maxFileBytes) {
                     continue;
@@ -97,83 +142,36 @@ public final class RepositoryFileDiscovery {
                 files.add(new RepositoryFile(relative, language(relative), content, bytes.length, Hashing.sha256(bytes)));
                 totalBytes += bytes.length;
             }
-            return List.copyOf(files);
-        } catch (UnsafeSymbolicLinkException exception) {
-            throw new IllegalStateException("Repository contains an unsafe symbolic link");
-        } catch (IllegalStateException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new IllegalStateException("Repository file discovery failed");
+        }
+        return List.copyOf(files);
+    }
+
+    private static void rejectEscapingSymlink(Path root, Path link) throws IOException {
+        Path linkTarget = Files.readSymbolicLink(link);
+        Path target = (linkTarget.isAbsolute() ? linkTarget : link.getParent().resolve(linkTarget))
+                .toAbsolutePath().normalize();
+        if (!target.startsWith(root)) {
+            throw new UnsafeSymbolicLinkException();
         }
     }
 
-    private static List<Path> collectCandidates(Path root) throws IOException {
-        List<Path> candidates = new ArrayList<>();
-        Files.walkFileTree(root, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
-                if (!directory.equals(root) && SKIPPED_DIRECTORIES.contains(directory.getFileName().toString())) {
-                    return FileVisitResult.SKIP_SUBTREE;
-                }
-                return FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
-                if (attributes.isSymbolicLink()) {
-                    Path linkTarget = Files.readSymbolicLink(file);
-                    Path target = (linkTarget.isAbsolute() ? linkTarget : file.getParent().resolve(linkTarget))
-                            .toAbsolutePath().normalize();
-                    if (!target.startsWith(root)) {
-                        throw new UnsafeSymbolicLinkException();
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-                if (attributes.isRegularFile()) {
-                    candidates.add(file);
-                }
-                return FileVisitResult.CONTINUE;
-            }
-        });
-        return candidates;
-    }
-
-    private static Set<String> ignoredUntrackedPaths(CheckedOutRepository checkedOut, Path root) {
-        Repository repository = checkedOut.repository();
-        boolean closeRepository = false;
-        try {
-            if (repository == null) {
-                repository = new FileRepositoryBuilder().findGitDir(root.toFile()).build();
-                closeRepository = true;
-            }
-            Status status = Git.wrap(repository).status().call();
-            return new HashSet<>(status.getIgnoredNotInIndex());
-        } catch (Exception exception) {
-            throw new IllegalStateException("Repository ignore rules could not be evaluated");
-        } finally {
-            if (closeRepository && repository != null) {
-                repository.close();
-            }
-        }
-    }
-
-    private static boolean isIgnored(String path, Set<String> ignored) {
-        for (String ignoredPath : ignored) {
-            String normalized = ignoredPath.replace('\\', '/');
-            if (path.equals(normalized) || path.startsWith(normalized.endsWith("/") ? normalized : normalized + "/")) {
-                return true;
-            }
-        }
-        return false;
+    private static String fileName(String path) {
+        int slash = path.lastIndexOf('/');
+        return slash < 0 ? path : path.substring(slash + 1);
     }
 
     private static boolean shouldSkipFile(String fileName) {
         String lower = fileName.toLowerCase(Locale.ROOT);
         return SKIPPED_FILES.contains(lower)
+                || lower.startsWith(".env.")
                 || lower.endsWith(".min.js")
                 || lower.endsWith(".min.css")
                 || lower.endsWith(".pem")
                 || lower.endsWith(".key")
+                || lower.endsWith(".p12")
+                || lower.endsWith(".pfx")
+                || lower.endsWith(".jks")
+                || lower.endsWith(".keystore")
                 || lower.equals("id_rsa")
                 || lower.equals("id_ed25519");
     }
@@ -198,15 +196,6 @@ public final class RepositoryFileDiscovery {
             }
         }
         return false;
-    }
-
-    private static String relative(Path root, Path path) {
-        String relative = root.relativize(path.toAbsolutePath().normalize()).toString().replace('\\', '/');
-        if (relative.isBlank() || relative.startsWith("/") || relative.equals("..")
-                || relative.startsWith("../") || relative.contains("/../")) {
-            throw new IllegalStateException("Repository path is unsafe");
-        }
-        return relative;
     }
 
     private static Language language(String path) {

@@ -48,7 +48,9 @@ public final class LineWindowCodeChunker implements CodeChunker {
             if (end == lines.length) {
                 break;
             }
-            start = Math.max(start + 1, end - OVERLAP_LINES);
+            int windowLines = end - start;
+            int overlap = Math.min(OVERLAP_LINES, Math.max(1, windowLines / 4));
+            start = end - overlap;
         }
         return List.copyOf(chunks);
     }

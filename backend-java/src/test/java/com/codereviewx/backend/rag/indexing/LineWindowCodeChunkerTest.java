@@ -89,12 +89,41 @@ class LineWindowCodeChunkerTest {
         assertThat(first).isEqualTo(second);
         assertThat(first).allSatisfy(chunk -> assertThat(chunk.content().length()).isLessThanOrEqualTo(8_000));
         assertThat(first).extracting(CodeChunk::startLine).contains(1, 61);
-        assertThat(first).extracting(CodeChunk::endLine).contains(80, 81);
+        assertThat(first).extracting(CodeChunk::endLine).contains(81);
         for (int index = 1; index < first.size(); index++) {
             CodeChunk previous = first.get(index - 1);
             CodeChunk current = first.get(index);
-            assertThat(current.startLine()).isEqualTo(Math.max(previous.startLine() + 1, previous.endLine() - 19));
+            int previousLines = previous.endLine() - previous.startLine() + 1;
+            int overlap = Math.min(20, Math.max(1, previousLines / 4));
+            assertThat(current.startLine()).isEqualTo(previous.endLine() - overlap + 1);
         }
+    }
+
+    @Test
+    void characterLimitedSmallWindowsUseBoundedAdaptiveOverlap() {
+        String content = IntStream.rangeClosed(1, 200)
+                .mapToObj(number -> String.format("L%03d:%s", number, "x".repeat(395)))
+                .reduce((left, right) -> left + "\n" + right).orElseThrow();
+        RepositoryFile file = file(content);
+
+        List<CodeChunk> chunks = chunker.chunk(file);
+
+        assertThat(chunks).hasSizeLessThanOrEqualTo(15);
+        assertThat(chunker.chunk(file)).isEqualTo(chunks);
+        boolean[] covered = new boolean[200];
+        for (int index = 0; index < chunks.size(); index++) {
+            CodeChunk chunk = chunks.get(index);
+            for (int line = chunk.startLine(); line <= chunk.endLine(); line++) {
+                covered[line - 1] = true;
+            }
+            if (index > 0) {
+                CodeChunk previous = chunks.get(index - 1);
+                int overlap = previous.endLine() - chunk.startLine() + 1;
+                assertThat(overlap).isBetween(1, 5);
+            }
+        }
+        assertThat(covered).containsOnly(true);
+        assertThat(chunks).extracting(CodeChunk::chunkKey).doesNotHaveDuplicates();
     }
 
     private void assertRanges(int lines, String... ranges) {
