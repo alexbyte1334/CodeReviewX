@@ -431,12 +431,24 @@ class RagIndexWorkerIntegrationTest {
         executor.shutdown();
 
         assertThat(blockedEmbeddings.interrupted.await(1, TimeUnit.SECONDS)).isTrue();
-        RagIndexJob finalJob = jobs.get(queued.jobId()).orElseThrow();
-        assertThat(finalJob.status()).isEqualTo(RagIndexJob.Status.QUEUED);
-        assertThat(finalJob.errorCode()).isEqualTo("SHUTDOWN_REQUEUED");
+        awaitShutdownRequeued(queued.jobId());
         assertThat(jdbc.queryForObject("SELECT active_commit_sha FROM rag_repository", String.class))
                 .isEqualTo(SHA_ONE);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot", Integer.class)).isEqualTo(1);
+    }
+
+    private void awaitShutdownRequeued(long jobId) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        RagIndexJob lastObserved = null;
+        while (System.nanoTime() < deadline) {
+            lastObserved = jobs.get(jobId).orElseThrow();
+            if (lastObserved.status() == RagIndexJob.Status.QUEUED
+                    && "SHUTDOWN_REQUEUED".equals(lastObserved.errorCode())) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Timed out waiting for shutdown requeue; last job=" + lastObserved);
     }
 
     @Test
