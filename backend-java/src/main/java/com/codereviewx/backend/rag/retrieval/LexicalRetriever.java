@@ -32,7 +32,7 @@ public final class LexicalRetriever {
                            chunk.content_hash, chunk.content,
                            CASE WHEN EXISTS (SELECT 1 FROM changed_path WHERE changed_path.path=chunk.path) THEN 1.25
                                 WHEN EXISTS (SELECT 1 FROM changed_directory
-                                             WHERE chunk.path LIKE changed_directory.directory || '/%') THEN 1.10
+                                             WHERE starts_with(chunk.path, changed_directory.directory || '/')) THEN 1.10
                                 ELSE 1.0 END AS path_boost,
                            ts_rank_cd(chunk.search_vector, requested_query.value) AS lexical_score
                     FROM rag_chunk chunk

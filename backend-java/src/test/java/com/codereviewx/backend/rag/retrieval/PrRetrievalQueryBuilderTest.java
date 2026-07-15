@@ -48,6 +48,18 @@ class PrRetrievalQueryBuilderTest {
     }
 
     @Test
+    void redactsHighEntropyAlphabeticMixedCaseTokensWithoutRedactingLowEntropyIdentifiers() {
+        String alphabeticSecret = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEf";
+        String ordinaryIdentifier = "repositoryContextConfigurationFactory";
+
+        String query = builder.build(new PrRetrievalQueryBuilder.PrQuery(
+                "Rotate " + alphabeticSecret, List.of("src/" + ordinaryIdentifier + ".java"),
+                List.of(), List.of(ordinaryIdentifier), List.of()));
+
+        assertThat(query).contains("[REDACTED]", ordinaryIdentifier).doesNotContain(alphabeticSecret);
+    }
+
+    @Test
     void failsClosedForNullAndPathologicalValues() {
         assertThat(builder.build(null)).isEmpty();
         assertThat(builder.build(new PrRetrievalQueryBuilder.PrQuery(null, null, null, null, null))).isEmpty();

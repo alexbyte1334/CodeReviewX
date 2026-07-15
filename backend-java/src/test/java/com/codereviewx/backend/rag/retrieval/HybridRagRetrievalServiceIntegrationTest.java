@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -127,6 +128,29 @@ class HybridRagRetrievalServiceIntegrationTest {
         assertThat(result.status()).isEqualTo(HybridRagRetrievalService.Status.INDEX_NOT_READY);
     }
 
+    @Test
+    void directoryBoostTreatsUnderscoreAndPercentAsLiteralInBothRoutes() {
+        long snapshotId = insertReadySnapshot(TARGET_SHA, "model-a", 1024, 1);
+        insertChunk(snapshotId, TARGET_SHA, "src/foo_bar/Changed.java", "needle changed underscore", vector(0));
+        insertChunk(snapshotId, TARGET_SHA, "src/foo_bar/True.java", "needle true underscore", vector(0));
+        insertChunk(snapshotId, TARGET_SHA, "src/fooXbar/False.java", "needle false underscore", vector(0));
+        insertChunk(snapshotId, TARGET_SHA, "src/percent%dir/Changed.java", "needle changed percent", vector(0));
+        insertChunk(snapshotId, TARGET_SHA, "src/percent%dir/True.java", "needle true percent", vector(0));
+        insertChunk(snapshotId, TARGET_SHA, "src/percentXYZdir/False.java", "needle false percent", vector(0));
+        List<String> changedPaths = List.of("src/foo_bar/Changed.java", "src/percent%dir/Changed.java");
+        HybridRagRetrievalService.SnapshotIdentity snapshot = new HybridRagRetrievalService.SnapshotIdentity(
+                snapshotId, repositoryId, TARGET_SHA, "model-a", 1024, 1);
+        NamedParameterJdbcTemplate namedJdbc = new NamedParameterJdbcTemplate(jdbc);
+
+        List<ReciprocalRankFusion.Candidate> vectorCandidates =
+                new VectorRetriever(namedJdbc).retrieve(snapshot, vector(0), changedPaths);
+        List<ReciprocalRankFusion.Candidate> lexicalCandidates =
+                new LexicalRetriever(namedJdbc).retrieve(snapshot, "needle", changedPaths);
+
+        assertLiteralDirectoryBoosts(vectorCandidates);
+        assertLiteralDirectoryBoosts(lexicalCandidates);
+    }
+
     private long insertRepository() {
         return jdbc.queryForObject("""
                 INSERT INTO rag_repository
@@ -135,6 +159,15 @@ class HybridRagRetrievalServiceIntegrationTest {
                 VALUES ('github','owner','repo','https://example/repo.git','main',?,'READY',1,'model-a',1024,?,?)
                 RETURNING id
                 """, Long.class, OTHER_SHA, now(), now());
+    }
+
+    private static void assertLiteralDirectoryBoosts(List<ReciprocalRankFusion.Candidate> candidates) {
+        assertThat(candidates).filteredOn(candidate -> candidate.path().endsWith("/Changed.java"))
+                .extracting(ReciprocalRankFusion.Candidate::pathBoost).containsOnly(1.25);
+        assertThat(candidates).filteredOn(candidate -> candidate.path().endsWith("/True.java"))
+                .extracting(ReciprocalRankFusion.Candidate::pathBoost).containsOnly(1.10);
+        assertThat(candidates).filteredOn(candidate -> candidate.path().endsWith("/False.java"))
+                .extracting(ReciprocalRankFusion.Candidate::pathBoost).containsOnly(1.0);
     }
 
     private long insertReadySnapshot(String sha, String model, int dimensions, int version) {

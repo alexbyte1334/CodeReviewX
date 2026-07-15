@@ -95,25 +95,39 @@ public final class PrRetrievalQueryBuilder {
     private static boolean isHighEntropy(String token) {
         boolean hasLetter = token.chars().anyMatch(Character::isLetter);
         boolean hasDigit = token.chars().anyMatch(Character::isDigit);
-        if (!hasLetter || !hasDigit) {
+        if (!hasLetter) {
             return false;
         }
         int[] frequencies = new int[128];
         int measured = 0;
-        for (char character : token.toLowerCase(Locale.ROOT).toCharArray()) {
-            if (character < frequencies.length) {
-                frequencies[character]++;
+        int uppercase = 0;
+        for (char character : token.toCharArray()) {
+            char normalized = Character.toLowerCase(character);
+            if (normalized < frequencies.length) {
+                frequencies[normalized]++;
                 measured++;
             }
+            if (Character.isUpperCase(character)) {
+                uppercase++;
+            }
+        }
+        if (measured == 0) {
+            return false;
         }
         double entropy = 0.0;
+        int distinct = 0;
         for (int frequency : frequencies) {
             if (frequency > 0) {
+                distinct++;
                 double probability = (double) frequency / measured;
                 entropy -= probability * (Math.log(probability) / Math.log(2));
             }
         }
-        return entropy >= 3.5;
+        double diversity = (double) distinct / measured;
+        double uppercaseRatio = (double) uppercase / measured;
+        boolean mixedCaseRandom = uppercaseRatio >= 0.25 && uppercaseRatio <= 0.75 && diversity >= 0.5;
+        boolean longLowercaseRandom = uppercaseRatio == 0.0 && entropy >= 4.2 && diversity >= 0.65;
+        return entropy >= 3.5 && (hasDigit || mixedCaseRandom || longLowercaseRandom);
     }
 
     public record PrQuery(String title, List<String> changedPaths, List<String> diffHunkHeaders,

@@ -32,7 +32,7 @@ public final class VectorRetriever {
                            chunk.content_hash, chunk.content,
                            CASE WHEN EXISTS (SELECT 1 FROM changed_path WHERE changed_path.path=chunk.path) THEN 1.25
                                 WHEN EXISTS (SELECT 1 FROM changed_directory
-                                             WHERE chunk.path LIKE changed_directory.directory || '/%') THEN 1.10
+                                             WHERE starts_with(chunk.path, changed_directory.directory || '/')) THEN 1.10
                                 ELSE 1.0 END AS path_boost,
                            GREATEST(0.0, 1.0 - (chunk.embedding <=> CAST(:embedding AS vector))) AS similarity
                     FROM rag_chunk chunk
