@@ -52,10 +52,13 @@ public final class PrRetrievalQueryBuilder {
     }
 
     private static void add(Set<String> values, String candidate, boolean patchLine) {
-        if (candidate == null || candidate.isBlank()) {
+        if (candidate == null) {
             return;
         }
-        String bounded = candidate.substring(0, Math.min(candidate.length(), MAX_VALUE_CHARS));
+        String bounded = boundedPrefix(candidate);
+        if (bounded.isBlank()) {
+            return;
+        }
         String normalized = stripControls(bounded).trim();
         if (patchLine) {
             if (normalized.startsWith("diff --git ") || normalized.startsWith("index ")
@@ -75,9 +78,14 @@ public final class PrRetrievalQueryBuilder {
 
     private static String stripControls(String value) {
         StringBuilder clean = new StringBuilder(value.length());
-        value.codePoints().filter(codePoint -> codePoint == '\t' || codePoint >= 32)
+        value.codePoints().filter(codePoint -> codePoint == '\t'
+                        || (codePoint >= 32 && !(codePoint >= 127 && codePoint <= 159)))
                 .forEach(clean::appendCodePoint);
         return clean.toString();
+    }
+
+    static String boundedPrefix(String value) {
+        return value.substring(0, Math.min(value.length(), MAX_VALUE_CHARS));
     }
 
     private static String redact(String value) {

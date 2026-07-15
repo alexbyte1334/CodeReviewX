@@ -17,7 +17,7 @@ public final class LexicalRetriever {
     public List<ReciprocalRankFusion.Candidate> retrieve(HybridRagRetrievalService.SnapshotIdentity snapshot,
                                                          String query, List<String> changedPaths) {
         MapSqlParameterSource parameters = snapshot.parameters()
-                .addValue("query", query)
+                .addValue("query", query.replace("\n", " OR "))
                 .addValue("changedPaths", String.join("\n", changedPaths))
                 .addValue("changedDirectories", String.join("\n", PathBoost.directories(changedPaths)));
         return jdbc.query("""

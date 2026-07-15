@@ -17,13 +17,13 @@ public class HybridRagRetrievalService {
 
     private static final int INDEX_VERSION = 1;
     private static final int MAX_CHANGED_PATHS = 200;
-    private static final int MAX_EXCERPT_CHARS = 2_000;
     private final JdbcTemplate jdbc;
     private final EmbeddingClient embeddingClient;
     private final RagProperties properties;
     private final VectorRetriever vectorRetriever;
     private final LexicalRetriever lexicalRetriever;
     private final ReciprocalRankFusion fusion = new ReciprocalRankFusion();
+    private final PrRetrievalQueryBuilder queryBuilder = new PrRetrievalQueryBuilder();
 
     public HybridRagRetrievalService(JdbcTemplate jdbc, EmbeddingClient embeddingClient, RagProperties properties) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
@@ -41,11 +41,11 @@ public class HybridRagRetrievalService {
         if (snapshot == null) {
             return new Result(Status.INDEX_NOT_READY, null, 0, 0, List.of());
         }
-        String query = Objects.requireNonNullElse(request.query(), "").trim();
+        String query = queryBuilder.build(request.prQuery());
         if (query.isEmpty()) {
             return new Result(Status.READY, snapshot.snapshotId(), 0, 0, List.of());
         }
-        List<String> changedPaths = safeChangedPaths(request.changedPaths());
+        List<String> changedPaths = safeChangedPaths(request.prQuery() == null ? null : request.prQuery().changedPaths());
         float[] queryEmbedding = embedQuery(query);
         List<ReciprocalRankFusion.Candidate> vector = vectorRetriever.retrieve(snapshot, queryEmbedding, changedPaths);
         List<ReciprocalRankFusion.Candidate> lexical = lexicalRetriever.retrieve(snapshot, query, changedPaths);
@@ -105,10 +105,8 @@ public class HybridRagRetrievalService {
 
     private Match toMatch(ReciprocalRankFusion.FusedCandidate item) {
         ReciprocalRankFusion.Candidate candidate = item.candidate();
-        String content = candidate.content();
-        String excerpt = content.substring(0, Math.min(content.length(), MAX_EXCERPT_CHARS));
         return new Match(candidate.chunkId(), candidate.path(), candidate.language(), candidate.symbolName(),
-                candidate.startLine(), candidate.endLine(), candidate.contentHash(), excerpt,
+                candidate.startLine(), candidate.endLine(), candidate.contentHash(), candidate.content(),
                 candidate.pathBoost(), item.score());
     }
 
@@ -117,7 +115,7 @@ public class HybridRagRetrievalService {
         INDEX_NOT_READY
     }
 
-    public record Request(long repositoryId, String commitSha, String query, List<String> changedPaths) {
+    public record Request(long repositoryId, String commitSha, PrRetrievalQueryBuilder.PrQuery prQuery) {
     }
 
     public record Result(Status status, Long snapshotId, int vectorCandidateCount, int lexicalCandidateCount,
@@ -125,7 +123,7 @@ public class HybridRagRetrievalService {
     }
 
     public record Match(long chunkId, String path, String language, String symbolName, int startLine, int endLine,
-                        String contentHash, String excerpt, double pathBoost, double fusedScore) {
+                        String contentHash, String content, double pathBoost, double fusedScore) {
     }
 
     public record SnapshotIdentity(long snapshotId, long repositoryId, String commitSha, String embeddingModel,

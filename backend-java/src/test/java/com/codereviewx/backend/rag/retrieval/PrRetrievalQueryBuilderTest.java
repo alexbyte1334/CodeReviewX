@@ -83,6 +83,15 @@ class PrRetrievalQueryBuilderTest {
         assertThat(query).doesNotContain("\u0000");
     }
 
+    @Test
+    void boundsEachValueBeforeWhitespaceControlAndEntropyScanning() {
+        String pathologicalWhitespace = " ".repeat(1_000_000);
+
+        String prefix = PrRetrievalQueryBuilder.boundedPrefix(pathologicalWhitespace);
+
+        assertThat(prefix).hasSize(2_000);
+    }
+
     private static int count(String value, String needle) {
         return (value.length() - value.replace(needle, "").length()) / needle.length();
     }

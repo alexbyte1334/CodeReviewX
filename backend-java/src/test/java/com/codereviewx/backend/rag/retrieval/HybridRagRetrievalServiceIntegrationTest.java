@@ -74,7 +74,7 @@ class HybridRagRetrievalServiceIntegrationTest {
         insertLegacyChunk(TARGET_SHA, "src/wrong/Legacy.java", "needle exact target legacy", vector(0));
 
         HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(
-                repositoryId, TARGET_SHA, "needle exact target", List.of("src/target/Needle44.java")));
+                repositoryId, TARGET_SHA, query("needle exact target", List.of("src/target/Needle44.java"))));
 
         assertThat(result.status()).isEqualTo(HybridRagRetrievalService.Status.READY);
         assertThat(result.vectorCandidateCount()).isEqualTo(40);
@@ -84,6 +84,7 @@ class HybridRagRetrievalServiceIntegrationTest {
                 .doesNotContain("src/wrong/OtherCommit.java", "src/wrong/OtherModel.java", "src/wrong/Legacy.java");
         assertThat(result.matches()).extracting(HybridRagRetrievalService.Match::path)
                 .contains("src/target/Needle44.java");
+        assertThat(result.matches()).hasSizeLessThanOrEqualTo(80);
         assertThat(result.matches()).filteredOn(match -> match.path().equals("src/target/Needle44.java"))
                 .extracting(HybridRagRetrievalService.Match::pathBoost).containsExactly(1.25);
         assertThat(result.matches()).filteredOn(match -> match.path().equals("src/target/Needle43.java"))
@@ -100,7 +101,7 @@ class HybridRagRetrievalServiceIntegrationTest {
         }, properties);
 
         HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(
-                repositoryId, TARGET_SHA, "needle", List.of()));
+                repositoryId, TARGET_SHA, query("needle", List.of())));
 
         assertThat(result.status()).isEqualTo(HybridRagRetrievalService.Status.INDEX_NOT_READY);
         assertThat(result.matches()).isEmpty();
@@ -113,7 +114,7 @@ class HybridRagRetrievalServiceIntegrationTest {
         insertReadySnapshot(TARGET_SHA, "model-a", 1024, 2);
 
         HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(
-                repositoryId, TARGET_SHA, "needle", List.of()));
+                repositoryId, TARGET_SHA, query("needle", List.of())));
 
         assertThat(result.status()).isEqualTo(HybridRagRetrievalService.Status.INDEX_NOT_READY);
     }
@@ -123,7 +124,7 @@ class HybridRagRetrievalServiceIntegrationTest {
         insertReadySnapshot(OTHER_SHA, "model-a", 1024, 1);
 
         HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(
-                repositoryId, TARGET_SHA, " ", List.of()));
+                repositoryId, TARGET_SHA, query(" ", List.of())));
 
         assertThat(result.status()).isEqualTo(HybridRagRetrievalService.Status.INDEX_NOT_READY);
     }
@@ -151,6 +152,68 @@ class HybridRagRetrievalServiceIntegrationTest {
         assertLiteralDirectoryBoosts(lexicalCandidates);
     }
 
+    @Test
+    void serviceBuildsBoundedRedactedQueryFromPrSignalsBeforeEmbedding() {
+        long snapshotId = insertReadySnapshot(TARGET_SHA, "model-a", 1024, 1);
+        String secret = "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF";
+        for (int index = 0; index < 40; index++) {
+            insertChunk(snapshotId, TARGET_SHA, "src/filler/Filler" + index + ".java",
+                    "unrelated filler content " + index, vector(0));
+        }
+        insertChunk(snapshotId, TARGET_SHA, "src/RawSecret.java", "Review " + secret, vector(1));
+        String[] embeddedQuery = {null};
+        service = new HybridRagRetrievalService(jdbc, inputs -> {
+            embeddedQuery[0] = inputs.get(0);
+            return List.of(vector(0));
+        }, properties);
+        PrRetrievalQueryBuilder.PrQuery prQuery = new PrRetrievalQueryBuilder.PrQuery(
+                "Review " + secret, List.of("src/Auth.java"), List.of(), List.of(),
+                java.util.stream.IntStream.range(0, 2_000)
+                        .mapToObj(index -> "+bounded changed line " + index + " " + "x".repeat(40)).toList());
+
+        HybridRagRetrievalService.Result result = service.retrieve(
+                new HybridRagRetrievalService.Request(repositoryId, TARGET_SHA, prQuery));
+
+        assertThat(embeddedQuery[0]).contains("[REDACTED]").doesNotContain(secret);
+        assertThat(embeddedQuery[0].length()).isLessThanOrEqualTo(PrRetrievalQueryBuilder.MAX_QUERY_CHARS);
+        assertThat(result.lexicalCandidateCount()).isZero();
+        assertThat(result.matches()).extracting(HybridRagRetrievalService.Match::path)
+                .doesNotContain("src/RawSecret.java");
+    }
+
+    @Test
+    void emptyBuiltQueryReturnsReadyWithoutEmbedding() {
+        insertReadySnapshot(TARGET_SHA, "model-a", 1024, 1);
+        int[] embeddingCalls = {0};
+        service = new HybridRagRetrievalService(jdbc, inputs -> {
+            embeddingCalls[0]++;
+            return List.of(vector(0));
+        }, properties);
+
+        HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(
+                repositoryId, TARGET_SHA, new PrRetrievalQueryBuilder.PrQuery(null, null, null, null, null)));
+
+        assertThat(result.status()).isEqualTo(HybridRagRetrievalService.Status.READY);
+        assertThat(result.matches()).isEmpty();
+        assertThat(embeddingCalls[0]).isZero();
+    }
+
+    @Test
+    void internalMatchRetainsLexicalHitAfterFirstTwoThousandCharacters() {
+        long snapshotId = insertReadySnapshot(TARGET_SHA, "model-a", 1024, 1);
+        String content = "ordinary prefix ".repeat(180) + "latelexicalhit";
+        insertChunk(snapshotId, TARGET_SHA, "src/LateHit.java", content, vector(1));
+
+        HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(
+                repositoryId, TARGET_SHA, query("latelexicalhit", List.of())));
+
+        assertThat(result.matches()).singleElement().satisfies(match -> {
+            assertThat(match.content()).isEqualTo(content).contains("latelexicalhit");
+            assertThat(match.startLine()).isEqualTo(1);
+            assertThat(match.endLine()).isEqualTo(3);
+        });
+    }
+
     private long insertRepository() {
         return jdbc.queryForObject("""
                 INSERT INTO rag_repository
@@ -168,6 +231,10 @@ class HybridRagRetrievalServiceIntegrationTest {
                 .extracting(ReciprocalRankFusion.Candidate::pathBoost).containsOnly(1.10);
         assertThat(candidates).filteredOn(candidate -> candidate.path().endsWith("/False.java"))
                 .extracting(ReciprocalRankFusion.Candidate::pathBoost).containsOnly(1.0);
+    }
+
+    private static PrRetrievalQueryBuilder.PrQuery query(String title, List<String> changedPaths) {
+        return new PrRetrievalQueryBuilder.PrQuery(title, changedPaths, List.of(), List.of(), List.of());
     }
 
     private long insertReadySnapshot(String sha, String model, int dimensions, int version) {
