@@ -2,6 +2,8 @@ package com.codereviewx.backend.rag.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.nio.file.Path;
+
 @ConfigurationProperties(prefix = "codereviewx.rag")
 public class RagProperties {
 
@@ -18,6 +20,11 @@ public class RagProperties {
     private String rerankModel = "BAAI/bge-reranker-v2-m3";
     private int timeoutSeconds = 30;
     private int maxRetries = 2;
+    private Path workRoot = Path.of(System.getProperty("java.io.tmpdir"), "codereviewx-rag");
+    private int fetchDepth = 50;
+    private long maxFileBytes = 1024L * 1024L;
+    private int maxFiles = 5000;
+    private long maxTextBytes = 100L * 1024L * 1024L;
 
     public void validate() {
         if (embeddingDimensions != V1_EMBEDDING_DIMENSIONS) {
@@ -31,6 +38,9 @@ public class RagProperties {
         }
         if (maxRetries < 0) {
             throw new IllegalStateException("RAG model retries must not be negative");
+        }
+        if (workRoot == null || fetchDepth <= 0 || maxFileBytes <= 0 || maxFiles <= 0 || maxTextBytes <= 0) {
+            throw new IllegalStateException("RAG indexing limits must be positive");
         }
         if (enabled && (isBlank(embeddingBaseUrl) || isBlank(rerankBaseUrl))) {
             throw new IllegalStateException("RAG embedding and rerank endpoints are required when enabled");
@@ -135,6 +145,46 @@ public class RagProperties {
         this.maxRetries = maxRetries;
     }
 
+    public Path getWorkRoot() {
+        return workRoot;
+    }
+
+    public void setWorkRoot(Path workRoot) {
+        this.workRoot = workRoot;
+    }
+
+    public int getFetchDepth() {
+        return fetchDepth;
+    }
+
+    public void setFetchDepth(int fetchDepth) {
+        this.fetchDepth = fetchDepth;
+    }
+
+    public long getMaxFileBytes() {
+        return maxFileBytes;
+    }
+
+    public void setMaxFileBytes(long maxFileBytes) {
+        this.maxFileBytes = maxFileBytes;
+    }
+
+    public int getMaxFiles() {
+        return maxFiles;
+    }
+
+    public void setMaxFiles(int maxFiles) {
+        this.maxFiles = maxFiles;
+    }
+
+    public long getMaxTextBytes() {
+        return maxTextBytes;
+    }
+
+    public void setMaxTextBytes(long maxTextBytes) {
+        this.maxTextBytes = maxTextBytes;
+    }
+
     @Override
     public String toString() {
         return "RagProperties{"
@@ -145,6 +195,10 @@ public class RagProperties {
                 + ", rerankModel='" + rerankModel + '\''
                 + ", timeoutSeconds=" + timeoutSeconds
                 + ", maxRetries=" + maxRetries
+                + ", fetchDepth=" + fetchDepth
+                + ", maxFileBytes=" + maxFileBytes
+                + ", maxFiles=" + maxFiles
+                + ", maxTextBytes=" + maxTextBytes
                 + '}';
     }
 }
