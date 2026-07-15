@@ -59,9 +59,9 @@ public class DefaultRagIndexService implements RagIndexService {
                     "https://github.com/" + metadata.owner() + "/" + metadata.repo() + ".git",
                     metadata.baseRef(), properties.getEmbeddingModel(), properties.getEmbeddingDimensions(),
                     INDEX_VERSION);
-            if (repository.isReadyFor(metadata.headSha(), properties.getEmbeddingModel(),
-                    properties.getEmbeddingDimensions(), INDEX_VERSION)) {
-                RagIndexJob ready = jobs.findReady(repository.id(), metadata.headSha()).orElseThrow();
+            RagIndexJob ready = jobs.findReadySnapshot(repository.id(), metadata.headSha(),
+                    properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), INDEX_VERSION).orElse(null);
+            if (ready != null) {
                 return new ResolutionTransaction(new RagIndexResolution(repository.id(), ready.id(),
                         metadata.headSha(), RagIndexResolution.Status.READY), false);
             }

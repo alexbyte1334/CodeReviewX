@@ -5,6 +5,7 @@ import com.codereviewx.backend.rag.embedding.EmbeddingClient;
 import com.codereviewx.backend.rag.model.CodeChunk;
 import com.codereviewx.backend.rag.model.RepositoryFile;
 import com.codereviewx.backend.rag.persistence.RagChunkStore;
+import com.codereviewx.backend.rag.persistence.RagChunkStore.ChunkSignature;
 import com.codereviewx.backend.rag.persistence.RagChunkStore.EmbeddedChunk;
 import com.codereviewx.backend.rag.persistence.RagDocumentStore;
 import com.codereviewx.backend.rag.persistence.RagIndexJobStore;
@@ -27,6 +28,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 @Component
@@ -149,14 +151,26 @@ public class RagIndexWorker {
             RagDocumentStore.DocumentRecord reusable = previousCommit == null ? null
                     : documents.find(repository.id(), previousCommit, file.path(), file.contentHash()).orElse(null);
             if (reusable != null) {
-                prepared.add(new PreparedDocument(file, reusable.id(), List.of()));
+                prepared.add(new PreparedDocument(file, reusable.id(), List.of(), List.of()));
                 continue;
             }
             List<CodeChunk> codeChunks = chunker.chunk(file);
-            List<EmbeddedChunk> embedded = new ArrayList<>(codeChunks.size());
-            for (int start = 0; start < codeChunks.size(); start += RagChunkStore.MAX_BATCH_SIZE) {
-                int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, codeChunks.size());
-                List<CodeChunk> batch = codeChunks.subList(start, end);
+            Map<ChunkSignature, Long> reusableChunks = previousCommit == null ? Map.of()
+                    : chunks.findReusableChunks(repository.id(), previousCommit, file.path());
+            List<Long> reusableChunkIds = new ArrayList<>();
+            List<CodeChunk> chunksToEmbed = new ArrayList<>();
+            for (CodeChunk codeChunk : codeChunks) {
+                Long sourceChunkId = reusableChunks.get(ChunkSignature.of(codeChunk));
+                if (sourceChunkId == null) {
+                    chunksToEmbed.add(codeChunk);
+                } else {
+                    reusableChunkIds.add(sourceChunkId);
+                }
+            }
+            List<EmbeddedChunk> embedded = new ArrayList<>(chunksToEmbed.size());
+            for (int start = 0; start < chunksToEmbed.size(); start += RagChunkStore.MAX_BATCH_SIZE) {
+                int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, chunksToEmbed.size());
+                List<CodeChunk> batch = chunksToEmbed.subList(start, end);
                 List<float[]> vectors = embeddings.embed(batch.stream().map(CodeChunk::content).toList());
                 if (vectors.size() != batch.size()) {
                     throw new IllegalStateException("Embedding response count mismatch");
@@ -168,7 +182,7 @@ public class RagIndexWorker {
                     embedded.add(new EmbeddedChunk(batch.get(index), vectors.get(index)));
                 }
             }
-            prepared.add(new PreparedDocument(file, null, List.copyOf(embedded)));
+            prepared.add(new PreparedDocument(file, null, List.copyOf(reusableChunkIds), List.copyOf(embedded)));
         }
         return new PreparedSnapshot(commitSha, List.copyOf(files), List.copyOf(prepared));
     }
@@ -178,9 +192,11 @@ public class RagIndexWorker {
         for (PreparedDocument prepared : snapshot.documents()) {
             long documentId = documents.insert(repository.id(), snapshot.commitSha(), prepared.file());
             if (prepared.sourceDocumentId() != null) {
-                chunkCount += chunks.copyDocumentChunks(repository.id(), prepared.sourceDocumentId(), documentId,
+                chunkCount += copyDocumentChunks(repository.id(), prepared.sourceDocumentId(), documentId,
                         snapshot.commitSha());
             } else {
+                chunkCount += copyChunkIds(repository.id(), prepared.reusableChunkIds(), documentId,
+                        snapshot.commitSha());
                 for (int start = 0; start < prepared.chunks().size(); start += RagChunkStore.MAX_BATCH_SIZE) {
                     int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, prepared.chunks().size());
                     List<EmbeddedChunk> batch = prepared.chunks().subList(start, end);
@@ -190,7 +206,34 @@ public class RagIndexWorker {
             }
         }
         jobs.complete(job.id(), snapshot.commitSha(), snapshot.files().size(), snapshot.files().size(), chunkCount, 0);
+        jobs.recordReadySnapshot(job.id(), repository.id(), snapshot.commitSha(), embeddingModel,
+                embeddingDimensions, INDEX_VERSION);
         repositories.activate(repository.id(), snapshot.commitSha(), embeddingModel, embeddingDimensions, INDEX_VERSION);
+    }
+
+    private int copyDocumentChunks(long repositoryId, long sourceDocumentId, long targetDocumentId,
+                                   String targetCommitSha) {
+        int copied = 0;
+        long afterId = 0;
+        while (true) {
+            List<Long> sourceIds = chunks.findDocumentChunkIds(repositoryId, sourceDocumentId, afterId);
+            if (sourceIds.isEmpty()) {
+                return copied;
+            }
+            copied += chunks.copyChunks(repositoryId, sourceIds, targetDocumentId, targetCommitSha);
+            afterId = sourceIds.get(sourceIds.size() - 1);
+        }
+    }
+
+    private int copyChunkIds(long repositoryId, List<Long> sourceIds, long targetDocumentId,
+                             String targetCommitSha) {
+        int copied = 0;
+        for (int start = 0; start < sourceIds.size(); start += RagChunkStore.MAX_BATCH_SIZE) {
+            int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, sourceIds.size());
+            copied += chunks.copyChunks(repositoryId, sourceIds.subList(start, end), targetDocumentId,
+                    targetCommitSha);
+        }
+        return copied;
     }
 
     private void recoverStale() {
@@ -212,6 +255,7 @@ public class RagIndexWorker {
                                     List<PreparedDocument> documents) {
     }
 
-    private record PreparedDocument(RepositoryFile file, Long sourceDocumentId, List<EmbeddedChunk> chunks) {
+    private record PreparedDocument(RepositoryFile file, Long sourceDocumentId, List<Long> reusableChunkIds,
+                                    List<EmbeddedChunk> chunks) {
     }
 }

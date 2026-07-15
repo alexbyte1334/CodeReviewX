@@ -142,6 +142,89 @@ class RagIndexWorkerIntegrationTest {
     }
 
     @Test
+    void embedsOnlyChangedChunksWhenFileKeepsStableChunkPositions() {
+        files.set(file("windowed.java", windowedSource(-1)));
+        index(metadata(SHA_ONE));
+        embeddings.clear();
+
+        files.set(file("windowed.java", windowedSource(99)));
+        index(metadata(SHA_TWO));
+
+        assertThat(embeddings.totalInputs()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM rag_chunk newer
+                JOIN rag_chunk older
+                  ON older.repository_id = newer.repository_id
+                 AND older.commit_sha = ?
+                 AND newer.commit_sha = ?
+                 AND older.path = newer.path
+                 AND older.start_line = newer.start_line
+                 AND older.end_line = newer.end_line
+                 AND older.content_hash = newer.content_hash
+                 AND older.embedding = newer.embedding
+                WHERE newer.path = 'windowed.java'
+                """, Integer.class, SHA_ONE, SHA_TWO)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM rag_chunk WHERE commit_sha=? AND path='windowed.java'
+                """, Integer.class, SHA_TWO)).isEqualTo(3);
+    }
+
+    @Test
+    void reusesHistoricalReadySnapshotWithExactIndexTuple() {
+        files.set(file("history.java", "class HistoryOne {}"));
+        RagIndexResolution first = indexAndResolve(metadata(SHA_ONE));
+        files.set(file("history.java", "class HistoryTwo {}"));
+        index(metadata(SHA_TWO));
+
+        RagIndexResolution historical = service.ensureIndexed(metadata(SHA_ONE));
+
+        assertThat(historical.status()).isEqualTo(RagIndexResolution.Status.READY);
+        assertThat(historical.jobId()).isEqualTo(first.jobId());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_job", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void doesNotReuseHistoricalSnapshotWhenModelOrVersionDiffers() {
+        files.set(file("tuple.java", "class TupleOne {}"));
+        index(metadata(SHA_ONE));
+        files.set(file("tuple.java", "class TupleTwo {}"));
+        index(metadata(SHA_TWO));
+
+        properties.setEmbeddingModel("different-model");
+        RagIndexResolution modelMismatch = service.ensureIndexed(metadata(SHA_ONE));
+        assertThat(modelMismatch.status()).isEqualTo(RagIndexResolution.Status.QUEUED);
+
+        properties.setEmbeddingModel("test-model");
+        jdbc.update("UPDATE rag_index_snapshot SET index_version=2 WHERE commit_sha=?", SHA_ONE);
+        RagIndexResolution versionMismatch = service.ensureIndexed(metadata(SHA_ONE));
+
+        assertThat(versionMismatch.status()).isEqualTo(RagIndexResolution.Status.QUEUED);
+        assertThat(jdbc.queryForObject("""
+                SELECT embedding_dimensions FROM rag_index_snapshot WHERE commit_sha=?
+                """, Integer.class, SHA_ONE)).isEqualTo(1024);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_job", Integer.class)).isEqualTo(4);
+    }
+
+    @Test
+    void copiesUnchangedLargeDocumentInBatchesOfAtMostOneHundred() {
+        files.set(file("unchanged-large.java", largeChunkSource(205)));
+        index(metadata(SHA_ONE));
+        embeddings.clear();
+        RecordingChunkStore recordingChunks = (RecordingChunkStore) chunks;
+        recordingChunks.clearCopyBatchSizes();
+
+        index(metadata(SHA_TWO));
+
+        assertThat(embeddings.totalInputs()).isZero();
+        assertThat(recordingChunks.copyBatchSizes()).containsExactly(100, 100, 5);
+        assertThat(recordingChunks.copyBatchSizes()).allMatch(size -> size <= 100);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM rag_chunk WHERE commit_sha=? AND path='unchanged-large.java'
+                """, Integer.class, SHA_TWO)).isEqualTo(205);
+    }
+
+    @Test
     void failedWriteRollsBackSnapshotAndPreservesPreviousReadyCommit() {
         files.set(file("stable.java", "class Stable {}"));
         index(metadata(SHA_ONE));
@@ -201,10 +284,15 @@ class RagIndexWorkerIntegrationTest {
     }
 
     private void index(GithubPrMetadata metadata) {
-        service.ensureIndexed(metadata);
+        indexAndResolve(metadata);
+    }
+
+    private RagIndexResolution indexAndResolve(GithubPrMetadata metadata) {
+        RagIndexResolution resolution = service.ensureIndexed(metadata);
         RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
         worker.process(claimed);
         assertThat(jobs.get(claimed.id()).orElseThrow().status()).isEqualTo(RagIndexJob.Status.READY);
+        return resolution;
     }
 
     private int count(String table, String sha, String path) {
@@ -215,6 +303,20 @@ class RagIndexWorkerIntegrationTest {
     private static RepositoryFile file(String path, String content) {
         return new RepositoryFile(path, Language.JAVA, content,
                 content.getBytes(StandardCharsets.UTF_8).length, Hashing.sha256(content));
+    }
+
+    private static String windowedSource(int changedLine) {
+        return java.util.stream.IntStream.range(0, 200)
+                .mapToObj(line -> line == changedLine ? "int value99 = 999;" : "int value" + line + " = " + line + ";")
+                .reduce((left, right) -> left + "\n" + right)
+                .orElseThrow();
+    }
+
+    private static String largeChunkSource(int chunks) {
+        return java.util.stream.IntStream.range(0, chunks)
+                .mapToObj(index -> "line" + index + "=" + "x".repeat(7900))
+                .reduce((left, right) -> left + "\n" + right)
+                .orElseThrow();
     }
 
     private static GithubPrMetadata metadata(String sha) {
@@ -258,6 +360,7 @@ class RagIndexWorkerIntegrationTest {
 
     private static final class RecordingChunkStore extends RagChunkStore {
         private final List<Integer> batchSizes = new ArrayList<>();
+        private final List<Integer> copyBatchSizes = new ArrayList<>();
 
         private RecordingChunkStore(JdbcTemplate jdbc) {
             super(jdbc);
@@ -270,8 +373,23 @@ class RagIndexWorkerIntegrationTest {
             super.insertBatch(repositoryId, documentId, commitSha, values);
         }
 
+        @Override
+        public int copyChunks(long repositoryId, List<Long> sourceChunkIds, long targetDocumentId,
+                              String targetCommitSha) {
+            copyBatchSizes.add(sourceChunkIds.size());
+            return super.copyChunks(repositoryId, sourceChunkIds, targetDocumentId, targetCommitSha);
+        }
+
         List<Integer> batchSizes() {
             return List.copyOf(batchSizes);
+        }
+
+        List<Integer> copyBatchSizes() {
+            return List.copyOf(copyBatchSizes);
+        }
+
+        void clearCopyBatchSizes() {
+            copyBatchSizes.clear();
         }
     }
 }

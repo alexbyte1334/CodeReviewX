@@ -417,6 +417,68 @@ class PostgresRagMigrationTest {
         }
     }
 
+    @Test
+    void backfillsOnlySnapshotWhoseLegacyTupleCanBeProven() throws Exception {
+        try (PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("pgvector/pgvector:pg16")) {
+            postgres.start();
+            Flyway.configure()
+                    .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                    .locations("classpath:db/migration", "classpath:db/rag/postgresql")
+                    .target("4")
+                    .initSql("CREATE SCHEMA IF NOT EXISTS flyway_compat; "
+                            + "DO $$ BEGIN CREATE DOMAIN flyway_compat.CLOB AS TEXT; "
+                            + "EXCEPTION WHEN duplicate_object THEN NULL; END $$; "
+                            + "SET search_path TO public, flyway_compat")
+                    .load()
+                    .migrate();
+
+            try (Connection connection = DriverManager.getConnection(
+                    postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                 Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO rag_repository
+                          (provider, owner_name, repository_name, clone_url, default_branch, active_commit_sha,
+                           index_status, index_version, embedding_model, embedding_dimensions,
+                           last_indexed_at, created_at, updated_at)
+                        VALUES ('github', 'owner', 'repo', 'https://github.com/owner/repo.git', 'main',
+                                '2222222222222222222222222222222222222222', 'READY', 1,
+                                'current-model', 1024, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """);
+                statement.executeUpdate("""
+                        INSERT INTO rag_index_job
+                          (repository_id, requested_ref, resolved_commit_sha, trigger_type, status,
+                           attempt_count, finished_at, created_at)
+                        SELECT id, '1111111111111111111111111111111111111111',
+                               '1111111111111111111111111111111111111111', 'PULL_REQUEST', 'READY', 1,
+                               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        FROM rag_repository
+                        """);
+                statement.executeUpdate("""
+                        INSERT INTO rag_index_job
+                          (repository_id, requested_ref, resolved_commit_sha, trigger_type, status,
+                           attempt_count, finished_at, created_at)
+                        SELECT id, '2222222222222222222222222222222222222222',
+                               '2222222222222222222222222222222222222222', 'PULL_REQUEST', 'READY', 1,
+                               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        FROM rag_repository
+                        """);
+            }
+
+            Flyway.configure()
+                    .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                    .locations("classpath:db/migration", "classpath:db/rag/postgresql")
+                    .load()
+                    .migrate();
+
+            try (Connection connection = DriverManager.getConnection(
+                    postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                 Statement statement = connection.createStatement()) {
+                assertThat(queryNames(statement, "SELECT commit_sha FROM rag_index_snapshot"))
+                        .containsExactly("2222222222222222222222222222222222222222");
+            }
+        }
+    }
+
     private Set<String> queryNames(Statement statement, String sql) throws Exception {
         Set<String> names = new TreeSet<>();
         try (ResultSet resultSet = statement.executeQuery(sql)) {

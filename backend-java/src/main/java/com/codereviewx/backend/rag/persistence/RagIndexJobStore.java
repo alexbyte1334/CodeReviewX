@@ -46,12 +46,30 @@ public class RagIndexJobStore {
         return query("SELECT * FROM rag_index_job WHERE id=?", id).stream().findFirst();
     }
 
-    public Optional<RagIndexJob> findReady(long repositoryId, String commitSha) {
+    public Optional<RagIndexJob> findReadySnapshot(long repositoryId, String commitSha, String embeddingModel,
+                                                   int embeddingDimensions, int indexVersion) {
         return query("""
-                SELECT * FROM rag_index_job
-                WHERE repository_id=? AND resolved_commit_sha=? AND status='READY'
-                ORDER BY id DESC LIMIT 1
-                """, repositoryId, commitSha).stream().findFirst();
+                SELECT job.*
+                FROM rag_index_snapshot snapshot
+                JOIN rag_index_job job ON job.id=snapshot.job_id
+                WHERE snapshot.repository_id=? AND snapshot.commit_sha=?
+                  AND snapshot.embedding_model=? AND snapshot.embedding_dimensions=?
+                  AND snapshot.index_version=? AND job.status='READY'
+                LIMIT 1
+                """, repositoryId, commitSha, embeddingModel, embeddingDimensions, indexVersion)
+                .stream().findFirst();
+    }
+
+    public void recordReadySnapshot(long jobId, long repositoryId, String commitSha, String embeddingModel,
+                                    int embeddingDimensions, int indexVersion) {
+        jdbc.update("""
+                INSERT INTO rag_index_snapshot
+                  (repository_id, job_id, commit_sha, embedding_model, embedding_dimensions,
+                   index_version, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (repository_id, commit_sha, embedding_model, embedding_dimensions, index_version)
+                DO NOTHING
+                """, repositoryId, jobId, commitSha, embeddingModel, embeddingDimensions, indexVersion, now());
     }
 
     public Optional<RagIndexJob> claimNextQueued() {
