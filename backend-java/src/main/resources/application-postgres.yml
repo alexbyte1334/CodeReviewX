@@ -16,6 +16,14 @@ spring:
 
 codereviewx:
   rag:
-    enabled: ${RAG_ENABLED:true}
-    embedding-dimensions: ${RAG_EMBEDDING_DIMENSIONS:1024}
+    enabled: ${RAG_ENABLED:false}
+    embedding-base-url: ${RAG_EMBEDDING_BASE_URL:}
+    embedding-api-key: ${RAG_EMBEDDING_API_KEY:}
     embedding-model: ${RAG_EMBEDDING_MODEL:BAAI/bge-m3}
+    embedding-dimensions: ${RAG_EMBEDDING_DIMENSIONS:1024}
+    embedding-batch-size: ${RAG_EMBEDDING_BATCH_SIZE:32}
+    rerank-base-url: ${RAG_RERANK_BASE_URL:}
+    rerank-api-key: ${RAG_RERANK_API_KEY:}
+    rerank-model: ${RAG_RERANK_MODEL:BAAI/bge-reranker-v2-m3}
+    timeout-seconds: ${RAG_MODEL_TIMEOUT_SECONDS:30}
+    max-retries: ${RAG_MODEL_MAX_RETRIES:2}
