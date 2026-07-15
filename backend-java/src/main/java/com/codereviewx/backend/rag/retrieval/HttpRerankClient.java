@@ -1,6 +1,7 @@
 package com.codereviewx.backend.rag.retrieval;
 
 import com.codereviewx.backend.rag.config.RagProperties;
+import com.codereviewx.backend.rag.http.LimitedBodyHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -85,11 +86,14 @@ public class HttpRerankClient implements RerankClient {
 
     private HttpResponse<String> send(HttpRequest request) {
         try {
-            return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return httpClient.send(request, LimitedBodyHandler.utf8(LimitedBodyHandler.DEFAULT_MAX_BYTES));
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Rerank request interrupted");
         } catch (IOException | RuntimeException exception) {
+            if (LimitedBodyHandler.isResponseTooLarge(exception)) {
+                throw new IllegalStateException("Rerank API response exceeded size limit");
+            }
             throw new IllegalStateException("Rerank request failed");
         }
     }
@@ -160,7 +164,9 @@ public class HttpRerankClient implements RerankClient {
         try {
             URI uri = URI.create(baseUrl.replaceAll("/+$", "") + "/rerank");
             if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    || uri.getHost() == null) {
+                    || uri.getHost() == null
+                    || uri.getRawQuery() != null
+                    || uri.getRawFragment() != null) {
                 throw new IllegalArgumentException();
             }
             return uri;

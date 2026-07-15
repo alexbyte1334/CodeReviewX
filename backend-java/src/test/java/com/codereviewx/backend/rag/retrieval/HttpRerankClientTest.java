@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class HttpRerankClientTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final int OVERSIZED_RESPONSE_PADDING_BYTES = 2 * 1024 * 1024;
     private HttpServer server;
 
     @AfterEach
@@ -96,6 +97,21 @@ class HttpRerankClientTest {
                 "{\"results\":[{\"index\":0.5,\"relevance_score\":1}]}",
                 "index",
                 1);
+    }
+
+    @Test
+    void rerankRejectsOversizedValidResponseWithoutLeakingQueryCandidateOrKey() {
+        String oversizedResponse = "{\"results\":[{\"index\":0,\"relevance_score\":1}],\"padding\":\""
+                + "x".repeat(OVERSIZED_RESPONSE_PADDING_BYTES) + "\"}";
+        startServer(exchange -> respond(exchange, 200, oversizedResponse));
+        HttpRerankClient client = client(properties(0), ignored -> { });
+
+        assertThatThrownBy(() -> client.rerank("private oversized query", candidates(1)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("size limit")
+                .hasMessageNotContaining("rerank-secret")
+                .hasMessageNotContaining("private oversized query")
+                .hasMessageNotContaining("candidate-text");
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.codereviewx.backend.rag.embedding;
 
 import com.codereviewx.backend.rag.config.RagProperties;
+import com.codereviewx.backend.rag.http.LimitedBodyHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -90,11 +91,14 @@ public class OpenAiEmbeddingClient implements EmbeddingClient {
 
     private HttpResponse<String> send(HttpRequest request) {
         try {
-            return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return httpClient.send(request, LimitedBodyHandler.utf8(LimitedBodyHandler.DEFAULT_MAX_BYTES));
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Embedding request interrupted");
         } catch (IOException | RuntimeException exception) {
+            if (LimitedBodyHandler.isResponseTooLarge(exception)) {
+                throw new IllegalStateException("Embedding API response exceeded size limit");
+            }
             throw new IllegalStateException("Embedding request failed");
         }
     }
@@ -181,7 +185,9 @@ public class OpenAiEmbeddingClient implements EmbeddingClient {
         try {
             URI uri = URI.create(baseUrl.replaceAll("/+$", "") + path);
             if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    || uri.getHost() == null) {
+                    || uri.getHost() == null
+                    || uri.getRawQuery() != null
+                    || uri.getRawFragment() != null) {
                 throw new IllegalArgumentException();
             }
             return uri;

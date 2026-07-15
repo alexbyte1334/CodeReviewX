@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class OpenAiEmbeddingClientTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final int OVERSIZED_RESPONSE_PADDING_BYTES = 2 * 1024 * 1024;
     private HttpServer server;
 
     @AfterEach
@@ -104,6 +105,20 @@ class OpenAiEmbeddingClientTest {
                 .hasMessageContaining("vector")
                 .hasMessageNotContaining("private input")
                 .hasMessageNotContaining("null");
+    }
+
+    @Test
+    void embedRejectsOversizedValidResponseWithoutLeakingInputOrKey() {
+        String oversizedResponse = "{\"data\":[" + item(0, 1) + "],\"padding\":\""
+                + "x".repeat(OVERSIZED_RESPONSE_PADDING_BYTES) + "\"}";
+        startServer(exchange -> respond(exchange, 200, oversizedResponse));
+        OpenAiEmbeddingClient client = client(properties(1, 0), ignored -> { });
+
+        assertThatThrownBy(() -> client.embed(List.of("private oversized input")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("size limit")
+                .hasMessageNotContaining("embedding-secret")
+                .hasMessageNotContaining("private oversized input");
     }
 
     @Test

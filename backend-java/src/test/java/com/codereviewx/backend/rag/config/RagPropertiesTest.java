@@ -81,6 +81,16 @@ class RagPropertiesTest {
     }
 
     @Test
+    void enabledRejectsEndpointQueryAndFragmentWithoutEchoingThem() {
+        assertUnsafeEndpoint(
+                "codereviewx.rag.embedding-base-url=https://embedding.example/v1?private-query",
+                "private-query");
+        assertUnsafeEndpoint(
+                "codereviewx.rag.rerank-base-url=https://rerank.example/v1#private-fragment",
+                "private-fragment");
+    }
+
+    @Test
     void enabledWithCompleteConfigurationCreatesBothClients() {
         completeEnabledContext().run(context -> {
             assertThat(context).hasNotFailed();
@@ -112,6 +122,15 @@ class RagPropertiesTest {
             assertThat(rootMessage(context.getStartupFailure()))
                     .containsIgnoringCase(expectedMessage)
                     .doesNotContain("embedding-secret", "rerank-secret");
+        });
+    }
+
+    private void assertUnsafeEndpoint(String property, String privateValue) {
+        completeEnabledContext().withPropertyValues(property).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(rootMessage(context.getStartupFailure()))
+                    .contains("endpoint")
+                    .doesNotContain(privateValue);
         });
     }
 
