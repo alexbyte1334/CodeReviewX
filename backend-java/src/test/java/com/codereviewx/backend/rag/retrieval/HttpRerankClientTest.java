@@ -71,13 +71,13 @@ class HttpRerankClientTest {
         assertThat(result).extracting(RerankedChunk::score).containsExactly(0.9, 0.9, 0.4);
         assertThat(result.get(0).candidate()).isSameAs(candidates.get(0));
         JsonNode request = requests.get(0);
-        assertThat(request.fieldNames()).toIterable().containsExactlyInAnyOrder("model", "query", "documents");
+        assertThat(request.fieldNames()).toIterable().containsExactlyInAnyOrder("model", "query", "candidates");
         assertThat(request.path("model").asText()).isEqualTo("BAAI/bge-reranker-v2-m3");
         assertThat(request.path("query").asText()).isEqualTo("private query");
-        assertThat(request.path("documents").get(0).fieldNames()).toIterable()
+        assertThat(request.path("candidates").get(0).fieldNames()).toIterable()
                 .containsExactlyInAnyOrder("id", "text");
-        assertThat(request.path("documents").get(0).path("id").asText()).isEqualTo("chunk-a");
-        assertThat(request.path("documents").get(0).path("text").asText()).isEqualTo("text-a");
+        assertThat(request.path("candidates").get(0).path("id").asText()).isEqualTo("chunk-a");
+        assertThat(request.path("candidates").get(0).path("text").asText()).isEqualTo("text-a");
         assertThat(authorizations).containsExactly("Bearer rerank-secret");
         assertThat(lastPath).isEqualTo("/rerank");
     }
@@ -88,6 +88,14 @@ class HttpRerankClientTest {
         assertInvalidResponse("{\"results\":[{\"index\":0,\"relevance_score\":1},{\"index\":0,\"relevance_score\":2}]}", "index", 2);
         assertInvalidResponse("{\"results\":[{\"index\":2,\"relevance_score\":1},{\"index\":0,\"relevance_score\":2}]}", "index", 2);
         assertInvalidResponse("{\"results\":[{\"index\":0,\"relevance_score\":null}]}", "score", 1);
+    }
+
+    @Test
+    void rerankRejectsFractionalIndexInsteadOfTruncatingIt() {
+        assertInvalidResponse(
+                "{\"results\":[{\"index\":0.5,\"relevance_score\":1}]}",
+                "index",
+                1);
     }
 
     @Test

@@ -87,6 +87,13 @@ class OpenAiEmbeddingClientTest {
     }
 
     @Test
+    void embedRejectsFractionalIndexInsteadOfTruncatingIt() {
+        String fractionalIndexItem = item(0, 1).replace("\"index\":0", "\"index\":0.5");
+
+        assertInvalidResponse(embeddingResponse(List.of(fractionalIndexItem)), "index", List.of("a"));
+    }
+
+    @Test
     void embedRejectsNonNumericVectorValueWithoutEchoingResponse() {
         startServer(exchange -> respond(exchange, 200,
                 "{\"data\":[{\"index\":0,\"embedding\":[null]}]}"));

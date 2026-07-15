@@ -52,10 +52,10 @@ public class HttpRerankClient implements RerankClient {
             return List.of();
         }
 
-        List<RerankDocument> documents = candidates.stream()
+        List<RerankDocument> requestCandidates = candidates.stream()
                 .map(candidate -> new RerankDocument(candidate.chunkId(), candidate.text()))
                 .toList();
-        String requestBody = writeRequest(new RerankRequest(properties.getRerankModel(), query, documents));
+        String requestBody = writeRequest(new RerankRequest(properties.getRerankModel(), query, requestCandidates));
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                 .header("Authorization", "Bearer " + properties.getRerankApiKey())
@@ -120,7 +120,7 @@ public class HttpRerankClient implements RerankClient {
         List<IndexedChunk> chunks = new ArrayList<>(results.size());
         for (JsonNode result : results) {
             JsonNode indexNode = result.get("index");
-            if (indexNode == null || !indexNode.canConvertToInt()) {
+            if (indexNode == null || !indexNode.isIntegralNumber() || !indexNode.canConvertToInt()) {
                 throw new IllegalStateException("Rerank response index is invalid");
             }
             int index = indexNode.intValue();
@@ -174,7 +174,7 @@ public class HttpRerankClient implements RerankClient {
         return "HttpRerankClient{model='" + properties.getRerankModel() + "'}";
     }
 
-    private record RerankRequest(String model, String query, List<RerankDocument> documents) {
+    private record RerankRequest(String model, String query, List<RerankDocument> candidates) {
     }
 
     private record RerankDocument(String id, String text) {

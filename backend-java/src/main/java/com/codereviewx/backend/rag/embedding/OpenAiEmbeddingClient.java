@@ -125,7 +125,7 @@ public class OpenAiEmbeddingClient implements EmbeddingClient {
         Set<Integer> indexes = new HashSet<>();
         for (JsonNode item : data) {
             JsonNode indexNode = item.get("index");
-            if (indexNode == null || !indexNode.canConvertToInt()) {
+            if (indexNode == null || !indexNode.isIntegralNumber() || !indexNode.canConvertToInt()) {
                 throw new IllegalStateException("Embedding response index is invalid");
             }
             int index = indexNode.intValue();
