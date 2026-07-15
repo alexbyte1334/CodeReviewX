@@ -20,6 +20,7 @@ public final class RagContextAssembler {
     private static final int MAX_PER_FILE = 3;
     private static final int MAX_CONTENT_CHARACTERS = 36_000;
     private static final double ADJACENT_OVERLAP_THRESHOLD = 0.85;
+    private static final double EXACT_CHANGED_PATH_BOOST = 1.25;
     private static final Pattern TOKEN_SPLITTER = Pattern.compile("[^A-Za-z0-9_]+");
 
     private final RerankClient rerankClient;
@@ -30,32 +31,43 @@ public final class RagContextAssembler {
 
     public RagEvidenceBundle assemble(String query, String commitSha,
                                       List<HybridRagRetrievalService.Match> candidates) {
+        return assemble(query, commitSha, candidates, RetrievalHealth.HEALTHY);
+    }
+
+    public RagEvidenceBundle assemble(String query, String commitSha,
+                                      List<HybridRagRetrievalService.Match> candidates,
+                                      RetrievalHealth retrievalHealth) {
         Objects.requireNonNull(query, "query");
         Objects.requireNonNull(commitSha, "commitSha");
         Objects.requireNonNull(candidates, "candidates");
+        Objects.requireNonNull(retrievalHealth, "retrievalHealth");
+        if (retrievalHealth.requiresLegacyFallback()) {
+            return new RagEvidenceBundle(List.of(), "", RagEvidenceBundle.DegradedReason.NONE, retrievalHealth);
+        }
         List<HybridRagRetrievalService.Match> input = boundedInput(candidates);
         List<ScoredMatch> ranked;
-        boolean degraded = false;
+        boolean rerankUnavailable = false;
         try {
             ranked = rerank(input, query);
         } catch (RuntimeException unavailable) {
             ranked = input.stream().map(match -> new ScoredMatch(match, match.fusedScore())).toList();
-            degraded = true;
+            rerankUnavailable = true;
         }
         List<ScoredMatch> deduplicated = removeAdjacentRedundancy(ranked);
         List<ScoredMatch> selected = select(deduplicated);
         List<RagEvidence> evidence = labelAndBound(selected, commitSha);
         String prompt = evidence.stream().map(this::format).reduce((left, right) -> left + "\n" + right).orElse("");
-        return new RagEvidenceBundle(evidence, prompt, degraded,
-                degraded ? RagEvidenceBundle.DegradedReason.RERANK_UNAVAILABLE : RagEvidenceBundle.DegradedReason.NONE,
-                false);
+        return new RagEvidenceBundle(evidence, prompt,
+                rerankUnavailable ? RagEvidenceBundle.DegradedReason.RERANK_UNAVAILABLE
+                        : RagEvidenceBundle.DegradedReason.NONE,
+                retrievalHealth);
     }
 
     private List<HybridRagRetrievalService.Match> boundedInput(List<HybridRagRetrievalService.Match> candidates) {
         List<HybridRagRetrievalService.Match> input = new ArrayList<>(candidates.subList(0,
                 Math.min(MAX_RERANK_INPUT, candidates.size())));
-        if (candidates.size() > input.size() && input.stream().noneMatch(this::isChanged)) {
-            candidates.stream().skip(input.size()).filter(this::isChanged).findFirst().ifPresent(changed -> {
+        if (candidates.size() > input.size() && input.stream().noneMatch(this::isExactChanged)) {
+            candidates.stream().skip(input.size()).filter(this::isExactChanged).findFirst().ifPresent(changed -> {
                 input.remove(input.size() - 1);
                 input.add(changed);
             });
@@ -89,19 +101,37 @@ public final class RagContextAssembler {
     }
 
     private List<ScoredMatch> removeAdjacentRedundancy(List<ScoredMatch> ranked) {
-        List<ScoredMatch> result = new ArrayList<>();
-        for (ScoredMatch current : ranked) {
-            if (result.isEmpty()) {
-                result.add(current);
+        if (ranked.size() < 2) {
+            return ranked;
+        }
+        int protectedChanged = -1;
+        for (int index = 0; index < ranked.size(); index++) {
+            if (isExactChanged(ranked.get(index).match)) {
+                protectedChanged = index;
+                break;
+            }
+        }
+        boolean[] removed = new boolean[ranked.size()];
+        for (int index = 0; index < ranked.size() - 1; index++) {
+            ScoredMatch left = ranked.get(index);
+            ScoredMatch right = ranked.get(index + 1);
+            if (jaccard(left.match.content(), right.match.content()) <= ADJACENT_OVERLAP_THRESHOLD) {
                 continue;
             }
-            ScoredMatch previous = result.get(result.size() - 1);
-            if (jaccard(previous.match.content(), current.match.content()) > ADJACENT_OVERLAP_THRESHOLD) {
-                if (current.score > previous.score) {
-                    result.set(result.size() - 1, current);
-                }
+            if (index == protectedChanged) {
+                removed[index + 1] = true;
+            } else if (index + 1 == protectedChanged) {
+                removed[index] = true;
+            } else if (left.score >= right.score) {
+                removed[index + 1] = true;
             } else {
-                result.add(current);
+                removed[index] = true;
+            }
+        }
+        List<ScoredMatch> result = new ArrayList<>();
+        for (int index = 0; index < ranked.size(); index++) {
+            if (!removed[index]) {
+                result.add(ranked.get(index));
             }
         }
         return List.copyOf(result);
@@ -128,11 +158,12 @@ public final class RagContextAssembler {
             perFile.merge(path, 1, Integer::sum);
             characters += boundedLength;
         }
-        if (selected.stream().noneMatch(item -> isChanged(item.match)) && ranked.stream().anyMatch(item -> isChanged(item.match))) {
-            ScoredMatch changed = ranked.stream().filter(item -> isChanged(item.match)).findFirst().orElseThrow();
+        if (selected.stream().noneMatch(item -> isExactChanged(item.match))
+                && ranked.stream().anyMatch(item -> isExactChanged(item.match))) {
+            ScoredMatch changed = ranked.stream().filter(item -> isExactChanged(item.match)).findFirst().orElseThrow();
             int replacement = -1;
             for (int index = selected.size() - 1; index >= 0; index--) {
-                if (!isChanged(selected.get(index).match)) {
+                if (!isExactChanged(selected.get(index).match)) {
                     replacement = index;
                     break;
                 }
@@ -176,8 +207,8 @@ public final class RagContextAssembler {
                 + "[/EVIDENCE " + evidence.label() + "]";
     }
 
-    private boolean isChanged(HybridRagRetrievalService.Match match) {
-        return match.pathBoost() > 1.0;
+    private boolean isExactChanged(HybridRagRetrievalService.Match match) {
+        return Double.compare(match.pathBoost(), EXACT_CHANGED_PATH_BOOST) == 0;
     }
 
     private static HybridRagRetrievalService.Match withContent(HybridRagRetrievalService.Match match, String content) {
@@ -209,5 +240,16 @@ public final class RagContextAssembler {
     }
 
     private record ScoredMatch(HybridRagRetrievalService.Match match, double score) {
+    }
+
+    public enum RetrievalHealth {
+        HEALTHY,
+        SINGLE_ROUTE_FAILED,
+        EMBEDDING_FAILED,
+        BOTH_ROUTES_FAILED;
+
+        boolean requiresLegacyFallback() {
+            return this == EMBEDDING_FAILED || this == BOTH_ROUTES_FAILED;
+        }
     }
 }

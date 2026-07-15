@@ -3,17 +3,23 @@ package com.codereviewx.backend.rag.retrieval;
 import java.util.List;
 import java.util.Objects;
 
-public record RagEvidenceBundle(List<RagEvidence> evidence, String promptBlock, boolean degraded,
-                                DegradedReason reason, boolean legacyFallbackRequired) {
+public record RagEvidenceBundle(List<RagEvidence> evidence, String promptBlock, DegradedReason reason,
+                                RagContextAssembler.RetrievalHealth retrievalHealth) {
     public RagEvidenceBundle {
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
         Objects.requireNonNull(promptBlock, "promptBlock");
-        if (!degraded && reason != DegradedReason.NONE) {
-            throw new IllegalArgumentException("Non-degraded evidence cannot have a degraded reason");
-        }
-        if (degraded && reason == DegradedReason.NONE) {
-            throw new IllegalArgumentException("Degraded evidence requires a reason");
-        }
+        Objects.requireNonNull(reason, "reason");
+        Objects.requireNonNull(retrievalHealth, "retrievalHealth");
+    }
+
+    public boolean degraded() {
+        return reason != DegradedReason.NONE
+                || retrievalHealth == RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED;
+    }
+
+    public boolean legacyFallbackRequired() {
+        return retrievalHealth == RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED
+                || retrievalHealth == RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED;
     }
 
     public enum DegradedReason {

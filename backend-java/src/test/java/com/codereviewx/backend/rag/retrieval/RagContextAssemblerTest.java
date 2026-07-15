@@ -80,6 +80,75 @@ class RagContextAssemblerTest {
     }
 
     @Test
+    void reservesExactChangedCandidateBeyondThirtyDespiteSiblingDirectoryBoost() {
+        CapturingRerankClient reranker = new CapturingRerankClient();
+        List<HybridRagRetrievalService.Match> matches = new ArrayList<>();
+        matches.add(match(1, "src/auth/Sibling.java", 1, 2, "sibling directory", 1.10));
+        for (int index = 2; index <= 30; index++) {
+            matches.add(match(index, "src/File" + index + ".java", index, index, "content " + index, 1.0));
+        }
+        matches.add(match(31, "src/auth/Changed.java", 42, 78, "actual exact changed", 1.25));
+
+        RagEvidenceBundle result = new RagContextAssembler(reranker)
+                .assemble("query", "head-sha", matches);
+
+        assertThat(reranker.received).extracting(RerankCandidate::text).contains("actual exact changed");
+        assertThat(result.evidence()).extracting(RagEvidence::path).contains("src/auth/Changed.java");
+    }
+
+    @Test
+    void preservesSoleExactChangedCandidateWhenRedundancyWouldFavorNonChangedScore() {
+        RerankClient reranker = (query, candidates) -> List.of(
+                new RerankedChunk(candidates.get(0), 0.9),
+                new RerankedChunk(candidates.get(1), 0.4));
+        List<HybridRagRetrievalService.Match> matches = List.of(
+                match(1, "src/Plain.java", 1, 10, tokenRange("shared", 1, 100), 1.0),
+                match(2, "src/Changed.java", 20, 30,
+                        tokenRange("shared", 1, 95) + " exact1 exact2 exact3 exact4 exact5", 1.25));
+
+        RagEvidenceBundle result = new RagContextAssembler(reranker)
+                .assemble("query", "head-sha", matches);
+
+        assertThat(result.evidence()).extracting(RagEvidence::path).contains("src/Changed.java");
+    }
+
+    @Test
+    void comparesOnlyOriginalAdjacentPairsWhenRemovingRedundancy() {
+        RerankClient reranker = (query, candidates) -> List.of(
+                new RerankedChunk(candidates.get(0), 0.9),
+                new RerankedChunk(candidates.get(1), 0.8),
+                new RerankedChunk(candidates.get(2), 0.7));
+        List<HybridRagRetrievalService.Match> matches = List.of(
+                match(1, "src/A.java", 1, 10, tokenRange("shared", 1, 100), 1.0),
+                match(2, "src/B.java", 1, 10,
+                        tokenRange("shared", 1, 93) + " b1 b2 b3 b4 b5 b6 b7", 1.0),
+                match(3, "src/C.java", 1, 10,
+                        tokenRange("shared", 8, 100) + " c1 c2 c3 c4 c5 c6 c7", 1.0));
+
+        RagEvidenceBundle result = new RagContextAssembler(reranker)
+                .assemble("query", "head-sha", matches);
+
+        assertThat(result.evidence()).extracting(RagEvidence::path)
+                .containsExactly("src/A.java", "src/C.java");
+    }
+
+    @Test
+    void resolvesRedundantScoreTiesByKeepingEarlierRankedCandidate() {
+        RerankClient reranker = (query, candidates) -> List.of(
+                new RerankedChunk(candidates.get(0), 0.8),
+                new RerankedChunk(candidates.get(1), 0.8));
+        List<HybridRagRetrievalService.Match> matches = List.of(
+                match(1, "src/First.java", 1, 10, tokenRange("shared", 1, 100), 1.0),
+                match(2, "src/Second.java", 1, 10,
+                        tokenRange("shared", 1, 95) + " new1 new2 new3 new4 new5", 1.0));
+
+        RagEvidenceBundle result = new RagContextAssembler(reranker)
+                .assemble("query", "head-sha", matches);
+
+        assertThat(result.evidence()).extracting(RagEvidence::path).containsExactly("src/First.java");
+    }
+
+    @Test
     void capsTotalContentAtThirtySixThousandCharactersDeterministically() {
         List<HybridRagRetrievalService.Match> matches = List.of(
                 match(1, "src/A.java", 1, 2, "a".repeat(20_000), 1.0),
@@ -128,6 +197,45 @@ class RagContextAssemblerTest {
     }
 
     @Test
+    void requiresLegacyFallbackOnlyForEmbeddingOrBothRouteFailure() {
+        RagContextAssembler assembler = new RagContextAssembler(new CapturingRerankClient());
+
+        RagEvidenceBundle embeddingFailure = assembler.assemble("query", "head-sha", List.of(),
+                RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED);
+        RagEvidenceBundle bothRoutesFailed = assembler.assemble("query", "head-sha", List.of(),
+                RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED);
+        RagEvidenceBundle healthy = assembler.assemble("query", "head-sha", List.of(),
+                RagContextAssembler.RetrievalHealth.HEALTHY);
+        RagEvidenceBundle singleRouteFailure = assembler.assemble("query", "head-sha", List.of(),
+                RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+
+        assertThat(embeddingFailure.legacyFallbackRequired()).isTrue();
+        assertThat(bothRoutesFailed.legacyFallbackRequired()).isTrue();
+        assertThat(healthy.legacyFallbackRequired()).isFalse();
+        assertThat(singleRouteFailure.legacyFallbackRequired()).isFalse();
+        assertThat(singleRouteFailure.degraded()).isTrue();
+        assertThat(healthy.degraded()).isFalse();
+        assertThat(singleRouteFailure.retrievalHealth())
+                .isEqualTo(RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+    }
+
+    @Test
+    void keepsRerankFailureSeparateFromRetrievalHealthFallbackBoundary() {
+        RerankClient unavailable = (query, candidates) -> {
+            throw new IllegalStateException("Rerank request failed");
+        };
+
+        RagEvidenceBundle result = new RagContextAssembler(unavailable).assemble("query", "head-sha",
+                List.of(match(1, "src/A.java", 1, 2, "content", 1.0)),
+                RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+
+        assertThat(result.degraded()).isTrue();
+        assertThat(result.reason()).isEqualTo(RagEvidenceBundle.DegradedReason.RERANK_UNAVAILABLE);
+        assertThat(result.retrievalHealth()).isEqualTo(RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+        assertThat(result.legacyFallbackRequired()).isFalse();
+    }
+
+    @Test
     void formatsExactPromptBlocksWithoutExposingDatabaseIds() {
         CapturingRerankClient reranker = new CapturingRerankClient();
         HybridRagRetrievalService.Match match = match(918273645, "src/main/java/example/AuthService.java",
@@ -161,6 +269,14 @@ class RagContextAssemblerTest {
             words.add(prefix + index);
         }
         return String.join(" ", words);
+    }
+
+    private static String tokenRange(String prefix, int start, int end) {
+        List<String> tokens = new ArrayList<>();
+        for (int index = start; index <= end; index++) {
+            tokens.add(prefix + index);
+        }
+        return String.join(" ", tokens);
     }
 
     private static final class CapturingRerankClient implements RerankClient {
