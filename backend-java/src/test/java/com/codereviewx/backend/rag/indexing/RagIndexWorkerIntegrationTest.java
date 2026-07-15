@@ -21,6 +21,7 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -225,15 +226,76 @@ class RagIndexWorkerIntegrationTest {
     }
 
     @Test
+    void rebuildsSameCommitForDifferentModelWithoutLosingEitherReadyTuple() {
+        files.set(file("multi-model.java", "class MultiModel {}"));
+        RagIndexResolution modelA = indexAndResolve(metadata(SHA_ONE));
+        properties.setEmbeddingModel("model-b");
+        ReflectionTestUtils.setField(worker, "embeddingModel", "model-b");
+
+        RagIndexResolution queued = service.ensureIndexed(metadata(SHA_ONE));
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        worker.process(claimed);
+
+        assertThat(jobs.get(queued.jobId()).orElseThrow().status()).isEqualTo(RagIndexJob.Status.READY);
+        assertThat(service.ensureIndexed(metadata(SHA_ONE)).jobId()).isEqualTo(queued.jobId());
+        properties.setEmbeddingModel("test-model");
+        assertThat(service.ensureIndexed(metadata(SHA_ONE)).jobId()).isEqualTo(modelA.jobId());
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM rag_index_snapshot WHERE repository_id=? AND commit_sha=?
+                """, Integer.class, queued.repositoryId(), SHA_ONE)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM rag_document WHERE repository_id=? AND commit_sha=? AND path='multi-model.java'
+                """, Integer.class, queued.repositoryId(), SHA_ONE)).isEqualTo(2);
+    }
+
+    @Test
+    void reusesShiftedChunkContentOnceAndWritesNewLineMetadata() {
+        files.set(file("shifted.java", shiftedSource("A", "B", "C")));
+        index(metadata(SHA_ONE));
+        embeddings.clear();
+
+        files.set(file("shifted.java", shiftedSource("X", "A", "A", "B", "C")));
+        index(metadata(SHA_TWO));
+
+        assertThat(embeddings.totalInputs()).isEqualTo(2);
+        assertThat(jdbc.queryForList("""
+                SELECT start_line FROM rag_chunk
+                WHERE commit_sha=? AND path='shifted.java'
+                ORDER BY start_line
+                """, Integer.class, SHA_TWO)).containsExactly(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    void failsQueuedJobWhenWorkerCannotServePersistedModelTuple() {
+        files.set(file("stable.java", "class Stable {}"));
+        index(metadata(SHA_ONE));
+        files.set(file("next.java", "class Next {}"));
+        RagIndexResolution queued = service.ensureIndexed(metadata(SHA_TWO));
+        ReflectionTestUtils.setField(worker, "embeddingModel", "model-b");
+
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        worker.process(claimed);
+
+        RagIndexJob failed = jobs.get(queued.jobId()).orElseThrow();
+        assertThat(failed.status()).isEqualTo(RagIndexJob.Status.FAILED);
+        assertThat(failed.errorCode()).isEqualTo("CONFIG_MISMATCH");
+        assertThat(jdbc.queryForObject("SELECT embedding_model FROM rag_index_job WHERE id=?",
+                String.class, queued.jobId())).isEqualTo("test-model");
+        assertThat(jdbc.queryForObject("SELECT active_commit_sha FROM rag_repository", String.class))
+                .isEqualTo(SHA_ONE);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
     void failedWriteRollsBackSnapshotAndPreservesPreviousReadyCommit() {
         files.set(file("stable.java", "class Stable {}"));
         index(metadata(SHA_ONE));
         files.set(file("broken.java", "class Broken {}"));
         chunks = new RagChunkStore(jdbc) {
             @Override
-            public void insertBatch(long repositoryId, long documentId, String commitSha,
+            public void insertBatch(long repositoryId, long snapshotId, long documentId, String commitSha,
                                     List<EmbeddedChunk> values) {
-                super.insertBatch(repositoryId, documentId, commitSha, values);
+                super.insertBatch(repositoryId, snapshotId, documentId, commitSha, values);
                 throw new IllegalStateException("simulated write failure");
             }
         };
@@ -257,8 +319,8 @@ class RagIndexWorkerIntegrationTest {
     void recoversStaleRunningJobsUntilThirdAttemptThenFails() {
         long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
                 "main", properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), 1).id();
-        long retryable = jobs.create(repositoryId, SHA_ONE, "PULL_REQUEST");
-        long exhausted = jobs.create(repositoryId, SHA_TWO, "PULL_REQUEST");
+        long retryable = jobs.create(repositoryId, SHA_ONE, "PULL_REQUEST", "test-model", 1024, 1);
+        long exhausted = jobs.create(repositoryId, SHA_TWO, "PULL_REQUEST", "test-model", 1024, 1);
         jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=2, started_at=? WHERE id=?",
                 LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), retryable);
         jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=3, started_at=? WHERE id=?",
@@ -319,6 +381,13 @@ class RagIndexWorkerIntegrationTest {
                 .orElseThrow();
     }
 
+    private static String shiftedSource(String... labels) {
+        return java.util.Arrays.stream(labels)
+                .map(label -> label + ":" + "x".repeat(7900))
+                .reduce((left, right) -> left + "\n" + right)
+                .orElseThrow();
+    }
+
     private static GithubPrMetadata metadata(String sha) {
         return new GithubPrMetadata("owner", "repo", 1, "title", "author", "main", "feature",
                 "0".repeat(40), sha, "open", "", "", 1, 1, 0);
@@ -367,17 +436,26 @@ class RagIndexWorkerIntegrationTest {
         }
 
         @Override
-        public void insertBatch(long repositoryId, long documentId, String commitSha,
+        public void insertBatch(long repositoryId, long snapshotId, long documentId, String commitSha,
                                 List<EmbeddedChunk> values) {
             batchSizes.add(values.size());
-            super.insertBatch(repositoryId, documentId, commitSha, values);
+            super.insertBatch(repositoryId, snapshotId, documentId, commitSha, values);
         }
 
         @Override
-        public int copyChunks(long repositoryId, List<Long> sourceChunkIds, long targetDocumentId,
+        public int copyChunks(long repositoryId, long targetSnapshotId, List<Long> sourceChunkIds,
+                              long targetDocumentId,
                               String targetCommitSha) {
             copyBatchSizes.add(sourceChunkIds.size());
-            return super.copyChunks(repositoryId, sourceChunkIds, targetDocumentId, targetCommitSha);
+            return super.copyChunks(repositoryId, targetSnapshotId, sourceChunkIds, targetDocumentId,
+                    targetCommitSha);
+        }
+
+        @Override
+        public void insertReusedBatch(long repositoryId, long snapshotId, long documentId, String commitSha,
+                                      List<ReusedChunk> values) {
+            copyBatchSizes.add(values.size());
+            super.insertReusedBatch(repositoryId, snapshotId, documentId, commitSha, values);
         }
 
         List<Integer> batchSizes() {

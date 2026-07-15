@@ -5,12 +5,13 @@ import com.codereviewx.backend.rag.embedding.EmbeddingClient;
 import com.codereviewx.backend.rag.model.CodeChunk;
 import com.codereviewx.backend.rag.model.RepositoryFile;
 import com.codereviewx.backend.rag.persistence.RagChunkStore;
-import com.codereviewx.backend.rag.persistence.RagChunkStore.ChunkSignature;
 import com.codereviewx.backend.rag.persistence.RagChunkStore.EmbeddedChunk;
+import com.codereviewx.backend.rag.persistence.RagChunkStore.ReusedChunk;
 import com.codereviewx.backend.rag.persistence.RagDocumentStore;
 import com.codereviewx.backend.rag.persistence.RagIndexJobStore;
 import com.codereviewx.backend.rag.persistence.RagRepositoryStore;
 import com.codereviewx.backend.rag.persistence.RagRepositoryStore.RepositoryRecord;
+import com.codereviewx.backend.rag.persistence.RagIndexJobStore.SnapshotRecord;
 import com.codereviewx.backend.rag.service.RagIndexJob;
 import com.codereviewx.backend.review.github.GithubPrMetadata;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,9 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -117,6 +121,7 @@ public class RagIndexWorker {
     void process(RagIndexJob job) {
         RepositoryRecord repository = repositories.get(job.repositoryId()).orElseThrow();
         try {
+            validateCapability(job);
             List<RepositoryFile> discovered;
             String resolvedSha;
             if (checkoutService == null) {
@@ -131,40 +136,48 @@ public class RagIndexWorker {
                     discovered = fileSource.apply(checkedOut);
                 }
             }
-            PreparedSnapshot snapshot = prepare(repository, resolvedSha, discovered);
+            PreparedSnapshot snapshot = prepare(job, repository, resolvedSha, discovered);
             transactions.executeWithoutResult(ignored -> persist(job, repository, snapshot));
         } catch (Exception exception) {
             transactions.executeWithoutResult(ignored -> {
-                jobs.fail(job.id(), "INDEXING_FAILED", safeMessage(exception));
+                String errorCode = exception instanceof ConfigurationMismatchException
+                        ? "CONFIG_MISMATCH" : "INDEXING_FAILED";
+                jobs.fail(job.id(), errorCode, safeMessage(exception));
                 repositories.markInitialFailure(repository.id());
             });
         }
     }
 
-    private PreparedSnapshot prepare(RepositoryRecord repository, String commitSha, List<RepositoryFile> files) {
+    private PreparedSnapshot prepare(RagIndexJob job, RepositoryRecord repository, String commitSha,
+                                     List<RepositoryFile> files) {
         List<PreparedDocument> prepared = new ArrayList<>();
-        boolean compatibleSnapshot = embeddingModel.equals(repository.embeddingModel())
-                && embeddingDimensions == repository.embeddingDimensions()
-                && INDEX_VERSION == repository.indexVersion();
-        String previousCommit = compatibleSnapshot ? repository.activeCommitSha() : null;
+        boolean compatibleSnapshot = job.embeddingModel().equals(repository.embeddingModel())
+                && job.embeddingDimensions() == repository.embeddingDimensions()
+                && job.indexVersion() == repository.indexVersion();
+        SnapshotRecord previousSnapshot = !compatibleSnapshot || repository.activeCommitSha() == null ? null
+                : jobs.findSnapshot(repository.id(), repository.activeCommitSha(), repository.embeddingModel(),
+                        repository.embeddingDimensions(), repository.indexVersion()).orElse(null);
         for (RepositoryFile file : files) {
-            RagDocumentStore.DocumentRecord reusable = previousCommit == null ? null
-                    : documents.find(repository.id(), previousCommit, file.path(), file.contentHash()).orElse(null);
+            RagDocumentStore.DocumentRecord reusable = previousSnapshot == null ? null
+                    : documents.find(previousSnapshot.id(), file.path(), file.contentHash()).orElse(null);
             if (reusable != null) {
                 prepared.add(new PreparedDocument(file, reusable.id(), List.of(), List.of()));
                 continue;
             }
             List<CodeChunk> codeChunks = chunker.chunk(file);
-            Map<ChunkSignature, Long> reusableChunks = previousCommit == null ? Map.of()
-                    : chunks.findReusableChunks(repository.id(), previousCommit, file.path());
-            List<Long> reusableChunkIds = new ArrayList<>();
+            Map<String, List<Long>> reusableChunks = previousSnapshot == null ? Map.of()
+                    : chunks.findReusableChunks(previousSnapshot.id(), file.path());
+            Map<String, Deque<Long>> availableByHash = new LinkedHashMap<>();
+            reusableChunks.forEach((hash, ids) -> availableByHash.put(hash, new ArrayDeque<>(ids)));
+            List<ReusedChunk> reused = new ArrayList<>();
             List<CodeChunk> chunksToEmbed = new ArrayList<>();
             for (CodeChunk codeChunk : codeChunks) {
-                Long sourceChunkId = reusableChunks.get(ChunkSignature.of(codeChunk));
+                Deque<Long> available = availableByHash.get(codeChunk.contentHash());
+                Long sourceChunkId = available == null ? null : available.pollFirst();
                 if (sourceChunkId == null) {
                     chunksToEmbed.add(codeChunk);
                 } else {
-                    reusableChunkIds.add(sourceChunkId);
+                    reused.add(new ReusedChunk(codeChunk, sourceChunkId));
                 }
             }
             List<EmbeddedChunk> embedded = new ArrayList<>(chunksToEmbed.size());
@@ -182,37 +195,38 @@ public class RagIndexWorker {
                     embedded.add(new EmbeddedChunk(batch.get(index), vectors.get(index)));
                 }
             }
-            prepared.add(new PreparedDocument(file, null, List.copyOf(reusableChunkIds), List.copyOf(embedded)));
+            prepared.add(new PreparedDocument(file, null, List.copyOf(reused), List.copyOf(embedded)));
         }
         return new PreparedSnapshot(commitSha, List.copyOf(files), List.copyOf(prepared));
     }
 
     private void persist(RagIndexJob job, RepositoryRecord repository, PreparedSnapshot snapshot) {
+        long snapshotId = jobs.createSnapshot(job.id(), repository.id(), snapshot.commitSha(), job.embeddingModel(),
+                job.embeddingDimensions(), job.indexVersion());
         int chunkCount = 0;
         for (PreparedDocument prepared : snapshot.documents()) {
-            long documentId = documents.insert(repository.id(), snapshot.commitSha(), prepared.file());
+            long documentId = documents.insert(repository.id(), snapshotId, snapshot.commitSha(), prepared.file());
             if (prepared.sourceDocumentId() != null) {
-                chunkCount += copyDocumentChunks(repository.id(), prepared.sourceDocumentId(), documentId,
+                chunkCount += copyDocumentChunks(repository.id(), snapshotId, prepared.sourceDocumentId(), documentId,
                         snapshot.commitSha());
             } else {
-                chunkCount += copyChunkIds(repository.id(), prepared.reusableChunkIds(), documentId,
+                chunkCount += insertReusedChunks(repository.id(), snapshotId, prepared.reusedChunks(), documentId,
                         snapshot.commitSha());
                 for (int start = 0; start < prepared.chunks().size(); start += RagChunkStore.MAX_BATCH_SIZE) {
                     int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, prepared.chunks().size());
                     List<EmbeddedChunk> batch = prepared.chunks().subList(start, end);
-                    chunks.insertBatch(repository.id(), documentId, snapshot.commitSha(), batch);
+                    chunks.insertBatch(repository.id(), snapshotId, documentId, snapshot.commitSha(), batch);
                     chunkCount += batch.size();
                 }
             }
         }
         jobs.complete(job.id(), snapshot.commitSha(), snapshot.files().size(), snapshot.files().size(), chunkCount, 0);
-        jobs.recordReadySnapshot(job.id(), repository.id(), snapshot.commitSha(), embeddingModel,
-                embeddingDimensions, INDEX_VERSION);
-        repositories.activate(repository.id(), snapshot.commitSha(), embeddingModel, embeddingDimensions, INDEX_VERSION);
+        repositories.activate(repository.id(), snapshot.commitSha(), job.embeddingModel(), job.embeddingDimensions(),
+                job.indexVersion());
     }
 
-    private int copyDocumentChunks(long repositoryId, long sourceDocumentId, long targetDocumentId,
-                                   String targetCommitSha) {
+    private int copyDocumentChunks(long repositoryId, long targetSnapshotId, long sourceDocumentId,
+                                   long targetDocumentId, String targetCommitSha) {
         int copied = 0;
         long afterId = 0;
         while (true) {
@@ -220,20 +234,27 @@ public class RagIndexWorker {
             if (sourceIds.isEmpty()) {
                 return copied;
             }
-            copied += chunks.copyChunks(repositoryId, sourceIds, targetDocumentId, targetCommitSha);
+            copied += chunks.copyChunks(repositoryId, targetSnapshotId, sourceIds, targetDocumentId, targetCommitSha);
             afterId = sourceIds.get(sourceIds.size() - 1);
         }
     }
 
-    private int copyChunkIds(long repositoryId, List<Long> sourceIds, long targetDocumentId,
-                             String targetCommitSha) {
-        int copied = 0;
-        for (int start = 0; start < sourceIds.size(); start += RagChunkStore.MAX_BATCH_SIZE) {
-            int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, sourceIds.size());
-            copied += chunks.copyChunks(repositoryId, sourceIds.subList(start, end), targetDocumentId,
-                    targetCommitSha);
+    private int insertReusedChunks(long repositoryId, long snapshotId, List<ReusedChunk> reused,
+                                   long targetDocumentId, String targetCommitSha) {
+        for (int start = 0; start < reused.size(); start += RagChunkStore.MAX_BATCH_SIZE) {
+            int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, reused.size());
+            chunks.insertReusedBatch(repositoryId, snapshotId, targetDocumentId, targetCommitSha,
+                    reused.subList(start, end));
         }
-        return copied;
+        return reused.size();
+    }
+
+    private void validateCapability(RagIndexJob job) {
+        if (!embeddingModel.equals(job.embeddingModel())
+                || embeddingDimensions != job.embeddingDimensions()
+                || INDEX_VERSION != job.indexVersion()) {
+            throw new ConfigurationMismatchException();
+        }
     }
 
     private void recoverStale() {
@@ -255,7 +276,13 @@ public class RagIndexWorker {
                                     List<PreparedDocument> documents) {
     }
 
-    private record PreparedDocument(RepositoryFile file, Long sourceDocumentId, List<Long> reusableChunkIds,
+    private record PreparedDocument(RepositoryFile file, Long sourceDocumentId, List<ReusedChunk> reusedChunks,
                                     List<EmbeddedChunk> chunks) {
+    }
+
+    private static final class ConfigurationMismatchException extends IllegalStateException {
+        private ConfigurationMismatchException() {
+            super("Worker configuration does not match queued index tuple");
+        }
     }
 }

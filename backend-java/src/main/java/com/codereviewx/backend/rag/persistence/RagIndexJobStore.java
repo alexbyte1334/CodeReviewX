@@ -25,18 +25,23 @@ public class RagIndexJobStore {
         this.jdbc = jdbc;
     }
 
-    public long create(long repositoryId, String requestedRef, String triggerType) {
+    public long create(long repositoryId, String requestedRef, String triggerType, String embeddingModel,
+                       int embeddingDimensions, int indexVersion) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO rag_index_job
-                      (repository_id, requested_ref, trigger_type, status, created_at)
-                    VALUES (?, ?, ?, 'QUEUED', ?)
+                      (repository_id, requested_ref, trigger_type, status, embedding_model,
+                       embedding_dimensions, index_version, created_at)
+                    VALUES (?, ?, ?, 'QUEUED', ?, ?, ?, ?)
                     """, new String[]{"id"});
             statement.setLong(1, repositoryId);
             statement.setString(2, requestedRef);
             statement.setString(3, triggerType);
-            statement.setTimestamp(4, Timestamp.valueOf(now()));
+            statement.setString(4, embeddingModel);
+            statement.setInt(5, embeddingDimensions);
+            statement.setInt(6, indexVersion);
+            statement.setTimestamp(7, Timestamp.valueOf(now()));
             return statement;
         }, keys);
         return keys.getKey().longValue();
@@ -60,16 +65,41 @@ public class RagIndexJobStore {
                 .stream().findFirst();
     }
 
-    public void recordReadySnapshot(long jobId, long repositoryId, String commitSha, String embeddingModel,
-                                    int embeddingDimensions, int indexVersion) {
-        jdbc.update("""
+    public long createSnapshot(long jobId, long repositoryId, String commitSha, String embeddingModel,
+                               int embeddingDimensions, int indexVersion) {
+        KeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO rag_index_snapshot
                   (repository_id, job_id, commit_sha, embedding_model, embedding_dimensions,
                    index_version, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (repository_id, commit_sha, embedding_model, embedding_dimensions, index_version)
-                DO NOTHING
-                """, repositoryId, jobId, commitSha, embeddingModel, embeddingDimensions, indexVersion, now());
+                """, new String[]{"id"});
+            statement.setLong(1, repositoryId);
+            statement.setLong(2, jobId);
+            statement.setString(3, commitSha);
+            statement.setString(4, embeddingModel);
+            statement.setInt(5, embeddingDimensions);
+            statement.setInt(6, indexVersion);
+            statement.setTimestamp(7, Timestamp.valueOf(now()));
+            return statement;
+        }, keys);
+        return keys.getKey().longValue();
+    }
+
+    public Optional<SnapshotRecord> findSnapshot(long repositoryId, String commitSha, String embeddingModel,
+                                                 int embeddingDimensions, int indexVersion) {
+        return jdbc.query("""
+                SELECT id, job_id, repository_id, commit_sha, embedding_model,
+                       embedding_dimensions, index_version
+                FROM rag_index_snapshot
+                WHERE repository_id=? AND commit_sha=? AND embedding_model=?
+                  AND embedding_dimensions=? AND index_version=?
+                """, (result, row) -> new SnapshotRecord(result.getLong("id"), result.getLong("job_id"),
+                        result.getLong("repository_id"), result.getString("commit_sha"),
+                        result.getString("embedding_model"), result.getInt("embedding_dimensions"),
+                        result.getInt("index_version")), repositoryId, commitSha, embeddingModel,
+                embeddingDimensions, indexVersion).stream().findFirst();
     }
 
     public Optional<RagIndexJob> claimNextQueued() {
@@ -158,7 +188,9 @@ public class RagIndexJobStore {
                 result.getString("requested_ref"), result.getString("resolved_commit_sha"),
                 RagIndexJob.Status.valueOf(result.getString("status")), result.getInt("attempt_count"),
                 started == null ? null : started.toLocalDateTime(), finished == null ? null : finished.toLocalDateTime(),
-                result.getString("error_code"), result.getString("error_message"));
+                result.getString("error_code"), result.getString("error_message"),
+                result.getString("embedding_model"), result.getInt("embedding_dimensions"),
+                result.getInt("index_version"));
     }
 
     private static String truncate(String value) {
@@ -170,5 +202,9 @@ public class RagIndexJobStore {
 
     private static LocalDateTime now() {
         return LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    public record SnapshotRecord(long id, long jobId, long repositoryId, String commitSha,
+                                 String embeddingModel, int embeddingDimensions, int indexVersion) {
     }
 }

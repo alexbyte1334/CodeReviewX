@@ -12,7 +12,10 @@ public record RagIndexJob(
         LocalDateTime startedAt,
         LocalDateTime finishedAt,
         String errorCode,
-        String errorMessage
+        String errorMessage,
+        String embeddingModel,
+        int embeddingDimensions,
+        int indexVersion
 ) {
     public enum Status {
         QUEUED, RUNNING, READY, FAILED

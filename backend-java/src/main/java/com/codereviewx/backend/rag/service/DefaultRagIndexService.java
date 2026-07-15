@@ -65,7 +65,8 @@ public class DefaultRagIndexService implements RagIndexService {
                 return new ResolutionTransaction(new RagIndexResolution(repository.id(), ready.id(),
                         metadata.headSha(), RagIndexResolution.Status.READY), false);
             }
-            long jobId = jobs.create(repository.id(), metadata.headSha(), "PULL_REQUEST");
+            long jobId = jobs.create(repository.id(), metadata.headSha(), "PULL_REQUEST",
+                    properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), INDEX_VERSION);
             return new ResolutionTransaction(new RagIndexResolution(repository.id(), jobId,
                     metadata.headSha(), RagIndexResolution.Status.QUEUED), true);
         });

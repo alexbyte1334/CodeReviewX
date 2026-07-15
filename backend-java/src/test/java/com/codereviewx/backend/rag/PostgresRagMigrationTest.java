@@ -35,14 +35,15 @@ class PostgresRagMigrationTest {
             "rag_index_job", Set.of(
                     "id", "repository_id", "requested_ref", "resolved_commit_sha", "trigger_type", "status",
                     "attempt_count", "discovered_file_count", "indexed_file_count", "indexed_chunk_count",
-                    "skipped_file_count", "error_code", "error_message", "started_at", "finished_at", "created_at"
+                    "skipped_file_count", "error_code", "error_message", "started_at", "finished_at", "created_at",
+                    "embedding_model", "embedding_dimensions", "index_version"
             ),
             "rag_document", Set.of(
-                    "id", "repository_id", "commit_sha", "path", "language", "content_hash", "byte_size",
+                    "id", "repository_id", "snapshot_id", "commit_sha", "path", "language", "content_hash", "byte_size",
                     "created_at"
             ),
             "rag_chunk", Set.of(
-                    "id", "repository_id", "document_id", "commit_sha", "chunk_key", "path", "language",
+                    "id", "repository_id", "snapshot_id", "document_id", "commit_sha", "chunk_key", "path", "language",
                     "symbol_name", "start_line", "end_line", "content", "token_count", "content_hash",
                     "embedding", "search_vector", "created_at"
             ),
@@ -185,6 +186,8 @@ class PostgresRagMigrationTest {
                                 "rag_index_job.error_message",
                                 "rag_index_job.started_at",
                                 "rag_index_job.finished_at",
+                                "rag_document.snapshot_id",
+                                "rag_chunk.snapshot_id",
                                 "rag_chunk.symbol_name",
                                 "rag_chunk.search_vector",
                                 "review_issue_evidence.rag_chunk_id"
@@ -193,14 +196,16 @@ class PostgresRagMigrationTest {
                 assertColumnsOfType(softly, statement, "bigint",
                         "rag_repository.id",
                         "rag_index_job.id", "rag_index_job.repository_id",
-                        "rag_document.id", "rag_document.repository_id", "rag_document.byte_size",
-                        "rag_chunk.id", "rag_chunk.repository_id", "rag_chunk.document_id",
+                        "rag_document.id", "rag_document.repository_id", "rag_document.snapshot_id",
+                        "rag_document.byte_size",
+                        "rag_chunk.id", "rag_chunk.repository_id", "rag_chunk.snapshot_id", "rag_chunk.document_id",
                         "rag_retrieval_trace.id", "rag_retrieval_trace.review_run_id",
                         "rag_retrieval_trace.repository_id", "rag_retrieval_trace.latency_ms",
                         "review_issue_evidence.id", "review_issue_evidence.review_issue_id",
                         "review_issue_evidence.rag_chunk_id");
                 assertColumnsOfType(softly, statement, "integer",
                         "rag_repository.index_version", "rag_repository.embedding_dimensions",
+                        "rag_index_job.index_version", "rag_index_job.embedding_dimensions",
                         "rag_index_job.attempt_count", "rag_index_job.discovered_file_count",
                         "rag_index_job.indexed_file_count", "rag_index_job.indexed_chunk_count",
                         "rag_index_job.skipped_file_count",
@@ -224,7 +229,7 @@ class PostgresRagMigrationTest {
                 assertColumnsOfType(softly, statement, "character varying(255)",
                         "rag_repository.owner_name", "rag_repository.repository_name",
                         "rag_repository.default_branch", "rag_repository.embedding_model",
-                        "rag_index_job.requested_ref");
+                        "rag_index_job.requested_ref", "rag_index_job.embedding_model");
                 assertColumnsOfType(softly, statement, "character varying(500)", "rag_chunk.symbol_name");
                 assertColumnsOfType(softly, statement, "character varying(1000)",
                         "rag_repository.clone_url", "rag_index_job.error_message", "rag_document.path",
@@ -327,8 +332,10 @@ class PostgresRagMigrationTest {
                         .containsExactlyInAnyOrder(
                                 "fk_rag_index_job_repository:rag_index_job:repository_id:rag_repository:id:a",
                                 "fk_rag_document_repository:rag_document:repository_id:rag_repository:id:a",
+                                "fk_rag_document_snapshot:rag_document:snapshot_id:rag_index_snapshot:id:a",
                                 "fk_rag_chunk_repository:rag_chunk:repository_id:rag_repository:id:a",
                                 "fk_rag_chunk_document:rag_chunk:document_id:rag_document:id:c",
+                                "fk_rag_chunk_snapshot:rag_chunk:snapshot_id:rag_index_snapshot:id:a",
                                 "fk_rag_retrieval_trace_review_run:rag_retrieval_trace:review_run_id:review_run:id:a",
                                 "fk_rag_retrieval_trace_repository:rag_retrieval_trace:repository_id:rag_repository:id:a",
                                 "fk_review_issue_evidence_issue:review_issue_evidence:review_issue_id:review_issue:id:c",
@@ -345,8 +352,8 @@ class PostgresRagMigrationTest {
                         .as("unique constraints")
                         .containsExactlyInAnyOrder(
                                 "rag_repository:UNIQUE (provider, owner_name, repository_name)",
-                                "rag_document:UNIQUE (repository_id, commit_sha, path)",
-                                "rag_chunk:UNIQUE (repository_id, commit_sha, chunk_key)",
+                                "rag_document:UNIQUE (snapshot_id, path)",
+                                "rag_chunk:UNIQUE (snapshot_id, chunk_key)",
                                 "review_issue_evidence:UNIQUE (review_issue_id, citation_label)"
                         );
 
@@ -360,7 +367,9 @@ class PostgresRagMigrationTest {
                                            'review_issue_evidence'::regclass)
                         """))
                         .as("check constraints")
-                        .containsExactly("rag_repository:ck_rag_repository_embedding_dimensions");
+                        .containsExactlyInAnyOrder(
+                                "rag_repository:ck_rag_repository_embedding_dimensions",
+                                "rag_index_job:ck_rag_index_job_embedding_dimensions");
                 softly.assertThat(querySingle(statement, """
                         SELECT pg_get_constraintdef(oid)
                         FROM pg_constraint
@@ -386,7 +395,9 @@ class PostgresRagMigrationTest {
                         .containsExactlyInAnyOrder(
                                 "idx_rag_chunk_embedding_hnsw:hnsw",
                                 "idx_rag_chunk_search_vector_gin:gin",
-                                "idx_rag_chunk_snapshot:btree"
+                                "idx_rag_chunk_snapshot:btree",
+                                "idx_rag_document_snapshot:btree",
+                                "idx_rag_chunk_snapshot_identity:btree"
                         );
 
                 softly.assertThat(queryNames(statement, """
@@ -475,6 +486,93 @@ class PostgresRagMigrationTest {
                  Statement statement = connection.createStatement()) {
                 assertThat(queryNames(statement, "SELECT commit_sha FROM rag_index_snapshot"))
                         .containsExactly("2222222222222222222222222222222222222222");
+            }
+        }
+    }
+
+    @Test
+    void upgradesPopulatedV5ByScopingOnlyProvableActiveStorage() throws Exception {
+        try (PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("pgvector/pgvector:pg16")) {
+            postgres.start();
+            Flyway.configure()
+                    .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                    .locations("classpath:db/migration", "classpath:db/rag/postgresql")
+                    .target("5")
+                    .initSql("CREATE SCHEMA IF NOT EXISTS flyway_compat; "
+                            + "DO $$ BEGIN CREATE DOMAIN flyway_compat.CLOB AS TEXT; "
+                            + "EXCEPTION WHEN duplicate_object THEN NULL; END $$; "
+                            + "SET search_path TO public, flyway_compat")
+                    .load()
+                    .migrate();
+
+            try (Connection connection = DriverManager.getConnection(
+                    postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                 Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO rag_repository
+                          (provider, owner_name, repository_name, clone_url, default_branch, active_commit_sha,
+                           index_status, index_version, embedding_model, embedding_dimensions,
+                           last_indexed_at, created_at, updated_at)
+                        VALUES ('github', 'owner', 'repo', 'https://github.com/owner/repo.git', 'main',
+                                '2222222222222222222222222222222222222222', 'READY', 1,
+                                'current-model', 1024, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """);
+                for (String sha : new String[]{
+                        "1111111111111111111111111111111111111111",
+                        "2222222222222222222222222222222222222222"
+                }) {
+                    statement.executeUpdate("""
+                            INSERT INTO rag_index_job
+                              (repository_id, requested_ref, resolved_commit_sha, trigger_type, status,
+                               attempt_count, finished_at, created_at)
+                            SELECT id, '%s', '%s', 'PULL_REQUEST', 'READY', 1,
+                                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                            FROM rag_repository
+                            """.formatted(sha, sha));
+                    statement.executeUpdate("""
+                            INSERT INTO rag_index_snapshot
+                              (repository_id, job_id, commit_sha, embedding_model, embedding_dimensions,
+                               index_version, created_at)
+                            SELECT repository_id, id, resolved_commit_sha, 'current-model', 1024, 1,
+                                   CURRENT_TIMESTAMP
+                            FROM rag_index_job WHERE resolved_commit_sha='%s'
+                            """.formatted(sha));
+                }
+                for (String sha : new String[]{
+                        "0000000000000000000000000000000000000000",
+                        "1111111111111111111111111111111111111111",
+                        "2222222222222222222222222222222222222222"
+                }) {
+                    statement.executeUpdate("""
+                            INSERT INTO rag_document
+                              (repository_id, commit_sha, path, language, content_hash, byte_size, created_at)
+                            SELECT id, '%s', '%s.java', 'JAVA', '%s', 1, CURRENT_TIMESTAMP
+                            FROM rag_repository
+                            """.formatted(sha, sha.substring(0, 1), sha));
+                }
+            }
+
+            Flyway.configure()
+                    .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                    .locations("classpath:db/migration", "classpath:db/rag/postgresql")
+                    .load()
+                    .migrate();
+
+            try (Connection connection = DriverManager.getConnection(
+                    postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                 Statement statement = connection.createStatement()) {
+                assertThat(queryNames(statement,
+                        "SELECT commit_sha FROM rag_document WHERE snapshot_id IS NOT NULL"))
+                        .containsExactly("2222222222222222222222222222222222222222");
+                assertThat(queryNames(statement,
+                        "SELECT commit_sha FROM rag_document WHERE snapshot_id IS NULL"))
+                        .containsExactlyInAnyOrder(
+                                "0000000000000000000000000000000000000000",
+                                "1111111111111111111111111111111111111111");
+                assertThat(queryNames(statement, """
+                        SELECT DISTINCT embedding_model || ':' || embedding_dimensions || ':' || index_version
+                        FROM rag_index_job
+                        """)).containsExactly("current-model:1024:1");
             }
         }
     }

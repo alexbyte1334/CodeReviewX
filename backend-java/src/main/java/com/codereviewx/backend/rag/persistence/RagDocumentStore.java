@@ -24,30 +24,31 @@ public class RagDocumentStore {
         this.jdbc = jdbc;
     }
 
-    public Optional<DocumentRecord> find(long repositoryId, String commitSha, String path, String contentHash) {
+    public Optional<DocumentRecord> find(long snapshotId, String path, String contentHash) {
         List<DocumentRecord> rows = jdbc.query("""
                 SELECT id, content_hash FROM rag_document
-                WHERE repository_id=? AND commit_sha=? AND path=? AND content_hash=?
+                WHERE snapshot_id=? AND path=? AND content_hash=?
                 """, (result, row) -> new DocumentRecord(result.getLong("id"), result.getString("content_hash")),
-                repositoryId, commitSha, path, contentHash);
+                snapshotId, path, contentHash);
         return rows.stream().findFirst();
     }
 
-    public long insert(long repositoryId, String commitSha, RepositoryFile file) {
+    public long insert(long repositoryId, long snapshotId, String commitSha, RepositoryFile file) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO rag_document
-                      (repository_id, commit_sha, path, language, content_hash, byte_size, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                      (repository_id, snapshot_id, commit_sha, path, language, content_hash, byte_size, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, new String[]{"id"});
             statement.setLong(1, repositoryId);
-            statement.setString(2, commitSha);
-            statement.setString(3, file.path());
-            statement.setString(4, file.language().name());
-            statement.setString(5, file.contentHash());
-            statement.setLong(6, file.byteSize());
-            statement.setTimestamp(7, Timestamp.valueOf(LocalDateTime.now(ZoneOffset.UTC)));
+            statement.setLong(2, snapshotId);
+            statement.setString(3, commitSha);
+            statement.setString(4, file.path());
+            statement.setString(5, file.language().name());
+            statement.setString(6, file.contentHash());
+            statement.setLong(7, file.byteSize());
+            statement.setTimestamp(8, Timestamp.valueOf(LocalDateTime.now(ZoneOffset.UTC)));
             return statement;
         }, keys);
         return keys.getKey().longValue();
