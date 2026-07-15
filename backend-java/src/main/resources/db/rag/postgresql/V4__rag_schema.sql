@@ -130,3 +130,9 @@ CREATE TABLE review_issue_evidence (
     CONSTRAINT uq_review_issue_evidence_issue_citation_label
         UNIQUE (review_issue_id, citation_label)
 );
+
+ALTER TABLE review_task
+    ALTER COLUMN diff_text TYPE TEXT USING diff_text::text;
+
+ALTER TABLE review_input_snapshot
+    ALTER COLUMN snapshot_json TYPE TEXT USING snapshot_json::text;

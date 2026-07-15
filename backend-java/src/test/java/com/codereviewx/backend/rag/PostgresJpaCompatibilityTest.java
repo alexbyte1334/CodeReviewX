@@ -61,6 +61,20 @@ class PostgresJpaCompatibilityTest {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion())
                 .containsExactly("1", "2", "3", "4");
+        assertThat(jdbcTemplate.queryForList("""
+                        SELECT table_name || '.' || column_name || '=' || data_type || ':'
+                               || COALESCE(domain_name, '')
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND (table_name, column_name) IN (
+                              ('review_task', 'diff_text'),
+                              ('review_input_snapshot', 'snapshot_json')
+                          )
+                        """, String.class))
+                .containsExactlyInAnyOrder(
+                        "review_task.diff_text=text:",
+                        "review_input_snapshot.snapshot_json=text:"
+                );
 
         String marker = "postgres-jpa-text-" + UUID.randomUUID();
         String diffText = ("diff --git a/example.txt b/example.txt\n+" + marker + "\n").repeat(120);

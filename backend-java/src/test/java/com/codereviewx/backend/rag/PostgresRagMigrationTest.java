@@ -233,6 +233,22 @@ class PostgresRagMigrationTest {
                         "review_issue_evidence.evidence_excerpt");
                 assertColumnsOfType(softly, statement, "text",
                         "rag_chunk.content", "rag_retrieval_trace.result_summary_json");
+                softly.assertThat(queryNames(statement, """
+                        SELECT table_name || '.' || column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND (table_name, column_name) IN (
+                              ('review_task', 'diff_text'),
+                              ('review_input_snapshot', 'snapshot_json')
+                          )
+                          AND data_type = 'text'
+                          AND domain_name IS NULL
+                        """))
+                        .as("legacy CLOB columns converted to base TEXT")
+                        .containsExactlyInAnyOrder(
+                                "review_task.diff_text",
+                                "review_input_snapshot.snapshot_json"
+                        );
                 assertColumnsOfType(softly, statement, "timestamp without time zone",
                         "rag_repository.last_indexed_at", "rag_repository.created_at", "rag_repository.updated_at",
                         "rag_index_job.started_at", "rag_index_job.finished_at", "rag_index_job.created_at",
