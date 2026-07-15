@@ -36,7 +36,7 @@ class PostgresRagMigrationTest {
                     "id", "repository_id", "requested_ref", "resolved_commit_sha", "trigger_type", "status",
                     "attempt_count", "discovered_file_count", "indexed_file_count", "indexed_chunk_count",
                     "skipped_file_count", "error_code", "error_message", "started_at", "finished_at", "created_at",
-                    "embedding_model", "embedding_dimensions", "index_version"
+                    "embedding_model", "embedding_dimensions", "index_version", "heartbeat_at"
             ),
             "rag_document", Set.of(
                     "id", "repository_id", "snapshot_id", "commit_sha", "path", "language", "content_hash", "byte_size",
@@ -186,6 +186,7 @@ class PostgresRagMigrationTest {
                                 "rag_index_job.error_message",
                                 "rag_index_job.started_at",
                                 "rag_index_job.finished_at",
+                                "rag_index_job.heartbeat_at",
                                 "rag_document.snapshot_id",
                                 "rag_chunk.snapshot_id",
                                 "rag_chunk.symbol_name",
@@ -256,7 +257,8 @@ class PostgresRagMigrationTest {
                         );
                 assertColumnsOfType(softly, statement, "timestamp without time zone",
                         "rag_repository.last_indexed_at", "rag_repository.created_at", "rag_repository.updated_at",
-                        "rag_index_job.started_at", "rag_index_job.finished_at", "rag_index_job.created_at",
+                        "rag_index_job.started_at", "rag_index_job.finished_at", "rag_index_job.heartbeat_at",
+                        "rag_index_job.created_at",
                         "rag_document.created_at", "rag_chunk.created_at", "rag_retrieval_trace.created_at",
                         "review_issue_evidence.created_at");
                 assertColumnsOfType(softly, statement, "boolean", "rag_retrieval_trace.degraded");
@@ -397,7 +399,8 @@ class PostgresRagMigrationTest {
                                 "idx_rag_chunk_search_vector_gin:gin",
                                 "idx_rag_chunk_snapshot:btree",
                                 "idx_rag_document_snapshot:btree",
-                                "idx_rag_chunk_snapshot_identity:btree"
+                                "idx_rag_chunk_snapshot_identity:btree",
+                                "uq_rag_index_job_active_identity:btree"
                         );
 
                 softly.assertThat(queryNames(statement, """
@@ -573,6 +576,82 @@ class PostgresRagMigrationTest {
                         SELECT DISTINCT embedding_model || ':' || embedding_dimensions || ':' || index_version
                         FROM rag_index_job
                         """)).containsExactly("current-model:1024:1");
+            }
+        }
+    }
+
+    @Test
+    void upgradesPopulatedV6WithOneActiveIdentityAndHeartbeatLease() throws Exception {
+        try (PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("pgvector/pgvector:pg16")) {
+            postgres.start();
+            Flyway.configure()
+                    .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                    .locations("classpath:db/migration", "classpath:db/rag/postgresql")
+                    .target("6")
+                    .initSql("CREATE SCHEMA IF NOT EXISTS flyway_compat; "
+                            + "DO $$ BEGIN CREATE DOMAIN flyway_compat.CLOB AS TEXT; "
+                            + "EXCEPTION WHEN duplicate_object THEN NULL; END $$; "
+                            + "SET search_path TO public, flyway_compat")
+                    .load()
+                    .migrate();
+
+            try (Connection connection = DriverManager.getConnection(
+                    postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                 Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                        INSERT INTO rag_repository
+                          (provider, owner_name, repository_name, clone_url, default_branch, index_status,
+                           index_version, embedding_model, embedding_dimensions, created_at, updated_at)
+                        VALUES ('github', 'owner', 'repo', 'https://github.com/owner/repo.git', 'main',
+                                'QUEUED', 1, 'model', 1024, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """);
+                statement.executeUpdate("""
+                        INSERT INTO rag_index_job
+                          (repository_id, requested_ref, trigger_type, status, embedding_model,
+                           embedding_dimensions, index_version, created_at)
+                        SELECT id, 'duplicate', 'PULL_REQUEST', 'QUEUED', 'model', 1024, 1,
+                               CURRENT_TIMESTAMP FROM rag_repository
+                        """);
+                statement.executeUpdate("""
+                        INSERT INTO rag_index_job
+                          (repository_id, requested_ref, trigger_type, status, embedding_model,
+                           embedding_dimensions, index_version, created_at)
+                        SELECT id, 'duplicate', 'PULL_REQUEST', 'QUEUED', 'model', 1024, 1,
+                               CURRENT_TIMESTAMP + INTERVAL '1 second' FROM rag_repository
+                        """);
+                statement.executeUpdate("""
+                        INSERT INTO rag_index_job
+                          (repository_id, requested_ref, trigger_type, status, attempt_count, started_at,
+                           embedding_model, embedding_dimensions, index_version, created_at)
+                        SELECT id, 'running', 'PULL_REQUEST', 'RUNNING', 1, CURRENT_TIMESTAMP,
+                               'model', 1024, 1, CURRENT_TIMESTAMP FROM rag_repository
+                        """);
+            }
+
+            Flyway.configure()
+                    .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                    .locations("classpath:db/migration", "classpath:db/rag/postgresql")
+                    .load()
+                    .migrate();
+
+            try (Connection connection = DriverManager.getConnection(
+                    postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                 Statement statement = connection.createStatement()) {
+                assertThat(queryNames(statement,
+                        "SELECT status FROM rag_index_job WHERE requested_ref='duplicate'"))
+                        .containsExactlyInAnyOrder("FAILED", "QUEUED");
+                assertThat(querySingle(statement, """
+                        SELECT error_code FROM rag_index_job
+                        WHERE requested_ref='duplicate' AND status='FAILED'
+                        """)).isEqualTo("DUPLICATE_ACTIVE_JOB");
+                assertThat(querySingle(statement, """
+                        SELECT (heartbeat_at = started_at)::text FROM rag_index_job
+                        WHERE requested_ref='running'
+                        """)).isEqualTo("true");
+                assertThat(querySingle(statement, """
+                        SELECT indexdef FROM pg_indexes
+                        WHERE indexname='uq_rag_index_job_active_identity'
+                        """)).contains("QUEUED", "RUNNING");
             }
         }
     }

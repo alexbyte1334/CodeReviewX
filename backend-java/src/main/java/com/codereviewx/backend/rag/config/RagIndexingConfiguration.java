@@ -10,6 +10,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+
 @Configuration(proxyBeanMethods = false)
 @EnableScheduling
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
@@ -34,5 +37,14 @@ public class RagIndexingConfiguration {
     @Bean
     TransactionTemplate ragTransactionTemplate(PlatformTransactionManager transactionManager) {
         return new TransactionTemplate(transactionManager);
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    ScheduledExecutorService ragHeartbeatExecutor() {
+        return Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "rag-heartbeat");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 }

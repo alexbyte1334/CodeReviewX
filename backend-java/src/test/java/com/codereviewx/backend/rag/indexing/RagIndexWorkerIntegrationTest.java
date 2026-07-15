@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -33,8 +34,13 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -104,7 +110,8 @@ class RagIndexWorkerIntegrationTest {
         assertThat(claimed.status()).isEqualTo(RagIndexJob.Status.RUNNING);
         Optional<RagIndexJob> blockedClaim = transactions.execute(ignored -> jobs.claimNextQueued());
         assertThat(blockedClaim).isEmpty();
-        assertThatThrownBy(() -> jobs.transition(claimed.id(), RagIndexJob.Status.READY, RagIndexJob.Status.RUNNING))
+        assertThatThrownBy(() -> jobs.transition(claimed.id(), RagIndexJob.Status.READY,
+                RagIndexJob.Status.RUNNING, claimed.attemptCount()))
                 .isInstanceOf(IllegalStateException.class);
 
         worker.process(claimed);
@@ -287,6 +294,100 @@ class RagIndexWorkerIntegrationTest {
     }
 
     @Test
+    void concurrentExactTupleEnsureReturnsOneActiveJobAndTerminalStateAllowsAnother() throws Exception {
+        files.set(file("concurrent.java", "class Concurrent {}"));
+        CountDownLatch callersReady = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Callable<RagIndexResolution> ensure = () -> {
+                callersReady.countDown();
+                start.await();
+                return service.ensureIndexed(metadata(SHA_ONE));
+            };
+            Future<RagIndexResolution> firstFuture = callers.submit(ensure);
+            Future<RagIndexResolution> secondFuture = callers.submit(ensure);
+            callersReady.await();
+            start.countDown();
+
+            RagIndexResolution first = firstFuture.get();
+            RagIndexResolution second = secondFuture.get();
+            assertThat(second.jobId()).isEqualTo(first.jobId());
+            assertThat(jdbc.queryForObject("""
+                    SELECT count(*) FROM rag_index_job WHERE status IN ('QUEUED','RUNNING')
+                    """, Integer.class)).isEqualTo(1);
+
+            jdbc.update("UPDATE rag_index_job SET status='FAILED', finished_at=CURRENT_TIMESTAMP WHERE id=?",
+                    first.jobId());
+            RagIndexResolution replacement = service.ensureIndexed(metadata(SHA_ONE));
+            assertThat(replacement.jobId()).isNotEqualTo(first.jobId());
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_job", Integer.class)).isEqualTo(2);
+        } finally {
+            callers.shutdownNow();
+        }
+    }
+
+    @Test
+    void staleAttemptCannotPersistOrCompleteAfterRecoveryAndReclaim() {
+        files.set(file("fenced.java", "class Fenced {}"));
+        RagIndexResolution queued = service.ensureIndexed(metadata(SHA_ONE));
+        RagIndexJob firstAttempt = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        jdbc.update("UPDATE rag_index_job SET started_at=?, heartbeat_at=? WHERE id=?",
+                LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16),
+                LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), queued.jobId());
+        transactions.executeWithoutResult(ignored -> jobs.recoverStale(Duration.ofMinutes(15),
+                LocalDateTime.now(ZoneOffset.UTC)));
+        RagIndexJob secondAttempt = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+
+        worker.process(firstAttempt);
+
+        RagIndexJob stillOwnedBySecond = jobs.get(queued.jobId()).orElseThrow();
+        assertThat(stillOwnedBySecond.status()).isEqualTo(RagIndexJob.Status.RUNNING);
+        assertThat(stillOwnedBySecond.attemptCount()).isEqualTo(secondAttempt.attemptCount());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_document", Integer.class)).isZero();
+
+        worker.process(secondAttempt);
+        assertThat(jobs.get(queued.jobId()).orElseThrow().status()).isEqualTo(RagIndexJob.Status.READY);
+    }
+
+    @Test
+    void recentHeartbeatPreventsRecoveryOfRunningLease() {
+        service.ensureIndexed(metadata(SHA_ONE));
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        jdbc.update("UPDATE rag_index_job SET started_at=?, heartbeat_at=CURRENT_TIMESTAMP WHERE id=?",
+                LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), claimed.id());
+
+        int recovered = transactions.execute(ignored -> jobs.recoverStale(Duration.ofMinutes(15),
+                LocalDateTime.now(ZoneOffset.UTC)));
+
+        assertThat(recovered).isZero();
+        assertThat(jobs.get(claimed.id()).orElseThrow().status()).isEqualTo(RagIndexJob.Status.RUNNING);
+    }
+
+    @Test
+    void rejectedBestEffortWakeupsLeaveQueuedJobAndDoNotBreakScheduler() {
+        TaskExecutor rejecting = runnable -> {
+            throw new TaskRejectedException("saturated");
+        };
+        DefaultRagIndexService rejectingService = new DefaultRagIndexService(
+                repositories, jobs, worker, rejecting, transactions, properties, Clock.systemUTC());
+
+        RagIndexResolution queued = rejectingService.ensureIndexed(metadata(SHA_ONE));
+
+        assertThat(queued.status()).isEqualTo(RagIndexResolution.Status.QUEUED);
+        assertThat(jobs.get(queued.jobId())).isPresent();
+        ThreadPoolTaskExecutor rejectingPool = new ThreadPoolTaskExecutor() {
+            @Override
+            public void execute(Runnable task) {
+                throw new TaskRejectedException("saturated");
+            }
+        };
+        ReflectionTestUtils.setField(worker, "executor", rejectingPool);
+        assertThatCode(worker::submitOne).doesNotThrowAnyException();
+    }
+
+    @Test
     void failedWriteRollsBackSnapshotAndPreservesPreviousReadyCommit() {
         files.set(file("stable.java", "class Stable {}"));
         index(metadata(SHA_ONE));
@@ -319,8 +420,8 @@ class RagIndexWorkerIntegrationTest {
     void recoversStaleRunningJobsUntilThirdAttemptThenFails() {
         long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
                 "main", properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), 1).id();
-        long retryable = jobs.create(repositoryId, SHA_ONE, "PULL_REQUEST", "test-model", 1024, 1);
-        long exhausted = jobs.create(repositoryId, SHA_TWO, "PULL_REQUEST", "test-model", 1024, 1);
+        long retryable = jobs.createOrGetActive(repositoryId, SHA_ONE, "PULL_REQUEST", "test-model", 1024, 1);
+        long exhausted = jobs.createOrGetActive(repositoryId, SHA_TWO, "PULL_REQUEST", "test-model", 1024, 1);
         jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=2, started_at=? WHERE id=?",
                 LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), retryable);
         jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=3, started_at=? WHERE id=?",

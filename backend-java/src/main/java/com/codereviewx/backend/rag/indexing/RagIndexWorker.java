@@ -15,11 +15,13 @@ import com.codereviewx.backend.rag.persistence.RagIndexJobStore.SnapshotRecord;
 import com.codereviewx.backend.rag.service.RagIndexJob;
 import com.codereviewx.backend.review.github.GithubPrMetadata;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -34,6 +36,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 @Component
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
@@ -54,30 +59,33 @@ public class RagIndexWorker {
     private final String embeddingModel;
     private final int embeddingDimensions;
     private final ThreadPoolTaskExecutor executor;
+    private final ScheduledExecutorService heartbeatExecutor;
 
     @Autowired
     public RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
                           RagChunkStore chunks, RepositoryCheckoutService checkoutService,
                           RepositoryFileDiscovery discovery, CodeChunker chunker, EmbeddingClient embeddings,
                           TransactionTemplate transactions, RagProperties properties,
-                          ThreadPoolTaskExecutor ragIndexExecutor) {
+                          ThreadPoolTaskExecutor ragIndexExecutor,
+                          @Qualifier("ragHeartbeatExecutor") ScheduledExecutorService heartbeatExecutor) {
         this(repositories, jobs, documents, chunks, checkoutService, discovery::discover, chunker, embeddings,
                 transactions, Clock.systemUTC(), properties.getEmbeddingModel(),
-                properties.getEmbeddingDimensions(), ragIndexExecutor);
+                properties.getEmbeddingDimensions(), ragIndexExecutor, heartbeatExecutor);
     }
 
     RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
                    RagChunkStore chunks, Function<CheckedOutRepository, List<RepositoryFile>> fileSource,
                    CodeChunker chunker, EmbeddingClient embeddings, TransactionTemplate transactions, Clock clock) {
         this(repositories, jobs, documents, chunks, null, fileSource, chunker, embeddings, transactions, clock,
-                "test-model", 1024, null);
+                "test-model", 1024, null, null);
     }
 
     private RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
                            RagChunkStore chunks, RepositoryCheckoutService checkoutService,
                            Function<CheckedOutRepository, List<RepositoryFile>> fileSource, CodeChunker chunker,
                            EmbeddingClient embeddings, TransactionTemplate transactions, Clock clock,
-                           String embeddingModel, int embeddingDimensions, ThreadPoolTaskExecutor executor) {
+                           String embeddingModel, int embeddingDimensions, ThreadPoolTaskExecutor executor,
+                           ScheduledExecutorService heartbeatExecutor) {
         this.repositories = repositories;
         this.jobs = jobs;
         this.documents = documents;
@@ -91,6 +99,7 @@ public class RagIndexWorker {
         this.embeddingModel = embeddingModel;
         this.embeddingDimensions = embeddingDimensions;
         this.executor = executor;
+        this.heartbeatExecutor = heartbeatExecutor;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -107,7 +116,9 @@ public class RagIndexWorker {
 
     public void submitOne() {
         if (executor != null) {
-            executor.execute(this::runOne);
+            try {
+                executor.execute(this::runOne);
+            } catch (TaskRejectedException ignored) { }
         }
     }
 
@@ -120,6 +131,7 @@ public class RagIndexWorker {
 
     void process(RagIndexJob job) {
         RepositoryRecord repository = repositories.get(job.repositoryId()).orElseThrow();
+        ScheduledFuture<?> heartbeat = startHeartbeat(job);
         try {
             validateCapability(job);
             List<RepositoryFile> discovered;
@@ -139,12 +151,11 @@ public class RagIndexWorker {
             PreparedSnapshot snapshot = prepare(job, repository, resolvedSha, discovered);
             transactions.executeWithoutResult(ignored -> persist(job, repository, snapshot));
         } catch (Exception exception) {
-            transactions.executeWithoutResult(ignored -> {
-                String errorCode = exception instanceof ConfigurationMismatchException
-                        ? "CONFIG_MISMATCH" : "INDEXING_FAILED";
-                jobs.fail(job.id(), errorCode, safeMessage(exception));
-                repositories.markInitialFailure(repository.id());
-            });
+            failIfOwned(job, repository, exception);
+        } finally {
+            if (heartbeat != null) {
+                heartbeat.cancel(false);
+            }
         }
     }
 
@@ -220,7 +231,8 @@ public class RagIndexWorker {
                 }
             }
         }
-        jobs.complete(job.id(), snapshot.commitSha(), snapshot.files().size(), snapshot.files().size(), chunkCount, 0);
+        jobs.complete(job.id(), job.attemptCount(), snapshot.commitSha(), snapshot.files().size(),
+                snapshot.files().size(), chunkCount, 0);
         repositories.activate(repository.id(), snapshot.commitSha(), job.embeddingModel(), job.embeddingDimensions(),
                 job.indexVersion());
     }
@@ -255,6 +267,28 @@ public class RagIndexWorker {
                 || INDEX_VERSION != job.indexVersion()) {
             throw new ConfigurationMismatchException();
         }
+    }
+
+    private ScheduledFuture<?> startHeartbeat(RagIndexJob job) {
+        if (heartbeatExecutor == null) {
+            return null;
+        }
+        return heartbeatExecutor.scheduleAtFixedRate(() -> {
+            try {
+                jobs.heartbeat(job.id(), job.attemptCount());
+            } catch (RuntimeException ignored) { }
+        }, 5, 5, TimeUnit.SECONDS);
+    }
+
+    private void failIfOwned(RagIndexJob job, RepositoryRecord repository, Exception exception) {
+        try {
+            transactions.executeWithoutResult(ignored -> {
+                String errorCode = exception instanceof ConfigurationMismatchException
+                        ? "CONFIG_MISMATCH" : "INDEXING_FAILED";
+                jobs.fail(job.id(), job.attemptCount(), errorCode, safeMessage(exception));
+                repositories.markInitialFailure(repository.id());
+            });
+        } catch (RagIndexJobStore.StaleJobLeaseException ignored) { }
     }
 
     private void recoverStale() {

@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -65,13 +66,15 @@ public class DefaultRagIndexService implements RagIndexService {
                 return new ResolutionTransaction(new RagIndexResolution(repository.id(), ready.id(),
                         metadata.headSha(), RagIndexResolution.Status.READY), false);
             }
-            long jobId = jobs.create(repository.id(), metadata.headSha(), "PULL_REQUEST",
+            long jobId = jobs.createOrGetActive(repository.id(), metadata.headSha(), "PULL_REQUEST",
                     properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), INDEX_VERSION);
             return new ResolutionTransaction(new RagIndexResolution(repository.id(), jobId,
                     metadata.headSha(), RagIndexResolution.Status.QUEUED), true);
         });
         if (result.submit()) {
-            executor.execute(worker::runOne);
+            try {
+                executor.execute(worker::runOne);
+            } catch (TaskRejectedException ignored) { }
         }
         return result.resolution();
     }

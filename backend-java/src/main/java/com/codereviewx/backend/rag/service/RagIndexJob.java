@@ -11,6 +11,7 @@ public record RagIndexJob(
         int attemptCount,
         LocalDateTime startedAt,
         LocalDateTime finishedAt,
+        LocalDateTime heartbeatAt,
         String errorCode,
         String errorMessage,
         String embeddingModel,

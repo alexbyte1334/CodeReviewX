@@ -25,26 +25,28 @@ public class RagIndexJobStore {
         this.jdbc = jdbc;
     }
 
-    public long create(long repositoryId, String requestedRef, String triggerType, String embeddingModel,
-                       int embeddingDimensions, int indexVersion) {
-        KeyHolder keys = new GeneratedKeyHolder();
-        jdbc.update(connection -> {
-            PreparedStatement statement = connection.prepareStatement("""
-                    INSERT INTO rag_index_job
-                      (repository_id, requested_ref, trigger_type, status, embedding_model,
-                       embedding_dimensions, index_version, created_at)
-                    VALUES (?, ?, ?, 'QUEUED', ?, ?, ?, ?)
-                    """, new String[]{"id"});
-            statement.setLong(1, repositoryId);
-            statement.setString(2, requestedRef);
-            statement.setString(3, triggerType);
-            statement.setString(4, embeddingModel);
-            statement.setInt(5, embeddingDimensions);
-            statement.setInt(6, indexVersion);
-            statement.setTimestamp(7, Timestamp.valueOf(now()));
-            return statement;
-        }, keys);
-        return keys.getKey().longValue();
+    public long createOrGetActive(long repositoryId, String requestedRef, String triggerType,
+                                  String embeddingModel, int embeddingDimensions, int indexVersion) {
+        List<Long> inserted = jdbc.query("""
+                INSERT INTO rag_index_job
+                  (repository_id, requested_ref, trigger_type, status, embedding_model,
+                   embedding_dimensions, index_version, created_at)
+                VALUES (?, ?, ?, 'QUEUED', ?, ?, ?, ?)
+                ON CONFLICT (repository_id, requested_ref, embedding_model, embedding_dimensions, index_version)
+                WHERE status IN ('QUEUED', 'RUNNING')
+                DO NOTHING
+                RETURNING id
+                """, (result, row) -> result.getLong("id"), repositoryId, requestedRef, triggerType,
+                embeddingModel, embeddingDimensions, indexVersion, now());
+        if (!inserted.isEmpty()) {
+            return inserted.get(0);
+        }
+        return jdbc.queryForObject("""
+                SELECT id FROM rag_index_job
+                WHERE repository_id=? AND requested_ref=? AND embedding_model=?
+                  AND embedding_dimensions=? AND index_version=?
+                  AND status IN ('QUEUED', 'RUNNING')
+                """, Long.class, repositoryId, requestedRef, embeddingModel, embeddingDimensions, indexVersion);
     }
 
     public Optional<RagIndexJob> get(long id) {
@@ -119,46 +121,54 @@ public class RagIndexJobStore {
                 )
                 UPDATE rag_index_job job
                 SET status='RUNNING', attempt_count=attempt_count+1, started_at=?,
-                    finished_at=NULL, error_code=NULL, error_message=NULL
+                    heartbeat_at=?, finished_at=NULL, error_code=NULL, error_message=NULL
                 FROM candidate
                 WHERE job.id=candidate.id
                 RETURNING job.*
-                """, (result, row) -> map(result), now());
+                """, (result, row) -> map(result), now(), now());
         return claimed.stream().findFirst();
     }
 
-    public void transition(long id, RagIndexJob.Status expected, RagIndexJob.Status target) {
+    public void transition(long id, RagIndexJob.Status expected, RagIndexJob.Status target, int expectedAttempt) {
         boolean valid = expected == RagIndexJob.Status.QUEUED && target == RagIndexJob.Status.RUNNING
                 || expected == RagIndexJob.Status.RUNNING
                 && (target == RagIndexJob.Status.READY || target == RagIndexJob.Status.FAILED);
-        if (!valid || jdbc.update("UPDATE rag_index_job SET status=? WHERE id=? AND status=?",
-                target.name(), id, expected.name()) != 1) {
+        if (!valid || jdbc.update("UPDATE rag_index_job SET status=? WHERE id=? AND status=? AND attempt_count=?",
+                target.name(), id, expected.name(), expectedAttempt) != 1) {
             throw new IllegalStateException("Invalid RAG index job transition");
         }
     }
 
-    public void complete(long id, String resolvedCommitSha, int discoveredFiles, int indexedFiles,
+    public void complete(long id, int expectedAttempt, String resolvedCommitSha, int discoveredFiles, int indexedFiles,
                          int indexedChunks, int skippedFiles) {
         int updated = jdbc.update("""
                 UPDATE rag_index_job
                 SET status='READY', resolved_commit_sha=?, discovered_file_count=?, indexed_file_count=?,
-                    indexed_chunk_count=?, skipped_file_count=?, finished_at=?
-                WHERE id=? AND status='RUNNING'
-                """, resolvedCommitSha, discoveredFiles, indexedFiles, indexedChunks, skippedFiles, now(), id);
+                    indexed_chunk_count=?, skipped_file_count=?, finished_at=?, heartbeat_at=NULL
+                WHERE id=? AND status='RUNNING' AND attempt_count=?
+                """, resolvedCommitSha, discoveredFiles, indexedFiles, indexedChunks, skippedFiles, now(), id,
+                expectedAttempt);
         if (updated != 1) {
-            throw new IllegalStateException("Invalid RAG index job transition");
+            throw new StaleJobLeaseException();
         }
     }
 
-    public void fail(long id, String errorCode, String errorMessage) {
+    public void fail(long id, int expectedAttempt, String errorCode, String errorMessage) {
         int updated = jdbc.update("""
                 UPDATE rag_index_job
-                SET status='FAILED', error_code=?, error_message=?, finished_at=?
-                WHERE id=? AND status='RUNNING'
-                """, errorCode, truncate(errorMessage), now(), id);
+                SET status='FAILED', error_code=?, error_message=?, finished_at=?, heartbeat_at=NULL
+                WHERE id=? AND status='RUNNING' AND attempt_count=?
+                """, errorCode, truncate(errorMessage), now(), id, expectedAttempt);
         if (updated != 1) {
-            throw new IllegalStateException("Invalid RAG index job transition");
+            throw new StaleJobLeaseException();
         }
+    }
+
+    public boolean heartbeat(long id, int expectedAttempt) {
+        return jdbc.update("""
+                UPDATE rag_index_job SET heartbeat_at=?
+                WHERE id=? AND status='RUNNING' AND attempt_count=?
+                """, now(), id, expectedAttempt) == 1;
     }
 
     public int recoverStale(Duration age, LocalDateTime currentTime) {
@@ -166,13 +176,13 @@ public class RagIndexJobStore {
         int queued = jdbc.update("""
                 UPDATE rag_index_job
                 SET status='QUEUED', started_at=NULL, error_code='STALE_RECOVERED', error_message=NULL
-                WHERE status='RUNNING' AND started_at < ? AND attempt_count < 3
+                WHERE status='RUNNING' AND COALESCE(heartbeat_at, started_at) < ? AND attempt_count < 3
                 """, cutoff);
         int failed = jdbc.update("""
                 UPDATE rag_index_job
                 SET status='FAILED', finished_at=?, error_code='ATTEMPTS_EXHAUSTED',
                     error_message='Index job exceeded recovery attempt limit'
-                WHERE status='RUNNING' AND started_at < ? AND attempt_count >= 3
+                WHERE status='RUNNING' AND COALESCE(heartbeat_at, started_at) < ? AND attempt_count >= 3
                 """, currentTime, cutoff);
         return queued + failed;
     }
@@ -184,10 +194,12 @@ public class RagIndexJobStore {
     private static RagIndexJob map(java.sql.ResultSet result) throws java.sql.SQLException {
         Timestamp started = result.getTimestamp("started_at");
         Timestamp finished = result.getTimestamp("finished_at");
+        Timestamp heartbeat = result.getTimestamp("heartbeat_at");
         return new RagIndexJob(result.getLong("id"), result.getLong("repository_id"),
                 result.getString("requested_ref"), result.getString("resolved_commit_sha"),
                 RagIndexJob.Status.valueOf(result.getString("status")), result.getInt("attempt_count"),
                 started == null ? null : started.toLocalDateTime(), finished == null ? null : finished.toLocalDateTime(),
+                heartbeat == null ? null : heartbeat.toLocalDateTime(),
                 result.getString("error_code"), result.getString("error_message"),
                 result.getString("embedding_model"), result.getInt("embedding_dimensions"),
                 result.getInt("index_version"));
@@ -206,5 +218,11 @@ public class RagIndexJobStore {
 
     public record SnapshotRecord(long id, long jobId, long repositoryId, String commitSha,
                                  String embeddingModel, int embeddingDimensions, int indexVersion) {
+    }
+
+    public static final class StaleJobLeaseException extends IllegalStateException {
+        public StaleJobLeaseException() {
+            super("RAG index job lease is no longer owned by this attempt");
+        }
     }
 }
