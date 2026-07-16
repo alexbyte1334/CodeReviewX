@@ -17,10 +17,15 @@ class RagSecretSafetyTest {
         assertTrue(RagSecurityPolicy.isSensitivePath("config/credentials.json"));
         assertTrue(RagSecurityPolicy.isSensitivePath("config/api-token.txt"));
         assertTrue(RagSecurityPolicy.isSensitivePath("config/private-key.pem"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/secret-prod.yaml"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/credentials-dev.json"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/service-account-production.yml"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/private-key-backup.pem"));
         assertFalse(RagSecurityPolicy.isSensitivePath("src/Main.java"));
         assertFalse(RagSecurityPolicy.isSensitivePath("src/SecretService.java"));
         assertFalse(RagSecurityPolicy.isSensitivePath("src/SecretsController.ts"));
         assertFalse(RagSecurityPolicy.isSensitivePath("src/secretary.go"));
+        assertFalse(RagSecurityPolicy.isSensitivePath("docs/credentials-guide.md"));
     }
     @Test void framesRepositoryTextAsUntrusted() {
         String token = "sk-" + "test_abcdefghijkl";

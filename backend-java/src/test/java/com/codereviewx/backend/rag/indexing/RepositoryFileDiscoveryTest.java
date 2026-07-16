@@ -187,6 +187,10 @@ class RepositoryFileDiscoveryTest {
         write(root, "config/credentials.json", "{}\n");
         write(root, "config/api-token.txt", "token\n");
         write(root, "config/service-account.yaml", "account: x\n");
+        write(root, "config/secret-prod.yaml", "secret: x\n");
+        write(root, "config/credentials-dev.json", "{}\n");
+        write(root, "config/service-account-production.yml", "account: x\n");
+        write(root, "config/private-key-backup.pem", "private\n");
         try (Git git = Git.open(root.toFile())) {
             git.add().addFilepattern(".").call();
             git.commit().setMessage("tracked credentials").setAuthor("test", "test@example.com").call();

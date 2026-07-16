@@ -6,7 +6,7 @@ public final class RagSecurityPolicy {
     private static final Pattern TOKEN = Pattern.compile("(?i)\\b(?:sk-[a-z0-9_-]{12,}|gh[pousr]_[a-z0-9_]{20,}|bearer\\s+[a-z0-9._~-]{16,})\\b");
     private static final Pattern SENSITIVE_ARTIFACT = Pattern.compile(
             "(?i)(?:^|[._-])(?:secret|secrets|credential|credentials|token|private[._-]?key|service[._-]?account)"
-                    + "(?:$|\\.(?:json|ya?ml|txt|properties|conf|config|ini|pem|key))");
+                    + "(?:[-_][a-z0-9]+)*(?:$|\\.(?:json|ya?ml|txt|properties|conf|config|ini|pem|key))$");
     private RagSecurityPolicy() {}
     public static String redact(String value) { return value == null ? null : TOKEN.matcher(value).replaceAll("[REDACTED]"); }
     public static String redactOutbound(String value) {
