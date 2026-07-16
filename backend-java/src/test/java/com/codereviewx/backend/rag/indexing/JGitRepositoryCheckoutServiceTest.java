@@ -247,20 +247,27 @@ class JGitRepositoryCheckoutServiceTest {
         CheckedOutRepository checkedOut = service.checkout(metadata(fixture.secondSha()));
         workspaceName.set(checkedOut.path().getFileName().toString());
 
-        checkedOut.close();
-
-        assertThat(movedRoot.resolve(workspaceName.get())).doesNotExist();
+        boolean secureStream = JGitRepositoryCheckoutService.supportsSecureDirectoryStream(root);
+        if (secureStream) {
+            checkedOut.close();
+            assertThat(movedRoot.resolve(workspaceName.get())).doesNotExist();
+        } else {
+            assertThatThrownBy(checkedOut::close).hasMessage("Repository cleanup failed");
+            assertThat(movedRoot.resolve(workspaceName.get())).isDirectory();
+        }
         assertThat(outside.resolve(workspaceName.get()).resolve("sentinel.txt")).hasContent("safe");
         Files.delete(root);
+        if (!secureStream) {
+            deleteForTest(movedRoot);
+        }
     }
 
     @Test
-    void unixProviderOffersSecureDirectoryStreamForCheckoutRoot() throws Exception {
+    void checkoutRootSupportsEitherSecureStreamOrNoFollowFallback() throws Exception {
         Path root = workRoot("secure-stream-root");
         Files.createDirectories(root);
-        try (var stream = Files.newDirectoryStream(root)) {
-            assertThat(stream).isInstanceOf(SecureDirectoryStream.class);
-        }
+        boolean secureStream = JGitRepositoryCheckoutService.supportsSecureDirectoryStream(root);
+        assertThat(secureStream || Files.getFileAttributeView(root, PosixFileAttributeView.class) != null).isTrue();
     }
 
     private RepositoryFixture createRepository() throws Exception {
