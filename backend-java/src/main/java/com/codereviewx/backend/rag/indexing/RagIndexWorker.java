@@ -86,7 +86,7 @@ public class RagIndexWorker {
                 "test-model", 1024, null, null, new RagIndexLifecycleCoordinator(jobs::releaseForShutdown), null);
     }
 
-    private RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
+    RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
                            RagChunkStore chunks, RepositoryCheckoutService checkoutService,
                            Function<CheckedOutRepository, List<RepositoryFile>> fileSource, CodeChunker chunker,
                            EmbeddingClient embeddings, TransactionTemplate transactions, Clock clock,
@@ -169,7 +169,13 @@ public class RagIndexWorker {
                 resolvedSha = job.requestedRef();
                 discovered = fileSource.apply(null);
             } else {
-                try (CheckedOutRepository checkedOut = checkoutService.checkout(metadata(repository, job.requestedRef()))) {
+                CheckedOutRepository checkout;
+                try {
+                    checkout = checkoutService.checkout(metadata(repository, job.requestedRef()));
+                } catch (RuntimeException checkoutFailure) {
+                    throw new CheckoutFailureException(checkoutFailure);
+                }
+                try (CheckedOutRepository checkedOut = checkout) {
                     resolvedSha = checkedOut.commitSha();
                     if (!job.requestedRef().equals(resolvedSha)) {
                         throw new IllegalStateException("Repository checkout returned a different commit");
@@ -228,13 +234,18 @@ public class RagIndexWorker {
             for (int start = 0; start < chunksToEmbed.size(); start += RagChunkStore.MAX_BATCH_SIZE) {
                 int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, chunksToEmbed.size());
                 List<CodeChunk> batch = chunksToEmbed.subList(start, end);
-                List<float[]> vectors = embeddings.embed(batch.stream().map(CodeChunk::content).toList());
-                if (vectors.size() != batch.size()) {
-                    throw new IllegalStateException("Embedding response count mismatch");
+                List<float[]> vectors;
+                try {
+                    vectors = embeddings.embed(batch.stream().map(CodeChunk::content).toList());
+                } catch (RuntimeException embeddingFailure) {
+                    throw new EmbeddingUnavailableException(embeddingFailure);
+                }
+                if (vectors == null || vectors.size() != batch.size()) {
+                    throw new EmbeddingUnavailableException(null);
                 }
                 for (int index = 0; index < batch.size(); index++) {
-                    if (vectors.get(index).length != embeddingDimensions) {
-                        throw new IllegalStateException("Embedding dimensions mismatch");
+                    if (vectors.get(index) == null || vectors.get(index).length != embeddingDimensions) {
+                        throw new EmbeddingUnavailableException(null);
                     }
                     embedded.add(new EmbeddedChunk(batch.get(index), vectors.get(index)));
                 }
@@ -323,8 +334,10 @@ public class RagIndexWorker {
             transactions.executeWithoutResult(ignored -> {
                 String errorCode = exception instanceof ConfigurationMismatchException
                         ? "CONFIG_MISMATCH" : exception instanceof HeartbeatUnavailableException
-                        ? "HEARTBEAT_UNAVAILABLE" : "INDEXING_FAILED";
-                jobs.fail(job.id(), job.attemptCount(), errorCode, safeMessage(exception));
+                        ? "HEARTBEAT_UNAVAILABLE" : exception instanceof EmbeddingUnavailableException
+                        ? "EMBEDDING_UNAVAILABLE" : exception instanceof CheckoutFailureException
+                        ? "CHECKOUT_FAILED" : "INDEXING_FAILED";
+                jobs.fail(job.id(), job.attemptCount(), errorCode, safeMessage(errorCode));
                 repositories.markInitialFailure(repository.id());
             });
         } catch (RagIndexJobStore.StaleJobLeaseException ignored) { }
@@ -340,9 +353,14 @@ public class RagIndexWorker {
                 repository.defaultBranch(), sha, sha, sha, "open", "", "", 0, 0, 0);
     }
 
-    private static String safeMessage(Exception exception) {
-        String message = exception.getMessage();
-        return message == null || message.isBlank() ? exception.getClass().getSimpleName() : message;
+    private static String safeMessage(String errorCode) {
+        return switch (errorCode) {
+            case "CHECKOUT_FAILED" -> "Repository checkout failed";
+            case "EMBEDDING_UNAVAILABLE" -> "Embedding service unavailable";
+            case "CONFIG_MISMATCH" -> "Queued index configuration is incompatible";
+            case "HEARTBEAT_UNAVAILABLE" -> "Index heartbeat unavailable";
+            default -> "RAG indexing failed";
+        };
     }
 
     private record PreparedSnapshot(String commitSha, List<RepositoryFile> files,
@@ -362,6 +380,18 @@ public class RagIndexWorker {
     private static final class HeartbeatUnavailableException extends IllegalStateException {
         private HeartbeatUnavailableException() {
             super("RAG index heartbeat is unavailable");
+        }
+    }
+
+    private static final class EmbeddingUnavailableException extends IllegalStateException {
+        private EmbeddingUnavailableException(Throwable cause) {
+            super("Embedding service unavailable", cause);
+        }
+    }
+
+    private static final class CheckoutFailureException extends IllegalStateException {
+        private CheckoutFailureException(Throwable cause) {
+            super("Repository checkout failed", cause);
         }
     }
 }

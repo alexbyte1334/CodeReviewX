@@ -67,7 +67,9 @@ public final class RagContextAssembler {
         String prompt = evidence.stream().map(this::format).reduce((left, right) -> left + "\n" + right).orElse("");
         if (metrics != null) {
             metrics.recordContextChars(prompt.length());
-            metrics.recordRetrieval(rerankUnavailable);
+            // Hybrid retrieval owns embedding and route degradation. The assembler only records a
+            // rerank-only degradation, so one retrieval outcome cannot increment the counter twice.
+            metrics.recordRetrieval(rerankUnavailable && retrievalHealth == RetrievalHealth.HEALTHY);
         }
         return new RagEvidenceBundle(evidence, prompt,
                 rerankUnavailable ? RagEvidenceBundle.DegradedReason.RERANK_UNAVAILABLE

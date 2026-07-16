@@ -1,6 +1,8 @@
 package com.codereviewx.backend.rag.retrieval;
 
 import org.junit.jupiter.api.Test;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.codereviewx.backend.rag.service.RagMetricsService;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -294,6 +296,20 @@ class RagContextAssemblerTest {
         assertThat(result.reason()).isEqualTo(RagEvidenceBundle.DegradedReason.RERANK_UNAVAILABLE);
         assertThat(result.retrievalHealth()).isEqualTo(RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
         assertThat(result.legacyFallbackRequired()).isFalse();
+    }
+
+    @Test
+    void doesNotDoubleCountRerankFailureWhenHybridRouteAlreadyDegraded() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RagMetricsService metrics = new RagMetricsService(registry);
+        metrics.recordRetrieval(true); // Hybrid retrieval owns the route-failure outcome.
+        RerankClient unavailable = (query, candidates) -> { throw new IllegalStateException("unavailable"); };
+
+        new RagContextAssembler(unavailable, metrics).assemble("query", "head-sha",
+                List.of(match(1, "src/A.java", 1, 2, "content", 1.0)),
+                RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+
+        assertThat(registry.counter("rag_retrieval_degraded_total").count()).isEqualTo(1);
     }
 
     @Test
