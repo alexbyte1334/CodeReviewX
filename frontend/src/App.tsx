@@ -49,6 +49,7 @@ export default function App() {
   const [toolTraceError, setToolTraceError] = useState<string | null>(null);
   const [repositoryIndexStatus, setRepositoryIndexStatus] = useState<RepositoryIndexStatus | null>(null);
   const [repositoryIndexRef, setRepositoryIndexRef] = useState('HEAD');
+  const [indexPollTrigger, setIndexPollTrigger] = useState(0);
   const [evidenceByIssue, setEvidenceByIssue] = useState<Record<string, RetrievalEvidence[]>>({});
   const [evidenceLoadingIssue, setEvidenceLoadingIssue] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
@@ -172,7 +173,7 @@ export default function App() {
     };
     if (repositoryIndexStatus?.status === 'QUEUED' || repositoryIndexStatus?.status === 'INDEXING' || current.repositoryIndex?.status === 'QUEUED' || current.repositoryIndex?.status === 'INDEXING') poll();
     return () => { stopped = true; if (timer) clearTimeout(timer); indexGeneration.current++; };
-  }, [selectedTask?.id, selectedTask?.repoUrl, selectedTask?.repositoryIndex?.status, selectedTask?.repositoryIndex?.commitSha, repositoryIndexRef]);
+  }, [selectedTask?.id, selectedTask?.repoUrl, selectedTask?.repositoryIndex?.status, selectedTask?.repositoryIndex?.commitSha, repositoryIndexRef, indexPollTrigger]);
 
   async function handleRequestRepositoryIndex() {
     if (!selectedTask) return;
@@ -183,7 +184,7 @@ export default function App() {
     try {
       const res = await requestRepositoryIndex(selectedTask.repoUrl, selectedTask.repositoryIndex?.commitSha ?? 'HEAD');
       if (generation !== taskGeneration.current) return;
-      if (res.success && res.data) { setRepositoryIndexRef(res.data.requestedRef ?? 'HEAD'); setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha }); }
+      if (res.success && res.data) { setRepositoryIndexRef(res.data.requestedRef ?? 'HEAD'); setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha }); setIndexPollTrigger((value) => value + 1); }
       else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message || 'Index request failed.' });
     } catch { if (generation === taskGeneration.current) setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Index request failed.' }); }
   }
@@ -196,7 +197,7 @@ export default function App() {
     try {
       const res = await requestRepositoryReindex(match[1], match[2], selectedTask.repositoryIndex?.commitSha ?? undefined);
       if (generation !== taskGeneration.current) return;
-      if (res.success && res.data) { setRepositoryIndexRef(res.data.requestedRef ?? repositoryIndexRef); setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha }); }
+      if (res.success && res.data) { setRepositoryIndexRef(res.data.requestedRef ?? repositoryIndexRef); setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha }); setIndexPollTrigger((value) => value + 1); }
       else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message || 'Reindex request failed.' });
     } catch { if (generation === taskGeneration.current) setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Reindex request failed.' }); }
   }

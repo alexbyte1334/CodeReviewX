@@ -70,20 +70,47 @@ describe('App RAG orchestration', () => {
     await waitFor(() => expect(api.requestRepositoryIndex).toHaveBeenCalledTimes(1));
   });
 
+  it('starts polling after a successful index request from NOT_INDEXED', async () => {
+    vi.useFakeTimers();
+    const notIndexed = { ...task, repositoryIndex: { status: 'NOT_INDEXED' as const } };
+    vi.mocked(api.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [notIndexed] });
+    vi.mocked(api.getReviewTask).mockResolvedValue({ success: true, message: 'OK', data: notIndexed });
+    vi.mocked(api.requestRepositoryIndex).mockResolvedValue({ success: true, message: 'OK', data: { jobId: 1, status: 'QUEUED', requestedRef: 'HEAD' } });
+    vi.mocked(api.getRepositoryIndexStatus)
+      .mockResolvedValueOnce({ success: true, message: 'OK', data: { status: 'QUEUED' } })
+      .mockResolvedValueOnce({ success: true, message: 'OK', data: { status: 'READY' } });
+    render(<App />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByText('https://github.com/acme/repo'));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    vi.mocked(api.getRepositoryIndexStatus).mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Index' }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it('ignores a deferred old poll response after task switch and clears timers on unmount', async () => {
     vi.mocked(api.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [task, taskTwo] });
     vi.mocked(api.getReviewTask).mockImplementation(async (id) => ({ success: true, message: 'OK', data: id === 1 ? task : taskTwo }));
-    let resolvePoll!: (value: any) => void;
-    vi.mocked(api.getRepositoryIndexStatus).mockImplementation(() => new Promise((resolve) => { resolvePoll = resolve; }));
+    const pollResolvers = new Map<string, (value: any) => void>();
+    vi.mocked(api.getRepositoryIndexStatus).mockImplementation((owner, repo) => new Promise((resolve) => { pollResolvers.set(`${owner}/${repo}`, resolve); }));
     const { unmount } = render(<App />);
     const user = userEvent.setup();
     await user.click(await screen.findByText('https://github.com/acme/repo'));
     fireEvent.click(screen.getByText('https://github.com/acme/other-repo'));
     vi.useFakeTimers();
     await act(async () => { await Promise.resolve(); });
-    resolvePoll({ success: true, message: 'OK', data: { status: 'FAILED', errorMessage: 'stale' } });
+    pollResolvers.get('acme/repo')!({ success: true, message: 'OK', data: { status: 'FAILED', errorMessage: 'stale' } });
     await act(async () => { await Promise.resolve(); });
     expect(screen.queryByText('stale')).not.toBeInTheDocument();
+    pollResolvers.get('acme/other-repo')!({ success: true, message: 'OK', data: { status: 'READY' } });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText('Ready')).toBeInTheDocument();
     const callsBeforeUnmount = vi.mocked(api.getRepositoryIndexStatus).mock.calls.length;
     unmount();
     await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
