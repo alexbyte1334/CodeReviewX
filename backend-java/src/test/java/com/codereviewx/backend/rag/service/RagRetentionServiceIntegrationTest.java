@@ -41,7 +41,8 @@ class RagRetentionServiceIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot WHERE commit_sha IN ('c4','c5','c6','c7','c8','recent','active','running','queued')",Integer.class)).isEqualTo(9);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_document WHERE snapshot_id=?",Integer.class,doomed)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_chunk WHERE snapshot_id=?",Integer.class,doomed)).isZero();
-        assertThat(jdbc.queryForMap("SELECT rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score FROM review_issue_evidence WHERE id=?",evidence))
+        var preservedEvidence = jdbc.queryForMap("SELECT rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at FROM review_issue_evidence WHERE id=?",evidence);
+        assertThat(preservedEvidence)
                 .containsEntry("rag_chunk_id", null)
                 .containsEntry("citation_label", "E1")
                 .containsEntry("path", "src/X.java")
@@ -49,7 +50,9 @@ class RagRetentionServiceIntegrationTest {
                 .containsEntry("end_line", 9)
                 .containsEntry("content_hash", "chunk-hash")
                 .containsEntry("evidence_excerpt", "immutable evidence snapshot")
-                .containsEntry("retrieval_rank", 1);
+                .containsEntry("retrieval_rank", 1)
+                .containsEntry("retrieval_score", 0.75d);
+        assertThat(preservedEvidence.get("created_at")).isNotNull();
         assertThat(new RagRetentionService(jdbc).cleanup()).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM review_issue_evidence WHERE id=? AND rag_chunk_id IS NULL",Integer.class,evidence)).isOne();
     }
