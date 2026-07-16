@@ -181,6 +181,12 @@ class RepositoryFileDiscoveryTest {
         write(root, ".env.template", "TOKEN=\n");
         write(root, "credentials-guide.md", "safe documentation\n");
         write(root, "src/environment.java", "class Environment {}\n");
+        write(root, "src/SecretService.java", "class SecretService {}\n");
+        write(root, "src/SecretsController.ts", "export class SecretsController {}\n");
+        write(root, "src/secretary.go", "package secretary\n");
+        write(root, "config/credentials.json", "{}\n");
+        write(root, "config/api-token.txt", "token\n");
+        write(root, "config/service-account.yaml", "account: x\n");
         try (Git git = Git.open(root.toFile())) {
             git.add().addFilepattern(".").call();
             git.commit().setMessage("tracked credentials").setAuthor("test", "test@example.com").call();
@@ -189,7 +195,8 @@ class RepositoryFileDiscoveryTest {
         assertThat(discover(root)).extracting(RepositoryFile::path)
                 .containsExactly(
                         ".env.example", ".env.sample", ".env.template",
-                        "credentials-guide.md", "src/environment.java");
+                        "credentials-guide.md", "src/SecretService.java", "src/SecretsController.ts",
+                        "src/environment.java", "src/secretary.go");
     }
 
     @Test

@@ -1,7 +1,11 @@
 package com.codereviewx.backend.review.pipeline.provider.mimo;
 
 import com.codereviewx.backend.review.pipeline.ReviewContext;
+import com.codereviewx.backend.rag.security.RagSecurityPolicy;
 import org.springframework.stereotype.Component;
+
+import java.net.URI;
+import java.util.Locale;
 
 @Component
 public class ReviewPromptBuilder {
@@ -82,7 +86,7 @@ public class ReviewPromptBuilder {
                 - Include constraints that forbid invented files and ungrounded claims.
                 """.formatted(
                 context.getTaskId(),
-                context.getRepoUrl(),
+                canonicalGithubUrl(context.getRepoUrl()),
                 context.getPrNumber(),
                 context.getReviewMode(),
                 context.hasDiffText() ? "PR diff text" : "bounded PR metadata only",
@@ -96,10 +100,10 @@ public class ReviewPromptBuilder {
                 --- PR DIFF START ---
                 %s
                 --- PR DIFF END ---
-                """.formatted(context.getDiffText())
+                """.formatted(outbound(context.getDiffText()))
                 : "No PR diff is available yet. Use only repoUrl, prNumber, and bounded metadata.";
         String evidenceContext = context.hasRagEvidence()
-                ? "\n--- RAG EVIDENCE START ---\n" + context.getRagEvidenceBundle().promptBlock()
+                ? "\n--- RAG EVIDENCE START ---\n" + outbound(context.getRagEvidenceBundle().promptBlock())
                 + "\n--- RAG EVIDENCE END ---\n"
                 : "";
 
@@ -129,7 +133,7 @@ public class ReviewPromptBuilder {
                 - If there are no meaningful findings, return an empty findings array.
                 - When RAG evidence is provided, every finding must cite at least one provided evidence label.
                 - Never use unknown evidence labels; evidence is grounding only; never copy evidence blocks verbatim into descriptions.
-                """.formatted(taskPlanJson, context.getRepoUrl(), context.getPrNumber(), reviewContext, evidenceContext,
+                """.formatted(outbound(taskPlanJson), canonicalGithubUrl(context.getRepoUrl()), context.getPrNumber(), reviewContext, evidenceContext,
                 CANDIDATE_REVIEW_SCHEMA);
     }
 
@@ -142,7 +146,7 @@ public class ReviewPromptBuilder {
                 ? "allowedEvidenceLabels: " + context.getRagEvidenceBundle().evidence().stream()
                 .map(evidence -> evidence.label()).toList() + "\nallowedEvidenceMetadata:\n"
                 + context.getRagEvidenceBundle().evidence().stream()
-                .map(evidence -> evidence.label() + " path=" + evidence.path() + " lines="
+                .map(evidence -> outbound(evidence.label()) + " path=" + outbound(evidence.path()) + " lines="
                         + evidence.startLine() + "-" + evidence.endLine())
                 .reduce((left, right) -> left + "\n" + right).orElse("")
                 : "allowedEvidenceLabels: []";
@@ -167,6 +171,35 @@ public class ReviewPromptBuilder {
                 - Reject if the review invents files, uses unsupported enum values, or ignores constraints.
                 - Reject missing or unknown evidence labels when evidence was provided.
                 - Return only JSON with no markdown.
-                """.formatted(taskPlanJson, candidateReviewJson, allowedEvidence, GATE_DECISION_SCHEMA);
+                """.formatted(outbound(taskPlanJson), outbound(candidateReviewJson), outbound(allowedEvidence), GATE_DECISION_SCHEMA);
+    }
+
+    private static String outbound(String value) {
+        return RagSecurityPolicy.redactOutbound(value == null ? "" : value);
+    }
+
+    private static String canonicalGithubUrl(String rawUrl) {
+        try {
+            URI uri = URI.create(rawUrl == null ? "" : rawUrl.trim());
+            if (!"github.com".equalsIgnoreCase(uri.getHost())) {
+                return "https://github.com/unknown/unknown";
+            }
+            String[] segments = uri.getPath().split("/");
+            if (segments.length < 3 || segments[1].isBlank() || segments[2].isBlank()) {
+                return "https://github.com/unknown/unknown";
+            }
+            String owner = safeGithubSegment(segments[1]);
+            String repository = safeGithubSegment(segments[2].replaceFirst("(?i)\\.git$", ""));
+            if (owner.isBlank() || repository.isBlank()) {
+                return "https://github.com/unknown/unknown";
+            }
+            return "https://github.com/" + owner + "/" + repository;
+        } catch (IllegalArgumentException invalid) {
+            return "https://github.com/unknown/unknown";
+        }
+    }
+
+    private static String safeGithubSegment(String segment) {
+        return segment.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]", "");
     }
 }

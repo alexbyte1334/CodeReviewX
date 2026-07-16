@@ -14,7 +14,13 @@ class RagSecretSafetyTest {
     @Test void rejectsCredentialPaths() {
         assertTrue(RagSecurityPolicy.isSensitivePath("config/service-account.json"));
         assertTrue(RagSecurityPolicy.isSensitivePath("certs/server.pem"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/credentials.json"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/api-token.txt"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/private-key.pem"));
         assertFalse(RagSecurityPolicy.isSensitivePath("src/Main.java"));
+        assertFalse(RagSecurityPolicy.isSensitivePath("src/SecretService.java"));
+        assertFalse(RagSecurityPolicy.isSensitivePath("src/SecretsController.ts"));
+        assertFalse(RagSecurityPolicy.isSensitivePath("src/secretary.go"));
     }
     @Test void framesRepositoryTextAsUntrusted() {
         String token = "sk-" + "test_abcdefghijkl";

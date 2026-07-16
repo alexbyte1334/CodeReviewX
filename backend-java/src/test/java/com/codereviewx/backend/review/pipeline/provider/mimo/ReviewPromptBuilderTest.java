@@ -65,6 +65,26 @@ class ReviewPromptBuilderTest {
     }
 
     @Test
+    void allExternalPromptsRedactRuntimeSecretsAndCanonicalizeRepositoryUrl() {
+        String token = "sk-" + String.join("", "Runtime", "Secret", "9876543210");
+        ReviewContext context = new ReviewContext(1L,
+                "https://oauth-user:" + token + "@github.com/Example/Repo.git?access_token=" + token,
+                10, LocalDateTime.now(), "diff --git a/A b/A\n+Authorization: Bearer " + token,
+                "mimo", ReviewMode.GITHUB_PR);
+        String taskPlan = "{\"query\":\"inspect " + token + "\"}";
+        String candidate = "{\"summary\":\"found " + token + "\",\"findings\":[]}";
+
+        String planner = promptBuilder.buildPlannerPrompt(context);
+        String executor = promptBuilder.buildExecutorPrompt(context, taskPlan);
+        String gatekeeper = promptBuilder.buildGatekeeperPrompt(taskPlan, candidate, context);
+
+        assertThat(List.of(planner, executor, gatekeeper)).allSatisfy(prompt -> assertThat(prompt)
+                .doesNotContain(token, "oauth-user", "access_token="));
+        assertThat(planner).contains("https://github.com/example/repo");
+        assertThat(executor).contains("https://github.com/example/repo", "diff --git a/A b/A", "[REDACTED]");
+    }
+
+    @Test
     void buildExecutorPrompt_withRagEvidence_requiresKnownEvidenceLabels() {
         RagEvidence evidence = new RagEvidence("C2", "src/App.ts", 10, 20, "head-sha",
                 "export const value = 1;", 0.91);
