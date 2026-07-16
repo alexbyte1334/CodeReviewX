@@ -213,40 +213,10 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
     private WorkspaceLease createWorkspaceLease() throws Exception {
         Path root = validateAndCreateRoot();
         Object rootFileKey = requireFileKey(readAttributes(root));
-        DirectoryStream<Path> opened = Files.newDirectoryStream(root);
-        if (!(opened instanceof SecureDirectoryStream<?>)) {
-            opened.close();
-            return createWorkspaceWithNoFollowFallback(root, rootFileKey);
-        }
-        try (SecureDirectoryStream<Path> secureRoot = (SecureDirectoryStream<Path>) opened) {
+        try (SecureDirectoryStream<Path> secureRoot = openSecureDirectory(root)) {
             boundaryHook.run(root, BoundaryOperation.CREATE);
             verifyRootIdentity(root, rootFileKey);
             return createWorkspaceInSecureRoot(root, rootFileKey, secureRoot);
-        }
-    }
-
-    private WorkspaceLease createWorkspaceWithNoFollowFallback(Path root, Object rootFileKey) throws Exception {
-        boundaryHook.run(root, BoundaryOperation.CREATE);
-        verifyRootIdentity(root, rootFileKey);
-        Path workspace = null;
-        try {
-            workspace = Files.createTempDirectory(root, "checkout-",
-                    PosixFilePermissions.asFileAttribute(OWNER_ONLY));
-            verifyRootIdentity(root, rootFileKey);
-            requireOwnerOnly(workspace);
-            BasicFileAttributes attributes = readAttributes(workspace);
-            Object workspaceFileKey = requireFileKey(attributes);
-            if (attributes.isSymbolicLink() || !attributes.isDirectory()
-                    || !workspace.toAbsolutePath().normalize().getParent().equals(root)
-                    || !workspace.toRealPath().equals(workspace)) {
-                throw new IOException("Repository workspace is unsafe");
-            }
-            return new WorkspaceLease(root, workspace, workspace.getFileName(), rootFileKey, workspaceFileKey);
-        } catch (Exception exception) {
-            if (workspace != null) {
-                deleteNoFollowIfSafe(root, rootFileKey, workspace);
-            }
-            throw exception;
         }
     }
 
@@ -297,13 +267,7 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
             throw new IOException("Unsafe repository cleanup boundary");
         }
         verifyRootIdentity(lease.root(), lease.rootFileKey());
-        DirectoryStream<Path> opened = Files.newDirectoryStream(lease.root());
-        if (!(opened instanceof SecureDirectoryStream<?>)) {
-            opened.close();
-            cleanupWithNoFollowFallback(lease);
-            return;
-        }
-        try (SecureDirectoryStream<Path> secureRoot = (SecureDirectoryStream<Path>) opened) {
+        try (SecureDirectoryStream<Path> secureRoot = openSecureDirectory(lease.root())) {
             verifyRootIdentity(lease.root(), lease.rootFileKey());
             boundaryHook.run(lease.root(), BoundaryOperation.CLEANUP);
             BasicFileAttributes workspaceAttributes;
@@ -317,66 +281,6 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
                 throw new IOException("Unsafe repository cleanup boundary");
             }
             deleteRelativeDirectory(secureRoot, lease.workspaceName());
-        }
-    }
-
-    private void cleanupWithNoFollowFallback(WorkspaceLease lease) throws Exception {
-        verifyRootIdentity(lease.root(), lease.rootFileKey());
-        boundaryHook.run(lease.root(), BoundaryOperation.CLEANUP);
-        verifyRootIdentity(lease.root(), lease.rootFileKey());
-        BasicFileAttributes workspace;
-        try {
-            workspace = readAttributes(lease.workspace());
-        } catch (NoSuchFileException exception) {
-            return;
-        }
-        if (!Objects.equals(workspace.fileKey(), lease.workspaceFileKey())
-                || workspace.isSymbolicLink() || !workspace.isDirectory()) {
-            throw new IOException("Unsafe repository cleanup boundary");
-        }
-        deleteNoFollowDirectory(lease.root(), lease.rootFileKey(), lease.workspace(), lease.workspaceFileKey());
-    }
-
-    private static void deleteNoFollowIfSafe(Path root, Object rootKey, Path workspace) throws IOException {
-        verifyRootIdentity(root, rootKey);
-        if (Files.exists(workspace, LinkOption.NOFOLLOW_LINKS)) {
-            BasicFileAttributes attributes = readAttributes(workspace);
-            if (attributes.isDirectory() && !attributes.isSymbolicLink()) {
-                deleteNoFollowDirectory(root, rootKey, workspace, attributes.fileKey());
-            }
-        }
-    }
-
-    private static void deleteNoFollowDirectory(Path root, Object rootKey, Path directory, Object directoryKey)
-            throws IOException {
-        verifyRootIdentity(root, rootKey);
-        BasicFileAttributes current = readAttributes(directory);
-        if (!Objects.equals(current.fileKey(), directoryKey) || current.isSymbolicLink() || !current.isDirectory()) {
-            throw new IOException("Unsafe repository cleanup boundary");
-        }
-        List<Path> entries;
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
-            entries = new ArrayList<>();
-            for (Path entry : stream) entries.add(entry);
-        }
-        for (Path entry : entries) {
-            verifyRootIdentity(root, rootKey);
-            BasicFileAttributes attributes = readAttributes(entry);
-            if (attributes.isSymbolicLink()) {
-                Files.deleteIfExists(entry);
-            } else if (attributes.isDirectory()) {
-                deleteNoFollowDirectory(root, rootKey, entry, attributes.fileKey());
-            } else {
-                Files.deleteIfExists(entry);
-            }
-        }
-        verifyRootIdentity(root, rootKey);
-        Files.deleteIfExists(directory);
-    }
-
-    static boolean supportsSecureDirectoryStream(Path directory) throws IOException {
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
-            return stream instanceof SecureDirectoryStream<?>;
         }
     }
 
