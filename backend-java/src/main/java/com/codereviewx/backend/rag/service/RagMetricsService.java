@@ -2,18 +2,28 @@ package com.codereviewx.backend.rag.service;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RagMetricsService {
-    private final Counter indexedChunks;
-    private final Counter retrievals;
-    private final Counter degradedRetrievals;
+    private final Counter chunks, degraded, embedding, rerank, jobs;
+    private final Timer indexDuration, retrievalDuration;
     public RagMetricsService(MeterRegistry registry) {
-        indexedChunks = registry.counter("codereviewx.rag.indexed_chunks_total");
-        retrievals = registry.counter("codereviewx.rag.retrievals_total");
-        degradedRetrievals = registry.counter("codereviewx.rag.degraded_retrievals_total");
+        chunks = registry.counter("rag_chunks_total");
+        degraded = registry.counter("rag_retrieval_degraded_total");
+        embedding = registry.counter("rag_embedding_requests_total");
+        rerank = registry.counter("rag_rerank_requests_total");
+        jobs = registry.counter("rag_index_jobs_total");
+        indexDuration = registry.timer("rag_index_duration_seconds");
+        retrievalDuration = registry.timer("rag_retrieval_duration_seconds");
+        registry.gauge("rag_context_chars", new java.util.concurrent.atomic.AtomicInteger());
     }
-    public void recordIndexedChunks(int count) { indexedChunks.increment(count); }
-    public void recordRetrieval(boolean degraded) { retrievals.increment(); if (degraded) degradedRetrievals.increment(); }
+    public void recordIndexedChunks(int count) { chunks.increment(count); }
+    public void recordRetrieval(boolean isDegraded) { if (isDegraded) degraded.increment(); }
+    public void recordEmbeddingRequest() { embedding.increment(); }
+    public void recordRerankRequest() { rerank.increment(); }
+    public void recordIndexJob() { jobs.increment(); }
+    public Timer indexDuration() { return indexDuration; }
+    public Timer retrievalDuration() { return retrievalDuration; }
 }
