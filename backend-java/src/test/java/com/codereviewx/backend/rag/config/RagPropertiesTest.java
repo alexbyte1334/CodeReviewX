@@ -5,6 +5,9 @@ import com.codereviewx.backend.rag.retrieval.RerankClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.codereviewx.backend.rag.service.RagMetricsService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -12,6 +15,8 @@ class RagPropertiesTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(MeterRegistry.class, SimpleMeterRegistry::new)
+            .withBean(RagMetricsService.class, () -> new RagMetricsService(new SimpleMeterRegistry()))
             .withUserConfiguration(RagConfiguration.class);
 
     @Test
