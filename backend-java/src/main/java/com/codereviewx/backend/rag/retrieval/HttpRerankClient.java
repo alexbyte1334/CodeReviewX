@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import com.codereviewx.backend.rag.service.RagMetricsService;
 
 public class HttpRerankClient implements RerankClient {
 
@@ -28,21 +29,28 @@ public class HttpRerankClient implements RerankClient {
     private final ObjectMapper objectMapper;
     private final Sleeper sleeper;
     private final URI endpoint;
+    private final RagMetricsService metrics;
 
     public HttpRerankClient(RagProperties properties, ObjectMapper objectMapper) {
-        this(properties, buildHttpClient(properties), objectMapper, Thread::sleep);
+        this(properties, buildHttpClient(properties), objectMapper, Thread::sleep, null);
+    }
+    public HttpRerankClient(RagProperties properties, ObjectMapper objectMapper, RagMetricsService metrics) {
+        this(properties, buildHttpClient(properties), objectMapper, Thread::sleep, metrics);
     }
 
     HttpRerankClient(
             RagProperties properties,
             HttpClient httpClient,
             ObjectMapper objectMapper,
-            Sleeper sleeper) {
+            Sleeper sleeper) { this(properties, httpClient, objectMapper, sleeper, null); }
+    HttpRerankClient(RagProperties properties, HttpClient httpClient, ObjectMapper objectMapper,
+                     Sleeper sleeper, RagMetricsService metrics) {
         this.properties = Objects.requireNonNull(properties, "properties");
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.sleeper = Objects.requireNonNull(sleeper, "sleeper");
         this.endpoint = endpoint(properties.getRerankBaseUrl());
+        this.metrics = metrics;
     }
 
     @Override
@@ -53,10 +61,11 @@ public class HttpRerankClient implements RerankClient {
             return List.of();
         }
 
+        if (metrics != null) metrics.recordRerankRequest();
         List<RerankDocument> requestCandidates = candidates.stream()
-                .map(candidate -> new RerankDocument(candidate.chunkId(), candidate.text()))
+                .map(candidate -> new RerankDocument(candidate.chunkId(), com.codereviewx.backend.rag.security.RagSecurityPolicy.redactOutbound(candidate.text())))
                 .toList();
-        String requestBody = writeRequest(new RerankRequest(properties.getRerankModel(), query, requestCandidates));
+        String requestBody = writeRequest(new RerankRequest(properties.getRerankModel(), com.codereviewx.backend.rag.security.RagSecurityPolicy.redactOutbound(query), requestCandidates));
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                 .header("Authorization", "Bearer " + properties.getRerankApiKey())

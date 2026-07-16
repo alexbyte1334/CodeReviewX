@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import com.codereviewx.backend.rag.service.RagMetricsService;
 
 public class OpenAiEmbeddingClient implements EmbeddingClient {
 
@@ -27,21 +28,29 @@ public class OpenAiEmbeddingClient implements EmbeddingClient {
     private final ObjectMapper objectMapper;
     private final Sleeper sleeper;
     private final URI endpoint;
+    private final RagMetricsService metrics;
 
     public OpenAiEmbeddingClient(RagProperties properties, ObjectMapper objectMapper) {
-        this(properties, buildHttpClient(properties), objectMapper, Thread::sleep);
+        this(properties, buildHttpClient(properties), objectMapper, Thread::sleep, null);
+    }
+
+    public OpenAiEmbeddingClient(RagProperties properties, ObjectMapper objectMapper, RagMetricsService metrics) {
+        this(properties, buildHttpClient(properties), objectMapper, Thread::sleep, metrics);
     }
 
     OpenAiEmbeddingClient(
             RagProperties properties,
             HttpClient httpClient,
             ObjectMapper objectMapper,
-            Sleeper sleeper) {
+            Sleeper sleeper) { this(properties, httpClient, objectMapper, sleeper, null); }
+    OpenAiEmbeddingClient(RagProperties properties, HttpClient httpClient, ObjectMapper objectMapper,
+                          Sleeper sleeper, RagMetricsService metrics) {
         this.properties = Objects.requireNonNull(properties, "properties");
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.sleeper = Objects.requireNonNull(sleeper, "sleeper");
         this.endpoint = endpoint(properties.getEmbeddingBaseUrl(), "/embeddings", "Embedding endpoint is invalid");
+        this.metrics = metrics;
     }
 
     @Override
@@ -61,7 +70,9 @@ public class OpenAiEmbeddingClient implements EmbeddingClient {
     }
 
     private List<float[]> embedBatch(List<String> batch) {
-        String requestBody = writeRequest(new EmbeddingRequest(properties.getEmbeddingModel(), batch));
+        if (metrics != null) metrics.recordEmbeddingRequest();
+        String requestBody = writeRequest(new EmbeddingRequest(properties.getEmbeddingModel(), batch.stream()
+                .map(com.codereviewx.backend.rag.security.RagSecurityPolicy::redactOutbound).toList()));
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                 .header("Authorization", "Bearer " + properties.getEmbeddingApiKey())

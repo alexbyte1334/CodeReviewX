@@ -40,6 +40,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
+import com.codereviewx.backend.rag.service.RagMetricsService;
+import io.micrometer.core.instrument.Timer;
 
 @Component
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
@@ -62,6 +64,7 @@ public class RagIndexWorker {
     private final ThreadPoolTaskExecutor executor;
     private final ScheduledExecutorService heartbeatExecutor;
     private final RagIndexLifecycleCoordinator lifecycle;
+    private final RagMetricsService metrics;
 
     @Autowired
     public RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
@@ -70,17 +73,17 @@ public class RagIndexWorker {
                           TransactionTemplate transactions, RagProperties properties,
                           ThreadPoolTaskExecutor ragIndexExecutor,
                           @Qualifier("ragHeartbeatExecutor") ScheduledExecutorService heartbeatExecutor,
-                          RagIndexLifecycleCoordinator lifecycle) {
+                          RagIndexLifecycleCoordinator lifecycle, RagMetricsService metrics) {
         this(repositories, jobs, documents, chunks, checkoutService, discovery::discover, chunker, embeddings,
                 transactions, Clock.systemUTC(), properties.getEmbeddingModel(),
-                properties.getEmbeddingDimensions(), ragIndexExecutor, heartbeatExecutor, lifecycle);
+                properties.getEmbeddingDimensions(), ragIndexExecutor, heartbeatExecutor, lifecycle, metrics);
     }
 
     RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
                    RagChunkStore chunks, Function<CheckedOutRepository, List<RepositoryFile>> fileSource,
                    CodeChunker chunker, EmbeddingClient embeddings, TransactionTemplate transactions, Clock clock) {
         this(repositories, jobs, documents, chunks, null, fileSource, chunker, embeddings, transactions, clock,
-                "test-model", 1024, null, null, new RagIndexLifecycleCoordinator(jobs::releaseForShutdown));
+                "test-model", 1024, null, null, new RagIndexLifecycleCoordinator(jobs::releaseForShutdown), null);
     }
 
     private RagIndexWorker(RagRepositoryStore repositories, RagIndexJobStore jobs, RagDocumentStore documents,
@@ -88,7 +91,8 @@ public class RagIndexWorker {
                            Function<CheckedOutRepository, List<RepositoryFile>> fileSource, CodeChunker chunker,
                            EmbeddingClient embeddings, TransactionTemplate transactions, Clock clock,
                            String embeddingModel, int embeddingDimensions, ThreadPoolTaskExecutor executor,
-                           ScheduledExecutorService heartbeatExecutor, RagIndexLifecycleCoordinator lifecycle) {
+                           ScheduledExecutorService heartbeatExecutor, RagIndexLifecycleCoordinator lifecycle,
+                           RagMetricsService metrics) {
         this.repositories = repositories;
         this.jobs = jobs;
         this.documents = documents;
@@ -104,6 +108,7 @@ public class RagIndexWorker {
         this.executor = executor;
         this.heartbeatExecutor = heartbeatExecutor;
         this.lifecycle = lifecycle;
+        this.metrics = metrics;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -151,6 +156,8 @@ public class RagIndexWorker {
     }
 
     void process(RagIndexJob job) {
+        Timer.Sample sample = metrics == null ? null : Timer.start();
+        if (metrics != null) metrics.recordIndexJob();
         RepositoryRecord repository = repositories.get(job.repositoryId()).orElseThrow();
         ScheduledFuture<?> heartbeat = null;
         try {
@@ -178,6 +185,7 @@ public class RagIndexWorker {
                 failIfOwned(job, repository, exception);
             }
         } finally {
+            if (sample != null) sample.stop(metrics.indexDuration());
             if (heartbeat != null) {
                 heartbeat.cancel(false);
             }
@@ -260,6 +268,7 @@ public class RagIndexWorker {
                 snapshot.files().size(), chunkCount, 0);
         repositories.activate(repository.id(), snapshot.commitSha(), job.embeddingModel(), job.embeddingDimensions(),
                 job.indexVersion());
+        if (metrics != null) metrics.recordIndexedChunks(chunkCount);
     }
 
     private int copyDocumentChunks(long repositoryId, long targetSnapshotId, long sourceDocumentId,

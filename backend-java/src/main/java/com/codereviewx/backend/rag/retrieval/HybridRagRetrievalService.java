@@ -11,6 +11,9 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Objects;
 import org.springframework.dao.DataAccessException;
+import com.codereviewx.backend.rag.service.RagMetricsService;
+import org.springframework.beans.factory.annotation.Autowired;
+import io.micrometer.core.instrument.Timer;
 
 @Service
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
@@ -25,14 +28,26 @@ public class HybridRagRetrievalService {
     private final LexicalRoute lexicalRetriever;
     private final ReciprocalRankFusion fusion = new ReciprocalRankFusion();
     private final PrRetrievalQueryBuilder queryBuilder = new PrRetrievalQueryBuilder();
+    private RagMetricsService metrics;
 
+    @Autowired
+    public HybridRagRetrievalService(JdbcTemplate jdbc, EmbeddingClient embeddingClient, RagProperties properties,
+                                     RagMetricsService metrics) {
+        this(jdbc, embeddingClient, properties, null, null, true);
+        this.metrics = metrics;
+    }
     public HybridRagRetrievalService(JdbcTemplate jdbc, EmbeddingClient embeddingClient, RagProperties properties) {
+        this(jdbc, embeddingClient, properties, null, null, true);
+    }
+    private HybridRagRetrievalService(JdbcTemplate jdbc, EmbeddingClient embeddingClient, RagProperties properties,
+                                      VectorRoute vector, LexicalRoute lexical, boolean production) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.embeddingClient = Objects.requireNonNull(embeddingClient, "embeddingClient");
         this.properties = Objects.requireNonNull(properties, "properties");
         NamedParameterJdbcTemplate namedJdbc = new NamedParameterJdbcTemplate(jdbc);
-        this.vectorRetriever = new VectorRetriever(namedJdbc)::retrieve;
-        this.lexicalRetriever = new LexicalRetriever(namedJdbc)::retrieve;
+        this.vectorRetriever = vector == null ? new VectorRetriever(namedJdbc)::retrieve : vector;
+        this.lexicalRetriever = lexical == null ? new LexicalRetriever(namedJdbc)::retrieve : lexical;
+        this.metrics = null;
     }
 
     HybridRagRetrievalService(JdbcTemplate jdbc, EmbeddingClient embeddingClient, RagProperties properties,
@@ -42,9 +57,11 @@ public class HybridRagRetrievalService {
         this.properties = Objects.requireNonNull(properties, "properties");
         this.vectorRetriever = Objects.requireNonNull(vectorRetriever, "vectorRetriever");
         this.lexicalRetriever = Objects.requireNonNull(lexicalRetriever, "lexicalRetriever");
+        this.metrics = null;
     }
 
     public Result retrieve(Request request) {
+        Timer.Sample sample = metrics == null ? null : Timer.start();
         Objects.requireNonNull(request, "request");
         validateConfiguration();
         SnapshotIdentity snapshot = exactReadySnapshot(request.repositoryId(), request.commitSha());
@@ -75,8 +92,12 @@ public class HybridRagRetrievalService {
                 : vectorFailed || lexicalFailed ? RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED
                 : RagContextAssembler.RetrievalHealth.HEALTHY;
         List<Match> matches = fusion.fuse(vector, lexical).stream().map(this::toMatch).toList();
-        return new Result(Status.READY, snapshot.snapshotId(), vector.size(), lexical.size(), matches, health);
+        Result result = new Result(Status.READY, snapshot.snapshotId(), vector.size(), lexical.size(), matches, health);
+        if (sample != null) sample.stop(metrics.retrievalDuration());
+        metricsRecord(health);
+        return result;
     }
+    private void metricsRecord(RagContextAssembler.RetrievalHealth health) { if (metrics != null) metrics.recordRetrieval(health != RagContextAssembler.RetrievalHealth.HEALTHY); }
 
     private SnapshotIdentity exactReadySnapshot(long repositoryId, String commitSha) {
         if (repositoryId <= 0 || commitSha == null || commitSha.isBlank()) {

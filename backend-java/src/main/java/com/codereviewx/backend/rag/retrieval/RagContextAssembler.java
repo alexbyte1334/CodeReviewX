@@ -27,9 +27,14 @@ public final class RagContextAssembler {
     private static final Pattern EVIDENCE_MARKER = Pattern.compile("(?i)\\[(?=/?EVIDENCE\\b)");
 
     private final RerankClient rerankClient;
+    private final com.codereviewx.backend.rag.service.RagMetricsService metrics;
 
     public RagContextAssembler(RerankClient rerankClient) {
+        this(rerankClient, null);
+    }
+    public RagContextAssembler(RerankClient rerankClient, com.codereviewx.backend.rag.service.RagMetricsService metrics) {
         this.rerankClient = Objects.requireNonNull(rerankClient, "rerankClient");
+        this.metrics = metrics;
     }
 
     public RagEvidenceBundle assemble(String query, String commitSha,
@@ -60,6 +65,10 @@ public final class RagContextAssembler {
         List<ScoredMatch> selected = select(deduplicated);
         List<RagEvidence> evidence = labelAndBound(selected, commitSha);
         String prompt = evidence.stream().map(this::format).reduce((left, right) -> left + "\n" + right).orElse("");
+        if (metrics != null) {
+            metrics.recordContextChars(prompt.length());
+            metrics.recordRetrieval(rerankUnavailable);
+        }
         return new RagEvidenceBundle(evidence, prompt,
                 rerankUnavailable ? RagEvidenceBundle.DegradedReason.RERANK_UNAVAILABLE
                         : RagEvidenceBundle.DegradedReason.NONE,
@@ -212,7 +221,7 @@ public final class RagContextAssembler {
                 + "path: " + evidence.path() + "\n"
                 + "lines: " + evidence.startLine() + "-" + evidence.endLine() + "\n"
                 + "commit: " + evidence.commitSha() + "\n"
-                + "content:\n" + evidence.content() + "\n"
+                + "content:\n" + com.codereviewx.backend.rag.security.RagSecurityPolicy.redactOutbound(evidence.content()) + "\n"
                 + "[/EVIDENCE " + evidence.label() + "]";
     }
 
