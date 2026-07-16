@@ -1,1 +1,1 @@
-{"id":"rag-004-negative-control","targetCommit":"old-commit","query":"office logo opening hours","changedPaths":["src/api.ts"],"relevantChunkKeys":[],"forbiddenChunkKeys":["src/config.ts"],"expectedFinding":"no code finding"}
+{"id":"rag-004-negative-control","targetCommit":"old-commit","query":"office logo opening hours","changedPaths":["src/api.ts"],"relevantChunkKeys":[],"forbiddenChunkKeys":["src/config.ts"],"expectedFinding":{"mustBeEmpty":true}}
