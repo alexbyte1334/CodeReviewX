@@ -1,0 +1,10 @@
+{
+  "targetCommit": "target-commit",
+  "chunks": [
+    {"key":"src/api.ts","commit":"target-commit"},
+    {"key":"src/service.ts","commit":"target-commit"},
+    {"key":"src/config.ts","commit":"target-commit"},
+    {"key":"test/api.test.ts","commit":"target-commit"},
+    {"key":"docs/unrelated.md","commit":"old-commit","excluded":true}
+  ]
+}

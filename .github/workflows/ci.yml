@@ -79,6 +79,9 @@ jobs:
       - name: Run evals
         run: node scripts/run-evals.mjs
 
+      - name: Run RAG retrieval gates
+        run: node scripts/run-rag-evals.mjs --self-test && node scripts/run-rag-evals.mjs
+
   backend:
     name: Backend Tests
     runs-on: ubuntu-latest

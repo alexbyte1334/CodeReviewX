@@ -43,3 +43,7 @@ Tracked metrics:
 - issue count delta
 - false positive count
 - gate rejection count
+
+## RAG retrieval gates
+
+Run the deterministic retrieval benchmark with `node scripts/run-rag-evals.mjs`. Cases under `evals/rag/cases/` use a fixed sample corpus and fake embeddings, so CI is reproducible without credentials. The runner reports Recall@5/10, MRR@10, nDCG@10, forbidden-hit rate, context budget violations, cross-commit contamination, selected chunks, and p95 latency. `RAG_LIVE_EVAL=1` performs authenticated POST health calls to `RAG_EMBEDDING_URL` and `RAG_RERANK_URL`; set both corresponding `*_API_KEY` and `*_MODEL` variables. Responses must be OpenAI-compatible embedding (`data`) and rerank (`results`) shapes; secrets and request bodies are never logged.
