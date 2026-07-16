@@ -104,4 +104,16 @@ class ReviewPromptBuilderTest {
         assertThat(prompt).contains("Reject if the review invents files");
         assertThat(prompt).contains("unknown evidence labels");
     }
+
+    @Test
+    void buildGatekeeperPrompt_withRagContextIncludesAllowedLabelsAndBoundedMetadata() {
+        RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(
+                new RagEvidence("C1", "src/A.java", 2, 4, "head", "secret source", 0.9)),
+                "prompt", RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+        ReviewContext context = new ReviewContext(1L, "https://github.com/example/repo", 10, LocalDateTime.now(),
+                "diff", "mimo", ReviewMode.GITHUB_PR, bundle);
+        String prompt = promptBuilder.buildGatekeeperPrompt("{}", "{}", context);
+        assertThat(prompt).contains("allowedEvidenceLabels: [C1]", "C1 path=src/A.java lines=2-4")
+                .doesNotContain("secret source");
+    }
 }

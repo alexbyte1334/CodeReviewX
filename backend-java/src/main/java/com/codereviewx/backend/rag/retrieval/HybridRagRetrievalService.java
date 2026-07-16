@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Objects;
+import org.springframework.dao.DataAccessException;
 
 @Service
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
@@ -20,8 +21,8 @@ public class HybridRagRetrievalService {
     private final JdbcTemplate jdbc;
     private final EmbeddingClient embeddingClient;
     private final RagProperties properties;
-    private final VectorRetriever vectorRetriever;
-    private final LexicalRetriever lexicalRetriever;
+    private final VectorRoute vectorRetriever;
+    private final LexicalRoute lexicalRetriever;
     private final ReciprocalRankFusion fusion = new ReciprocalRankFusion();
     private final PrRetrievalQueryBuilder queryBuilder = new PrRetrievalQueryBuilder();
 
@@ -30,8 +31,17 @@ public class HybridRagRetrievalService {
         this.embeddingClient = Objects.requireNonNull(embeddingClient, "embeddingClient");
         this.properties = Objects.requireNonNull(properties, "properties");
         NamedParameterJdbcTemplate namedJdbc = new NamedParameterJdbcTemplate(jdbc);
-        this.vectorRetriever = new VectorRetriever(namedJdbc);
-        this.lexicalRetriever = new LexicalRetriever(namedJdbc);
+        this.vectorRetriever = new VectorRetriever(namedJdbc)::retrieve;
+        this.lexicalRetriever = new LexicalRetriever(namedJdbc)::retrieve;
+    }
+
+    HybridRagRetrievalService(JdbcTemplate jdbc, EmbeddingClient embeddingClient, RagProperties properties,
+                              VectorRoute vectorRetriever, LexicalRoute lexicalRetriever) {
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.embeddingClient = Objects.requireNonNull(embeddingClient, "embeddingClient");
+        this.properties = Objects.requireNonNull(properties, "properties");
+        this.vectorRetriever = Objects.requireNonNull(vectorRetriever, "vectorRetriever");
+        this.lexicalRetriever = Objects.requireNonNull(lexicalRetriever, "lexicalRetriever");
     }
 
     public Result retrieve(Request request) {
@@ -39,18 +49,33 @@ public class HybridRagRetrievalService {
         validateConfiguration();
         SnapshotIdentity snapshot = exactReadySnapshot(request.repositoryId(), request.commitSha());
         if (snapshot == null) {
-            return new Result(Status.INDEX_NOT_READY, null, 0, 0, List.of());
+            return new Result(Status.INDEX_NOT_READY, null, 0, 0, List.of(), RagContextAssembler.RetrievalHealth.HEALTHY);
         }
         String query = queryBuilder.build(request.prQuery());
         if (query.isEmpty()) {
-            return new Result(Status.READY, snapshot.snapshotId(), 0, 0, List.of());
+            return new Result(Status.READY, snapshot.snapshotId(), 0, 0, List.of(), RagContextAssembler.RetrievalHealth.HEALTHY);
         }
         List<String> changedPaths = safeChangedPaths(request.prQuery() == null ? null : request.prQuery().changedPaths());
-        float[] queryEmbedding = embedQuery(query);
-        List<ReciprocalRankFusion.Candidate> vector = vectorRetriever.retrieve(snapshot, queryEmbedding, changedPaths);
-        List<ReciprocalRankFusion.Candidate> lexical = lexicalRetriever.retrieve(snapshot, query, changedPaths);
+        float[] queryEmbedding;
+        try { queryEmbedding = embedQuery(query); }
+        catch (RuntimeException embeddingFailure) {
+            return new Result(Status.READY, snapshot.snapshotId(), 0, 0, List.of(),
+                    RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED);
+        }
+        List<ReciprocalRankFusion.Candidate> vector = List.of();
+        List<ReciprocalRankFusion.Candidate> lexical = List.of();
+        boolean vectorFailed = false;
+        boolean lexicalFailed = false;
+        try { vector = vectorRetriever.retrieve(snapshot, queryEmbedding, changedPaths); }
+        catch (RouteUnavailableException | DataAccessException unavailable) { vectorFailed = true; }
+        try { lexical = lexicalRetriever.retrieve(snapshot, query, changedPaths); }
+        catch (RouteUnavailableException | DataAccessException unavailable) { lexicalFailed = true; }
+        RagContextAssembler.RetrievalHealth health = vectorFailed && lexicalFailed
+                ? RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED
+                : vectorFailed || lexicalFailed ? RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED
+                : RagContextAssembler.RetrievalHealth.HEALTHY;
         List<Match> matches = fusion.fuse(vector, lexical).stream().map(this::toMatch).toList();
-        return new Result(Status.READY, snapshot.snapshotId(), vector.size(), lexical.size(), matches);
+        return new Result(Status.READY, snapshot.snapshotId(), vector.size(), lexical.size(), matches, health);
     }
 
     private SnapshotIdentity exactReadySnapshot(long repositoryId, String commitSha) {
@@ -119,7 +144,11 @@ public class HybridRagRetrievalService {
     }
 
     public record Result(Status status, Long snapshotId, int vectorCandidateCount, int lexicalCandidateCount,
-                         List<Match> matches) {
+                         List<Match> matches, RagContextAssembler.RetrievalHealth retrievalHealth) {
+        public boolean legacyFallbackRequired() {
+            return retrievalHealth == RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED
+                    || retrievalHealth == RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED;
+        }
     }
 
     public record Match(long chunkId, String path, String language, String symbolName, int startLine, int endLine,
@@ -137,5 +166,15 @@ public class HybridRagRetrievalService {
                     .addValue("embeddingDimensions", embeddingDimensions)
                     .addValue("indexVersion", indexVersion);
         }
+    }
+
+    @FunctionalInterface interface VectorRoute {
+        List<ReciprocalRankFusion.Candidate> retrieve(SnapshotIdentity snapshot, float[] embedding, List<String> paths);
+    }
+    @FunctionalInterface interface LexicalRoute {
+        List<ReciprocalRankFusion.Candidate> retrieve(SnapshotIdentity snapshot, String query, List<String> paths);
+    }
+    static class RouteUnavailableException extends RuntimeException {
+        RouteUnavailableException(String message) { super(message); }
     }
 }

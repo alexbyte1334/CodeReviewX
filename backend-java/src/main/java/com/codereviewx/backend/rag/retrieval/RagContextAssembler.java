@@ -201,7 +201,8 @@ public final class RagContextAssembler {
             boolean escaped = !path.equals(match.path()) || !canonicalCommit.equals(commitSha)
                     || !content.equals(match.content());
             result.add(new RagEvidence("C" + (index + 1), path, match.startLine(), match.endLine(),
-                    canonicalCommit, content, selected.get(index).score, selected.get(index).truncated, escaped));
+                    canonicalCommit, content, selected.get(index).score, selected.get(index).truncated, escaped,
+                    new RagEvidenceSourceIdentity(match.chunkId(), match.contentHash())));
         }
         return List.copyOf(result);
     }

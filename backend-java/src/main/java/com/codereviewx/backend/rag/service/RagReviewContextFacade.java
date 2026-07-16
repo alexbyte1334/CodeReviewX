@@ -78,18 +78,16 @@ public class RagReviewContextFacade {
         if (resolution.status() != RagIndexResolution.Status.READY) return legacy(metadata, diff, runId, "INDEX_NOT_READY");
         PrRetrievalQueryBuilder.PrQuery query = query(metadata, diff);
         record(runId, "rag.query.build", LocalDateTime.now(clock), "Built bounded PR retrieval query");
-        HybridRagRetrievalService.Result retrieved;
-        try {
-            retrieved = retrieval.retrieve(new HybridRagRetrievalService.Request(
-                    resolution.repositoryId(), metadata.headSha(), query));
-        } catch (RuntimeException failure) {
-            return legacy(metadata, diff, runId, "RETRIEVAL_FAILED");
-        }
+        HybridRagRetrievalService.Result retrieved = retrieval.retrieve(new HybridRagRetrievalService.Request(
+                resolution.repositoryId(), metadata.headSha(), query));
         if (retrieved.status() != HybridRagRetrievalService.Status.READY) return legacy(metadata, diff, runId, "INDEX_NOT_READY");
         record(runId, "rag.retrieve.hybrid", LocalDateTime.now(clock),
-                "Retrieved " + retrieved.matches().size() + " bounded candidate(s)");
+                "Retrieved " + retrieved.matches().size() + " bounded candidate(s), health="
+                        + retrieved.retrievalHealth());
+        if (retrieved.legacyFallbackRequired()) return legacy(metadata, diff, runId, retrieved.retrievalHealth().name());
         String queryText = new PrRetrievalQueryBuilder().build(query);
-        RagEvidenceBundle bundle = assembler.assemble(queryText, metadata.headSha(), retrieved.matches());
+        RagEvidenceBundle bundle = assembler.assemble(queryText, metadata.headSha(), retrieved.matches(),
+                retrieved.retrievalHealth());
         record(runId, "rag.rerank", LocalDateTime.now(clock), "Rerank state=" + bundle.reason());
         record(runId, "rag.context.assemble", LocalDateTime.now(clock),
                 "Assembled " + bundle.evidence().size() + " evidence block(s)");

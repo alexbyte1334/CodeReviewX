@@ -132,6 +132,18 @@ public class ReviewPromptBuilder {
     }
 
     public String buildGatekeeperPrompt(String taskPlanJson, String candidateReviewJson) {
+        return buildGatekeeperPrompt(taskPlanJson, candidateReviewJson, null);
+    }
+
+    public String buildGatekeeperPrompt(String taskPlanJson, String candidateReviewJson, ReviewContext context) {
+        String allowedEvidence = context != null && context.hasRagEvidence()
+                ? "allowedEvidenceLabels: " + context.getRagEvidenceBundle().evidence().stream()
+                .map(evidence -> evidence.label()).toList() + "\nallowedEvidenceMetadata:\n"
+                + context.getRagEvidenceBundle().evidence().stream()
+                .map(evidence -> evidence.label() + " path=" + evidence.path() + " lines="
+                        + evidence.startLine() + "-" + evidence.endLine())
+                .reduce((left, right) -> left + "\n" + right).orElse("")
+                : "allowedEvidenceLabels: []";
         return """
                 Check whether the CandidateReview follows the TaskPlan, schema, and grounding rules.
 
@@ -143,6 +155,8 @@ public class ReviewPromptBuilder {
                 %s
                 --- CANDIDATE REVIEW JSON END ---
 
+                %s
+
                 Return only one GateDecision JSON object using this schema:
                 %s
 
@@ -151,6 +165,6 @@ public class ReviewPromptBuilder {
                 - Reject if the review invents files, uses unsupported enum values, or ignores constraints.
                 - Reject missing or unknown evidence labels when evidence was provided.
                 - Return only JSON with no markdown.
-                """.formatted(taskPlanJson, candidateReviewJson, GATE_DECISION_SCHEMA);
+                """.formatted(taskPlanJson, candidateReviewJson, allowedEvidence, GATE_DECISION_SCHEMA);
     }
 }

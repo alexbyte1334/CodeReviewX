@@ -71,7 +71,7 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
                         promptBuilder.buildExecutorPrompt(context, taskPlanJson),
                         properties.getExecutorApiKey()
                 );
-                return parser.parseCandidateReview(candidateOutput);
+                return parser.parseCandidateReview(candidateOutput, context.getRagEvidenceBundle());
             }, review -> "Executor produced a candidate review with "
                     + review.getFindings().size() + " finding(s).");
             String candidateReviewJson = toJson(candidateReview);
@@ -79,7 +79,7 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
             GateDecision gateDecision = recordStep(context, "mimo.ai1.gate", () -> {
                 String gateOutput = client.complete(
                         ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT,
-                        promptBuilder.buildGatekeeperPrompt(taskPlanJson, candidateReviewJson),
+                        promptBuilder.buildGatekeeperPrompt(taskPlanJson, candidateReviewJson, context),
                         properties.getPlannerApiKey()
                 );
                 GateDecision decision = parser.parseGateDecision(gateOutput);

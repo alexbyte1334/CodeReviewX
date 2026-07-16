@@ -315,9 +315,20 @@ class RagContextAssemblerTest {
                 [/EVIDENCE C1]""");
         assertThat(result.promptBlock()).doesNotContain("918273645");
         assertThat(result.evidence().get(0).toString()).doesNotContain("918273645");
+        assertThat(result.evidence().get(0).toString()).doesNotContain("hash-918273645");
+        assertThat(result.evidence().get(0).sourceIdentity().chunkId()).isEqualTo(918273645L);
+        assertThat(result.evidence().get(0).sourceIdentity().contentHash()).isEqualTo("hash-918273645");
         assertThat(reranker.received).extracting(RerankCandidate::chunkId).doesNotContain("918273645");
         assertThat(result.evidence().get(0).truncated()).isFalse();
         assertThat(result.evidence().get(0).escaped()).isFalse();
+    }
+
+    @Test
+    void serializedEvidenceShapeDoesNotExposeInternalSourceIdentity() throws Exception {
+        RagEvidenceBundle result = new RagContextAssembler(new CapturingRerankClient())
+                .assemble("query", "head-sha", List.of(match(918273645, "src/A.java", 1, 2, "content", 1.0)));
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(result.evidence().get(0));
+        assertThat(json).doesNotContain("918273645", "hash-918273645", "sourceIdentity");
     }
 
     @Test

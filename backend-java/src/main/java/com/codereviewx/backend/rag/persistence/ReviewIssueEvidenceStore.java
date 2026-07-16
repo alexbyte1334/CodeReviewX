@@ -8,10 +8,7 @@ import com.codereviewx.backend.review.pipeline.ReviewFinding;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.LocalDateTime;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -27,13 +24,10 @@ public class ReviewIssueEvidenceStore {
         for (String label : finding.getEvidenceChunkIds()) {
             RagEvidence evidence = byLabel.get(label); if (evidence == null) continue;
             String excerpt = evidence.content().substring(0, Math.min(2000, evidence.content().length()));
-            jdbc.update("INSERT INTO review_issue_evidence(review_issue_id,rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at) VALUES (?,NULL,?,?,?,?,?,?,?,?,?)",
-                    issue.getId(), label, evidence.path(), evidence.startLine(), evidence.endLine(), hash(evidence.content()), excerpt,
+            jdbc.update("INSERT INTO review_issue_evidence(review_issue_id,rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    issue.getId(), evidence.sourceIdentity().chunkId(), label, evidence.path(), evidence.startLine(), evidence.endLine(),
+                    evidence.sourceIdentity().contentHash(), excerpt,
                     rank++, evidence.score(), LocalDateTime.now());
         }
-    }
-    private String hash(String value) {
-        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
-        catch (Exception impossible) { throw new IllegalStateException(impossible); }
     }
 }
