@@ -2,6 +2,8 @@ package com.codereviewx.backend.rag.retrieval;
 
 import com.codereviewx.backend.rag.config.RagProperties;
 import com.codereviewx.backend.rag.embedding.EmbeddingClient;
+import com.codereviewx.backend.rag.service.RagMetricsService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -20,6 +22,24 @@ class HybridRagRetrievalHealthTest {
     @Test void survivesLexicalFailure() { assertHealth(vectorOk(), lexicalFailing(), embeddings(), RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED); }
     @Test void reportsBothRouteFailure() { assertHealth(vectorFailing(), lexicalFailing(), embeddings(), RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED); }
     @Test void reportsEmbeddingFailure() { assertHealth(vectorOk(), lexicalOk(), inputs -> { throw new IllegalStateException("down"); }, RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED); }
+
+    @Test void embeddingFailureIncrementsDegradedMetricExactlyOnce() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(anyString(), eq(Long.class), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(7L));
+        RagProperties properties = new RagProperties();
+        properties.setEmbeddingDimensions(1024);
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        HybridRagRetrievalService service = new HybridRagRetrievalService(jdbc,
+                inputs -> { throw new IllegalStateException("provider secret"); }, properties,
+                new RagMetricsService(registry));
+
+        HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(1L,
+                "a".repeat(40), new PrRetrievalQueryBuilder.PrQuery("query", List.of(), List.of(), List.of(), List.of())));
+
+        assertThat(result.retrievalHealth()).isEqualTo(RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED);
+        assertThat(registry.counter("rag_retrieval_degraded_total").count()).isEqualTo(1);
+    }
 
     private void assertHealth(HybridRagRetrievalService.VectorRoute vector,
                               HybridRagRetrievalService.LexicalRoute lexical,

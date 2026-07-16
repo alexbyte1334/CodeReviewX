@@ -78,6 +78,7 @@ public class HybridRagRetrievalService {
         float[] queryEmbedding;
         try { queryEmbedding = embedQuery(query); }
         catch (RuntimeException embeddingFailure) {
+            degraded = true;
             return new Result(Status.READY, snapshot.snapshotId(), 0, 0, List.of(),
                     RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED);
         }
