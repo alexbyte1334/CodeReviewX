@@ -38,9 +38,17 @@ public class RepositoryIndexController {
         return ApiResponse.success(new RepositoryIndexResponse(jobId,"QUEUED",owner+"/"+name,request.ref()));
     }
     @GetMapping("/{owner}/{repo}/index-status")
-    public ApiResponse<RepositoryIndexStatusResponse> status(@PathVariable @Pattern(regexp="[A-Za-z0-9_.-]+") String owner,@PathVariable @Pattern(regexp="[A-Za-z0-9_.-]+") String repo,@RequestParam @Pattern(regexp="[0-9a-f]{40}") String commitSha) {
+    public ApiResponse<RepositoryIndexStatusResponse> status(@PathVariable @Pattern(regexp="[A-Za-z0-9_.-]+") String owner,@PathVariable @Pattern(regexp="[A-Za-z0-9_.-]+") String repo,@RequestParam(required=false) String commitSha,@RequestParam(required=false) String ref) {
         if (!enabled) throw new RagDisabledException();
+        if ((commitSha == null || commitSha.isBlank()) && (ref == null || ref.isBlank())) throw new IllegalArgumentException("commitSha or ref is required");
+        if (commitSha != null && !commitSha.isBlank() && !commitSha.matches("[0-9a-f]{40}")) throw new IllegalArgumentException("Invalid commitSha");
+        if (ref != null && !ref.isBlank() && !ref.matches("[A-Za-z0-9_.-]{1,255}")) throw new IllegalArgumentException("Invalid ref");
         var record=repositories.find("github",owner,repo.replaceFirst("\\.git$", "")).orElseThrow(()->new RagNotFoundException("Repository not found"));
+        if (commitSha == null || commitSha.isBlank()) {
+            RagIndexJob value = jobs.findLatest(record.id(), ref).orElse(null);
+            if (value == null) return ApiResponse.success(new RepositoryIndexStatusResponse("NOT_INDEXED", null, null, null, null));
+            return ApiResponse.success(new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), value.indexedChunkCount(), value.errorCode(), value.errorMessage()));
+        }
         RagIndexJob value = jobs.findReadySnapshot(record.id(), commitSha, record.embeddingModel(), record.embeddingDimensions(), record.indexVersion())
                 .orElseGet(() -> jobs.findLatest(record.id(), commitSha).orElseGet(() -> jobs.findLatest(record.id(), record.defaultBranch()).orElse(null)));
         if (value == null) return ApiResponse.success(new RepositoryIndexStatusResponse("NOT_INDEXED", null, null, null, null));

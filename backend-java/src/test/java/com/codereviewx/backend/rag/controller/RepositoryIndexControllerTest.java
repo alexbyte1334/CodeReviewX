@@ -114,6 +114,20 @@ class RepositoryIndexControllerTest {
     }
 
     @Test
+    void statusByValidatedRefReturnsQueuedJob() throws Exception {
+        when(repositories.find("github", "acme", "demo")).thenReturn(Optional.of(repository()));
+        when(jobs.findLatest(7L, "release")).thenReturn(Optional.of(job(RagIndexJob.Status.QUEUED, null)));
+        mvc.perform(get("/api/repositories/acme/demo/index-status").param("ref", "release"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("QUEUED"));
+    }
+
+    @Test
+    void statusRequiresCommitShaOrRefAndRejectsUnsafeRef() throws Exception {
+        mvc.perform(get("/api/repositories/acme/demo/index-status")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/repositories/acme/demo/index-status").param("ref", "bad/ref")).andExpect(status().isBadRequest());
+    }
+
+    @Test
     void unknownRepositoryReturns404() throws Exception {
         when(repositories.find("github", "missing", "repo")).thenReturn(Optional.empty());
         mvc.perform(get("/api/repositories/missing/repo/index-status").param("commitSha", SHA))

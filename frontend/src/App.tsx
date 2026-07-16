@@ -48,6 +48,7 @@ export default function App() {
   const [toolTraceLoading, setToolTraceLoading] = useState(false);
   const [toolTraceError, setToolTraceError] = useState<string | null>(null);
   const [repositoryIndexStatus, setRepositoryIndexStatus] = useState<RepositoryIndexStatus | null>(null);
+  const [repositoryIndexRef, setRepositoryIndexRef] = useState('HEAD');
   const [evidenceByIssue, setEvidenceByIssue] = useState<Record<string, RetrievalEvidence[]>>({});
   const [evidenceLoadingIssue, setEvidenceLoadingIssue] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
@@ -150,7 +151,7 @@ export default function App() {
     const current = selectedTask;
     if (!current) return;
     const match = current.repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#]+)(?:\.git)?/i);
-    const sha = current.repositoryIndex?.commitSha ?? repositoryIndexStatus?.commitSha ?? 'HEAD';
+    const sha = current.repositoryIndex?.commitSha ?? repositoryIndexStatus?.commitSha ?? repositoryIndexRef;
     if (!match) return;
     const generation = ++indexGeneration.current;
     let stopped = false;
@@ -165,7 +166,7 @@ export default function App() {
     };
     if (repositoryIndexStatus?.status === 'QUEUED' || repositoryIndexStatus?.status === 'INDEXING' || current.repositoryIndex?.status === 'QUEUED' || current.repositoryIndex?.status === 'INDEXING') poll();
     return () => { stopped = true; if (timer) clearTimeout(timer); indexGeneration.current++; };
-  }, [selectedTask?.id, selectedTask?.repoUrl, selectedTask?.repositoryIndex?.status, selectedTask?.repositoryIndex?.commitSha, repositoryIndexStatus?.status]);
+  }, [selectedTask?.id, selectedTask?.repoUrl, selectedTask?.repositoryIndex?.status, selectedTask?.repositoryIndex?.commitSha, repositoryIndexStatus?.status, repositoryIndexRef]);
 
   async function handleRequestRepositoryIndex() {
     if (!selectedTask) return;
@@ -173,7 +174,7 @@ export default function App() {
     if (!match) { setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Unsupported repository URL' }); return; }
     setRepositoryIndexStatus({ status: 'QUEUED' });
     const res = await requestRepositoryIndex(selectedTask.repoUrl, selectedTask.repositoryIndex?.commitSha ?? 'HEAD');
-    if (res.success && res.data) setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha });
+    if (res.success && res.data) { setRepositoryIndexRef(res.data.requestedRef ?? 'HEAD'); setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha }); }
     else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message });
   }
   async function handleRequestRepositoryReindex() {

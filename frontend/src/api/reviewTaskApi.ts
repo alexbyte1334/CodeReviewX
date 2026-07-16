@@ -99,8 +99,8 @@ export async function publishCommentPreview(
   );
 }
 
-export async function getRepositoryIndexStatus(owner: string, repo: string, commitSha: string): Promise<ApiResponse<RepositoryIndexStatus>> { return fetchJson(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/index-status?commitSha=${encodeURIComponent(commitSha)}`); }
+export async function getRepositoryIndexStatus(owner: string, repo: string, ref: string): Promise<ApiResponse<RepositoryIndexStatus>> { const query = /^[0-9a-f]{40}$/i.test(ref) ? `commitSha=${encodeURIComponent(ref)}` : `ref=${encodeURIComponent(ref)}`; return fetchJson(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/index-status?${query}`); }
 export async function requestRepositoryIndex(repoUrl: string, ref: string): Promise<ApiResponse<RepositoryIndexResponse>> { return fetchJson(`${BASE_URL}/api/repositories/index`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repoUrl,ref})}); }
-export async function requestRepositoryReindex(owner: string, repo: string, ref?: string): Promise<ApiResponse<RepositoryIndexResponse>> { return fetchJson(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/reindex`, {method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify(ref ? { ref } : {})}); }
+export async function requestRepositoryReindex(owner: string, repo: string, ref?: string): Promise<ApiResponse<RepositoryIndexResponse>> { const query = ref ? `?ref=${encodeURIComponent(ref)}` : ''; return fetchJson(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/reindex${query}`, {method:'POST'}); }
 export async function getRetrievalEvidence(taskId:number, issueKey:string): Promise<ApiResponse<RetrievalEvidence[]>> { return fetchJson(`${BASE_URL}/api/review-tasks/${taskId}/issues/${encodeURIComponent(issueKey)}/evidence`); }
 export async function getRetrievalTrace(runId:number): Promise<ApiResponse<RetrievalTrace>> { return fetchJson(`${BASE_URL}/api/review-runs/${runId}/retrieval`); }
