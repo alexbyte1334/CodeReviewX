@@ -316,6 +316,7 @@ class RagContextAssemblerTest {
         assertThat(result.promptBlock()).doesNotContain("918273645");
         assertThat(result.evidence().get(0).toString()).doesNotContain("918273645");
         assertThat(result.evidence().get(0).toString()).doesNotContain("hash-918273645");
+        assertThat(result.evidence().get(0).toString()).doesNotContain("bounded code");
         assertThat(result.evidence().get(0).sourceIdentity().chunkId()).isEqualTo(918273645L);
         assertThat(result.evidence().get(0).sourceIdentity().contentHash()).isEqualTo("hash-918273645");
         assertThat(reranker.received).extracting(RerankCandidate::chunkId).doesNotContain("918273645");

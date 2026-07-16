@@ -18,7 +18,9 @@ import java.util.regex.Pattern;
 @Component
 public class ReviewEvidenceValidator {
     public boolean isGrounded(ReviewFinding finding, RagEvidenceBundle bundle, GithubPrDiff diff) {
-        if (finding == null || bundle == null || diff == null || finding.getEvidenceChunkIds().isEmpty()) return false;
+        if (finding == null || bundle == null || diff == null || finding.getEvidenceChunkIds().isEmpty()
+                || finding.getEvidenceChunkIds().stream().anyMatch(label -> label == null || label.isBlank())
+                || finding.getEvidenceChunkIds().stream().distinct().count() != finding.getEvidenceChunkIds().size()) return false;
         Map<String, RagEvidence> evidence = bundle.evidence().stream()
                 .collect(Collectors.toMap(RagEvidence::label, Function.identity()));
         for (String label : finding.getEvidenceChunkIds()) {

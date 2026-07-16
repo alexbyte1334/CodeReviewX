@@ -24,7 +24,6 @@ import com.codereviewx.backend.review.pipeline.ReviewFinding;
 import com.codereviewx.backend.review.pipeline.ReviewPipelineService;
 import com.codereviewx.backend.review.pipeline.ReviewProviderResult;
 import com.codereviewx.backend.review.pipeline.provider.mimo.MiMoAgentException;
-import com.codereviewx.backend.rag.persistence.ReviewIssueEvidenceStore;
 import com.codereviewx.backend.rag.retrieval.RagEvidenceBundle;
 import com.codereviewx.backend.rag.service.RagReviewContextFacade;
 import org.springframework.stereotype.Service;
@@ -53,7 +52,7 @@ public class ReviewTaskService {
     private final ReviewStaticAnalysisService staticAnalysisService;
     private final RagReviewContextFacade ragReviewContextFacade;
     private final ReviewEvidenceValidator evidenceValidator;
-    private final ReviewIssueEvidenceStore evidenceStore;
+    private final ReviewIssueEvidencePersister evidencePersister;
 
     public ReviewTaskService(ReviewTaskRepository reviewTaskRepository,
                              ReviewIssueRepository reviewIssueRepository,
@@ -68,7 +67,7 @@ public class ReviewTaskService {
                              ReviewStaticAnalysisService staticAnalysisService,
                              RagReviewContextFacade ragReviewContextFacade,
                              ReviewEvidenceValidator evidenceValidator,
-                             ReviewIssueEvidenceStore evidenceStore) {
+                             ReviewIssueEvidencePersister evidencePersister) {
         this.reviewTaskRepository = reviewTaskRepository;
         this.reviewIssueRepository = reviewIssueRepository;
         this.reviewRunRepository = reviewRunRepository;
@@ -82,7 +81,7 @@ public class ReviewTaskService {
         this.staticAnalysisService = staticAnalysisService;
         this.ragReviewContextFacade = ragReviewContextFacade;
         this.evidenceValidator = evidenceValidator;
-        this.evidenceStore = evidenceStore;
+        this.evidencePersister = evidencePersister;
     }
 
     /**
@@ -312,9 +311,7 @@ public class ReviewTaskService {
         List<ReviewIssueEntity> savedIssues = reviewIssueRepository.saveAll(issueEntities);
 
         if (evidenceBundle != null) {
-            for (int index = 0; index < providerFindings.size(); index++) {
-                evidenceStore.save(savedIssues.get(index), providerFindings.get(index), evidenceBundle);
-            }
+            evidencePersister.persist(providerFindings, allFindings, savedIssues, evidenceBundle);
             LocalDateTime evidenceFinishedAt = LocalDateTime.now();
             reviewTraceRecorder.recordToolTrace(runId, reviewTraceRecorder.countToolTraces(runId) + 1,
                     "evidence.validate", ToolTraceStatus.SUCCESS,

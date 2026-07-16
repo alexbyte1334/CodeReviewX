@@ -140,6 +140,8 @@ class ReviewTaskServiceRagIntegrationTest {
         assertThat(validator.isGrounded(finding("src/App.ts", 10, List.of("C9")), bundle, diff)).isFalse();
         assertThat(validator.isGrounded(finding("src/Other.ts", 10, List.of("C2")), bundle, diff)).isFalse();
         assertThat(validator.isGrounded(finding("src/App.ts", 80, List.of("C2")), bundle, diff)).isFalse();
+        assertThat(validator.isGrounded(finding("src/App.ts", 10, java.util.Arrays.asList("C2", null)), bundle, diff)).isFalse();
+        assertThat(validator.isGrounded(finding("src/App.ts", 10, List.of("C2", "C2")), bundle, diff)).isFalse();
     }
 
     @Test

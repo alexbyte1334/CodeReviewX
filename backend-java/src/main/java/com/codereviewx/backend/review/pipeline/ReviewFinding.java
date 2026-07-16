@@ -1,6 +1,8 @@
 package com.codereviewx.backend.review.pipeline;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 
 import com.codereviewx.backend.review.enums.IssueCategory;
 import com.codereviewx.backend.review.enums.IssueSeverity;
@@ -55,7 +57,8 @@ public class ReviewFinding {
         this.title = title;
         this.description = description;
         this.recommendation = recommendation;
-        this.evidenceChunkIds = evidenceChunkIds == null ? List.of() : List.copyOf(evidenceChunkIds);
+        this.evidenceChunkIds = evidenceChunkIds == null ? List.of()
+                : Collections.unmodifiableList(new ArrayList<>(evidenceChunkIds));
     }
 
     public String getIssueKey() {

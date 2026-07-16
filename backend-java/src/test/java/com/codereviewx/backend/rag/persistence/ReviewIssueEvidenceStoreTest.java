@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -35,5 +36,21 @@ class ReviewIssueEvidenceStoreTest {
         verify(jdbc).update(anyString(), arguments.capture());
         assertThat(arguments.getValue()).contains(44L, 987L, "original-hash");
         assertThat(arguments.getValue()[7].toString()).hasSize(2000);
+    }
+
+    @Test void rejectsUnknownSourceIdentityWithoutLeakingEvidence() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        RagProperties properties = new RagProperties(); properties.setEnabled(true);
+        ReviewIssueEvidenceStore store = new ReviewIssueEvidenceStore(jdbc, properties);
+        ReviewIssueEntity issue = new ReviewIssueEntity(); issue.setId(44L);
+        ReviewFinding finding = new ReviewFinding("M1", IssueSeverity.HIGH, IssueCategory.BUG, IssueSource.MIMO,
+                IssueStatus.OPEN, "src/A.java", 1, 1, "t", "d", "r", List.of("C1"));
+        RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(new RagEvidence("C1", "src/A.java", 1, 2,
+                "sha", "super-secret-source", 0.9)), "prompt", RagEvidenceBundle.DegradedReason.NONE,
+                RagContextAssembler.RetrievalHealth.HEALTHY);
+        assertThatThrownBy(() -> store.save(issue, finding, bundle)).isInstanceOf(IllegalStateException.class)
+                .hasMessage("Verified evidence source identity is incomplete")
+                .hasMessageNotContaining("secret").hasMessageNotContaining("C1").hasMessageNotContaining("44");
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
 }

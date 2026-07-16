@@ -16,6 +16,11 @@ public record RagEvidenceBundle(List<RagEvidence> evidence, String promptBlock, 
 
     public RagEvidenceBundle {
         evidence = List.copyOf(Objects.requireNonNull(evidence, "evidence"));
+        long uniqueLabels = evidence.stream().map(RagEvidence::label).distinct().count();
+        if (evidence.stream().anyMatch(item -> item.label() == null || item.label().isBlank())
+                || uniqueLabels != evidence.size()) {
+            throw new IllegalArgumentException("Evidence labels must be unique and non-blank");
+        }
         Objects.requireNonNull(promptBlock, "promptBlock");
         Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(retrievalHealth, "retrievalHealth");

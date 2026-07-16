@@ -18,7 +18,7 @@ class RagReviewContextFacadeTest {
     @Test
     void readyRecordsExactRagTraceAndPropagatesInternalFailure() {
         Fixture fixture = new Fixture();
-        when(fixture.index.ensureIndexed(any())).thenReturn(new RagIndexResolution(1, 2, "a".repeat(40), RagIndexResolution.Status.READY));
+        when(fixture.index.ensureIndexed(any())).thenReturn(new RagIndexResolution(1, 2L, "a".repeat(40), RagIndexResolution.Status.READY));
         when(fixture.retrieval.retrieve(any())).thenReturn(new HybridRagRetrievalService.Result(
                 HybridRagRetrievalService.Status.READY, 3L, 1, 1, List.of(), RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED));
 
@@ -42,7 +42,7 @@ class RagReviewContextFacadeTest {
     void pollingTimeoutUsesInjectedClockWithoutWallClockWaitAndFallsBack() {
         MutableClock clock = new MutableClock();
         Fixture fixture = new Fixture(clock);
-        when(fixture.index.ensureIndexed(any())).thenReturn(new RagIndexResolution(1, 2, "a".repeat(40), RagIndexResolution.Status.QUEUED));
+        when(fixture.index.ensureIndexed(any())).thenReturn(new RagIndexResolution(1, 2L, "a".repeat(40), RagIndexResolution.Status.QUEUED));
         when(fixture.index.getJob(2)).thenReturn(new RagIndexJob(2, 1, "ref", "a".repeat(40), RagIndexJob.Status.RUNNING,
                 1, null, null, null, null, null, "m", 1024, 1));
         when(fixture.legacy.index(any(), any())).thenReturn(RepositoryContextIndexResult.empty());
@@ -52,6 +52,41 @@ class RagReviewContextFacadeTest {
         assertThat(result.legacyFallback()).isTrue();
         assertThat(clock.millis()).isEqualTo(20_000);
         verify(fixture.index, atMost(81)).getJob(2);
+    }
+
+    @Test void nullJobIdAndMissingOrFailedJobFallBackWithoutRetrieval() {
+        for (Object state : List.of("NULL_ID", "MISSING", RagIndexJob.Status.FAILED)) {
+            Fixture fixture = new Fixture();
+            Long jobId = state.equals("NULL_ID") ? null : 2L;
+            when(fixture.index.ensureIndexed(any())).thenReturn(new RagIndexResolution(
+                    1, jobId, "a".repeat(40), RagIndexResolution.Status.QUEUED));
+            if (state.equals(RagIndexJob.Status.FAILED)) {
+                when(fixture.index.getJob(2)).thenReturn(job(RagIndexJob.Status.FAILED));
+            }
+            when(fixture.legacy.index(any(), any())).thenReturn(RepositoryContextIndexResult.empty());
+            assertThat(fixture.facade.prepare(metadata(), diff(), 9L).legacyFallback()).isTrue();
+            verify(fixture.retrieval, never()).retrieve(any());
+        }
+    }
+
+    @Test void interruptionRestoresFlagAndFallsBackSafely() {
+        MutableClock clock = new MutableClock();
+        Fixture fixture = new Fixture(clock, millis -> { throw new InterruptedException("stop"); });
+        when(fixture.index.ensureIndexed(any())).thenReturn(new RagIndexResolution(1, 2L,
+                "a".repeat(40), RagIndexResolution.Status.QUEUED));
+        when(fixture.index.getJob(2)).thenReturn(job(RagIndexJob.Status.RUNNING));
+        when(fixture.legacy.index(any(), any())).thenReturn(RepositoryContextIndexResult.empty());
+        try {
+            assertThat(fixture.facade.prepare(metadata(), diff(), 9L).legacyFallback()).isTrue();
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    private static RagIndexJob job(RagIndexJob.Status status) {
+        return new RagIndexJob(2, 1, "ref", "a".repeat(40), status, 1,
+                null, null, null, null, null, "m", 1024, 1);
     }
 
     private static GithubPrMetadata metadata() { return new GithubPrMetadata("owner", "repo", 1, "title", "a", "main", "f", "b".repeat(40), "a".repeat(40), "open", "x", "x", 1, 1, 1); }
@@ -67,7 +102,8 @@ class RagReviewContextFacadeTest {
         final ReviewTraceRecorder traces = mock(ReviewTraceRecorder.class);
         final RagReviewContextFacade facade;
         Fixture() { this(new MutableClock()); }
-        @SuppressWarnings("unchecked") Fixture(MutableClock clock) {
+        Fixture(MutableClock clock) { this(clock, millis -> clock.advance(millis)); }
+        @SuppressWarnings("unchecked") Fixture(MutableClock clock, RagReviewContextFacade.Sleeper sleeper) {
             RagProperties properties = new RagProperties(); properties.setEnabled(true);
             ObjectProvider<RagIndexService> indexes = mock(ObjectProvider.class);
             ObjectProvider<HybridRagRetrievalService> retrievals = mock(ObjectProvider.class);
@@ -75,7 +111,7 @@ class RagReviewContextFacadeTest {
             when(indexes.getIfAvailable()).thenReturn(index); when(retrievals.getIfAvailable()).thenReturn(retrieval);
             when(assemblers.getIfAvailable()).thenReturn(assembler);
             facade = new RagReviewContextFacade(properties, indexes, retrievals, assemblers, legacy, traces,
-                    clock, millis -> clock.advance(millis), Duration.ofSeconds(20), Duration.ofMillis(250));
+                    clock, sleeper, Duration.ofSeconds(20), Duration.ofMillis(250));
         }
     }
     private static final class MutableClock extends Clock {

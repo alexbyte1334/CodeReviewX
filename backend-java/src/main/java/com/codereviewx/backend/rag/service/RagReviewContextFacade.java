@@ -61,21 +61,36 @@ public class RagReviewContextFacade {
         if (index == null || retrieval == null || assembler == null) return legacy(metadata, diff, runId, "RAG unavailable");
         LocalDateTime start = LocalDateTime.now(clock);
         RagIndexResolution resolution = index.ensureIndexed(metadata);
+        if (resolution == null) return legacy(metadata, diff, runId, "INDEX_RESOLUTION_UNAVAILABLE");
         record(runId, "rag.index.ensure", start, "Index state=" + resolution.status());
         long deadline = clock.millis() + timeout.toMillis();
+        String fallbackReason = "INDEX_NOT_READY";
         while (resolution.status() != RagIndexResolution.Status.READY && clock.millis() < deadline) {
+            if (resolution.jobId() == null) {
+                fallbackReason = "INDEX_JOB_ID_UNAVAILABLE";
+                break;
+            }
             RagIndexJob job = index.getJob(resolution.jobId());
+            if (job == null) {
+                fallbackReason = "INDEX_JOB_UNAVAILABLE";
+                break;
+            }
             if (job.status() == RagIndexJob.Status.READY) {
                 resolution = new RagIndexResolution(resolution.repositoryId(), resolution.jobId(),
                         resolution.commitSha(), RagIndexResolution.Status.READY);
                 break;
             }
-            if (job.status() == RagIndexJob.Status.FAILED) break;
+            if (job.status() == RagIndexJob.Status.FAILED) {
+                fallbackReason = "INDEX_JOB_FAILED";
+                break;
+            }
             try { sleeper.sleep(pollInterval.toMillis()); } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt(); break;
+                Thread.currentThread().interrupt();
+                fallbackReason = "INDEX_WAIT_INTERRUPTED";
+                break;
             }
         }
-        if (resolution.status() != RagIndexResolution.Status.READY) return legacy(metadata, diff, runId, "INDEX_NOT_READY");
+        if (resolution.status() != RagIndexResolution.Status.READY) return legacy(metadata, diff, runId, fallbackReason);
         PrRetrievalQueryBuilder.PrQuery query = query(metadata, diff);
         record(runId, "rag.query.build", LocalDateTime.now(clock), "Built bounded PR retrieval query");
         HybridRagRetrievalService.Result retrieved = retrieval.retrieve(new HybridRagRetrievalService.Request(

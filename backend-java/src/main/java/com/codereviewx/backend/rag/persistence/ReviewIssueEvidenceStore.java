@@ -23,6 +23,11 @@ public class ReviewIssueEvidenceStore {
         int rank = 1;
         for (String label : finding.getEvidenceChunkIds()) {
             RagEvidence evidence = byLabel.get(label); if (evidence == null) continue;
+            if (evidence.sourceIdentity().chunkId() == null
+                    || evidence.sourceIdentity().contentHash() == null
+                    || evidence.sourceIdentity().contentHash().isBlank()) {
+                throw new IllegalStateException("Verified evidence source identity is incomplete");
+            }
             String excerpt = evidence.content().substring(0, Math.min(2000, evidence.content().length()));
             jdbc.update("INSERT INTO review_issue_evidence(review_issue_id,rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     issue.getId(), evidence.sourceIdentity().chunkId(), label, evidence.path(), evidence.startLine(), evidence.endLine(),

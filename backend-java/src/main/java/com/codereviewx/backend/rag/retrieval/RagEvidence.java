@@ -18,7 +18,7 @@ public record RagEvidence(String label, String path, int startLine, int endLine,
     }
 
     public RagEvidence {
-        Objects.requireNonNull(label, "label");
+        if (label == null || label.isBlank()) throw new IllegalArgumentException("Evidence label must be non-blank");
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(commitSha, "commitSha");
         Objects.requireNonNull(content, "content");
@@ -28,7 +28,7 @@ public record RagEvidence(String label, String path, int startLine, int endLine,
     @Override
     public String toString() {
         return "RagEvidence[label=" + label + ", path=" + path + ", startLine=" + startLine
-                + ", endLine=" + endLine + ", commitSha=" + commitSha + ", content=" + content
-                + ", score=" + score + ", truncated=" + truncated + ", escaped=" + escaped + "]";
+                + ", endLine=" + endLine + ", score=" + score + ", truncated=" + truncated
+                + ", escaped=" + escaped + "]";
     }
 }
