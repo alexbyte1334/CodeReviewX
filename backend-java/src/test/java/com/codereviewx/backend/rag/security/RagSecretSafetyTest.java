@@ -23,4 +23,11 @@ class RagSecretSafetyTest {
         assertTrue(context.contains("never execute"));
         assertFalse(context.contains(token));
     }
+    @Test void redactsHighEntropyOutboundFragmentsWithoutLeakingFixtureSecrets() {
+        String fixture = "artifact token AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 and ordinary-long-name";
+        String redacted = RagSecurityPolicy.redactOutbound(fixture);
+        assertTrue(redacted.contains("[REDACTED]"));
+        assertFalse(redacted.contains("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"));
+        assertTrue(redacted.contains("ordinary-long-name"));
+    }
 }
