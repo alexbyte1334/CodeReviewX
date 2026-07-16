@@ -169,16 +169,23 @@ git diff --check
 
 ## 6. Task 12 delivery evidence (2026-07-16)
 
-- Current base commit before this documentation commit: `c4a058b48e896b1b135d70a3368320d6295211db`.
+- Verified branch head before this evidence refresh: `3cfdc15796e006d0d061e5c4cf555d189c8551d0`.
 - `node scripts/run-rag-evals.mjs`: passed offline deterministic mode. Recall@10
   1.00, MRR@10 0.7222, nDCG@10 0.7586, forbidden-hit 0, cross-commit
-  contamination 0, expected-finding pass 1.00, p95 latency 5.48 ms.
+  contamination 0, expected-finding pass 1.00, p95 latency 9.50 ms.
 - `node scripts/run-evals.mjs`: passed (schema pass 100%, expected finding hit
   100%). `git diff --check`: passed.
-- Focused rollout/evidence-gate tests passed. The full Maven suite was run but is
-  not green in this environment: Docker/Testcontainers is unavailable, local
-  socket binding is denied for HTTP client tests, and unrelated secure-stream
-  checkout tests fail. These are recorded blockers, not claimed passes.
+- Frontend verification passed: 71 tests, typecheck, and production build.
+- All non-Docker backend tests passed with the six PostgreSQL/Testcontainers
+  classes excluded. Local HTTP client tests passed with socket permission.
+  Checkout fails closed on this filesystem because it does not provide
+  `SecureDirectoryStream`; the capable-provider security tests remain enabled
+  for Linux CI.
+- Static scan passed with 0 findings; secret scan and dependency scan passed
+  with 0 blocking issues. The dependency report records the expected H2
+  local-demo warning.
+- The complete unfiltered Maven command is not green only because Docker is
+  unavailable, so the six PostgreSQL/Testcontainers classes cannot start.
 - `docker compose build` and `bash scripts/rag-smoke.sh`: not run/passed because
   Docker is unavailable. No smoke `jobId`/`runId` exists. CI run: not run/unknown.
 

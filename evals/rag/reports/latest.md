@@ -12,7 +12,7 @@ Result: PASS
 - averageSelectedChunks: 10.000
 - averageSelectedChars: 603.250
 - p95SelectedChars: 763.000
-- p95LatencyMs: 5.477
+- p95LatencyMs: 9.497
 - contextBudgetViolations: 0.000
 - rerankCandidateViolations: 0.000
 - crossCommitContamination: 0.000
