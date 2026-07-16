@@ -4,15 +4,15 @@ Mode: offline-deterministic
 
 Result: PASS
 
-- recallAt5: 1.000
+- recallAt5: 0.667
 - recallAt10: 1.000
-- mrrAt10: 0.833
-- ndcgAt10: 0.836
+- mrrAt10: 0.722
+- ndcgAt10: 0.759
 - forbiddenHitRate: 0.000
-- averageSelectedChunks: 3.000
-- averageSelectedChars: 289.500
-- p95SelectedChars: 386.000
-- p95LatencyMs: 5.504
+- averageSelectedChunks: 10.000
+- averageSelectedChars: 603.250
+- p95SelectedChars: 763.000
+- p95LatencyMs: 5.137
 - contextBudgetViolations: 0.000
 - rerankCandidateViolations: 0.000
 - crossCommitContamination: 0.000

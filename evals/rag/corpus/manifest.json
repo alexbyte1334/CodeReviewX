@@ -5,6 +5,8 @@
     {"key":"src/service.ts","commit":"target-commit"},
     {"key":"src/config.ts","commit":"target-commit"},
     {"key":"test/api.test.ts","commit":"target-commit"},
-    {"key":"docs/unrelated.md","commit":"old-commit","excluded":true}
+    {"key":"docs/unrelated.md","commit":"old-commit"},
+    {"key":"src/auth.ts","commit":"target-commit"},{"key":"src/cache.ts","commit":"target-commit"},{"key":"src/logger.ts","commit":"target-commit"},{"key":"src/metrics.ts","commit":"target-commit"},{"key":"src/queue.ts","commit":"target-commit"},{"key":"src/routes.ts","commit":"target-commit"},{"key":"src/validation.ts","commit":"target-commit"},{"key":"src/format.ts","commit":"target-commit"},{"key":"src/health.ts","commit":"target-commit"},{"key":"src/feature.ts","commit":"target-commit"},{"key":"src/notifications.ts","commit":"target-commit"},{"key":"src/storage.ts","commit":"target-commit"},{"key":"src/search.ts","commit":"target-commit"},{"key":"src/telemetry.ts","commit":"target-commit"},
+    {"key":"legacy/old-api.ts","commit":"old-commit"},{"key":"legacy/old-config.ts","commit":"old-commit"},{"key":"legacy/notes.md","commit":"old-commit"}
   ]
 }
