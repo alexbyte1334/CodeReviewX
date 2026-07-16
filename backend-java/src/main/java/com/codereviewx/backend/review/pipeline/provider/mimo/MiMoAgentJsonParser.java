@@ -62,12 +62,13 @@ public class MiMoAgentJsonParser {
     }
 
     private void rejectCopiedEvidence(String authoredText, RagEvidenceBundle evidenceBundle) {
-        String bounded = bounded(authoredText);
-        if (EVIDENCE_MARKER.matcher(bounded).find()) {
+        String accepted = acceptedAuthoredText(authoredText);
+        String normalizedAuthored = normalize(accepted);
+        if (EVIDENCE_MARKER.matcher(normalizedAuthored).find()) {
             throw copiedEvidence();
         }
-        String normalizedAuthored = normalize(bounded);
-        boolean copied = evidenceBundle.evidence().stream().map(evidence -> normalize(bounded(evidence.content())))
+        boolean copied = evidenceBundle.evidence().stream()
+                .map(evidence -> normalize(boundedEvidence(evidence.content())))
                 .filter(content -> content.length() >= MIN_EVIDENCE_COPY_LENGTH)
                 .anyMatch(normalizedAuthored::contains);
         if (copied) throw copiedEvidence();
@@ -78,7 +79,16 @@ public class MiMoAgentJsonParser {
                 "MiMo executor copied evidence content verbatim");
     }
 
-    private String bounded(String value) {
+    private String acceptedAuthoredText(String value) {
+        if (value == null) return "";
+        if (value.length() > MAX_COPY_CHECK_LENGTH) {
+            throw new MiMoAgentException(ReviewErrorCodes.MIMO_REVIEW_INVALID,
+                    "MiMo executor returned an authored field over the safe length limit");
+        }
+        return value;
+    }
+
+    private String boundedEvidence(String value) {
         if (value == null) return "";
         return value.substring(0, Math.min(value.length(), MAX_COPY_CHECK_LENGTH));
     }

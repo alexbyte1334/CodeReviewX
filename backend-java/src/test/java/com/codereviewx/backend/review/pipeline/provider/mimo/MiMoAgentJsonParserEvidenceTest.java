@@ -45,6 +45,25 @@ class MiMoAgentJsonParserEvidenceTest {
                 .getFindings()).hasSize(1);
     }
 
+    @Test void rejectsCompatibilityMarkersAcrossEveryModelAuthoredSurface() {
+        for (String surface : List.of("summary", "title", "description", "recommendation")) {
+            assertThatThrownBy(() -> parser.parseCandidateReview(
+                    jsonSurface(surface, "[ＥＶＩＤＥＮＣＥ C1]"), bundle))
+                    .isInstanceOf(MiMoAgentException.class).extracting("errorCode")
+                    .isEqualTo(ReviewErrorCodes.MIMO_REVIEW_INVALID);
+        }
+    }
+
+    @Test void rejectsAuthoredFieldWhoseEvidenceMarkerOrCopyAppearsAfterSafeBound() {
+        String prefix = "a".repeat(40_000);
+        for (String suffix : List.of("[EVIDENCE C1]", "sensitive source evidence with multiple tokens")) {
+            assertThatThrownBy(() -> parser.parseCandidateReview(
+                    jsonSurface("recommendation", prefix + suffix), bundle))
+                    .isInstanceOf(MiMoAgentException.class).extracting("errorCode")
+                    .isEqualTo(ReviewErrorCodes.MIMO_REVIEW_INVALID);
+        }
+    }
+
     @Test void acceptsValidMultipleKnownLabels() {
         CandidateReview review = parser.parseCandidateReview(json("[\"C1\",\"C2\"]", "safe"), bundle);
         assertThat(review.getFindings().get(0).getEvidenceChunkIds()).containsExactly("C1", "C2");
