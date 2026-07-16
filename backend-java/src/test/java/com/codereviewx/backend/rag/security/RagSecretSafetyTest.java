@@ -21,6 +21,10 @@ class RagSecretSafetyTest {
         assertTrue(RagSecurityPolicy.isSensitivePath("config/credentials-dev.json"));
         assertTrue(RagSecurityPolicy.isSensitivePath("config/service-account-production.yml"));
         assertTrue(RagSecurityPolicy.isSensitivePath("config/private-key-backup.pem"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/secret.prod.yaml"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/secrets.production.yml"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/credentials.dev.json"));
+        assertTrue(RagSecurityPolicy.isSensitivePath("config/private-key.backup.pem"));
         assertFalse(RagSecurityPolicy.isSensitivePath("src/Main.java"));
         assertFalse(RagSecurityPolicy.isSensitivePath("src/SecretService.java"));
         assertFalse(RagSecurityPolicy.isSensitivePath("src/SecretsController.ts"));
