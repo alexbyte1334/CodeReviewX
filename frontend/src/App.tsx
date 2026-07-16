@@ -3,7 +3,7 @@ import type { CommentPreview, ReviewTask, ToolTraceItem } from './types/reviewTa
 import {
   getCommentPreviews,
   getHealth,
-  getRepositoryIndexStatus, requestRepositoryIndex, getRetrievalEvidence,
+  getRepositoryIndexStatus, requestRepositoryIndex, requestRepositoryReindex, getRetrievalEvidence,
   getReviewTask,
   getToolTrace,
   listReviewTasks,
@@ -150,8 +150,8 @@ export default function App() {
     const current = selectedTask;
     if (!current) return;
     const match = current.repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#]+)(?:\.git)?/i);
-    const sha = current.repositoryIndex?.commitSha;
-    if (!match || !sha) return;
+    const sha = current.repositoryIndex?.commitSha ?? repositoryIndexStatus?.commitSha ?? 'HEAD';
+    if (!match) return;
     const generation = ++indexGeneration.current;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -173,6 +173,15 @@ export default function App() {
     if (!match) { setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Unsupported repository URL' }); return; }
     setRepositoryIndexStatus({ status: 'QUEUED' });
     const res = await requestRepositoryIndex(selectedTask.repoUrl, selectedTask.repositoryIndex?.commitSha ?? 'HEAD');
+    if (res.success && res.data) setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha });
+    else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message });
+  }
+  async function handleRequestRepositoryReindex() {
+    if (!selectedTask) return;
+    const match = selectedTask.repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#]+)(?:\.git)?/i);
+    if (!match) return;
+    setRepositoryIndexStatus({ status: 'QUEUED' });
+    const res = await requestRepositoryReindex(match[1], match[2], selectedTask.repositoryIndex?.commitSha ?? undefined);
     if (res.success && res.data) setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha });
     else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message });
   }
@@ -450,6 +459,7 @@ export default function App() {
                   onPublishSelectedCommentPreviews={handlePublishSelectedCommentPreviews}
                   repositoryIndexStatus={repositoryIndexStatus}
                   onRequestRepositoryIndex={handleRequestRepositoryIndex}
+                  onRequestRepositoryReindex={handleRequestRepositoryReindex}
                   evidenceByIssue={evidenceByIssue}
                   evidenceLoadingIssue={evidenceLoadingIssue}
                   evidenceError={evidenceError}

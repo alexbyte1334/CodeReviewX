@@ -29,6 +29,7 @@ interface ReviewTaskDetailProps {
   onPublishSelectedCommentPreviews?: () => void;
   repositoryIndexStatus?: RepositoryIndexStatusType | null;
   onRequestRepositoryIndex?: () => void;
+  onRequestRepositoryReindex?: () => void;
   evidenceByIssue?: Record<string, RetrievalEvidence[]>;
   evidenceLoadingIssue?: string | null;
   evidenceError?: string | null;
@@ -430,7 +431,7 @@ export function ReviewTaskDetail({
   toolTraceError = null,
   onCommentPreviewSelectionChange,
   onPublishSelectedCommentPreviews,
-  repositoryIndexStatus, onRequestRepositoryIndex, evidenceByIssue, evidenceLoadingIssue, evidenceError, onIssueEvidenceRequest,
+  repositoryIndexStatus, onRequestRepositoryIndex, onRequestRepositoryReindex, evidenceByIssue, evidenceLoadingIssue, evidenceError, onIssueEvidenceRequest,
 }: ReviewTaskDetailProps) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
@@ -480,7 +481,7 @@ export function ReviewTaskDetail({
 
       {!loading && !error && task && issueSummary && (
         <div className="detail-content">
-          <RepositoryIndexStatus status={repositoryIndexStatus} onIndex={onRequestRepositoryIndex} />
+          <RepositoryIndexStatus status={repositoryIndexStatus} onIndex={onRequestRepositoryIndex} onReindex={onRequestRepositoryReindex} />
           {task.retrievalDegraded && <span role="status" className="badge badge-warning">Degraded retrieval</span>}
           <CollapsiblePanel
             panelId="panel-findings-summary"

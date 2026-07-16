@@ -51,7 +51,7 @@ class RepositoryIndexControllerTest {
                 .andExpect(jsonPath("$.data.status").value("QUEUED"))
                 .andExpect(jsonPath("$.data.repository").value("acme/demo"))
                 .andExpect(jsonPath("$.data.requestedRef").value("main"))
-                .andExpect(jsonPath("$.data.jobId").doesNotExist())
+                .andExpect(jsonPath("$.data.jobId").value(11))
                 .andReturn();
 
         assertSafe(result);
@@ -82,7 +82,7 @@ class RepositoryIndexControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("READY"))
                 .andExpect(jsonPath("$.data.commitSha").value(SHA))
-                .andExpect(jsonPath("$.data.jobId").doesNotExist())
+                .andExpect(jsonPath("$.data.indexedChunks").value(0))
                 .andExpect(jsonPath("$.data.repositoryId").doesNotExist())
                 .andReturn();
         assertSafe(result);
@@ -97,6 +97,19 @@ class RepositoryIndexControllerTest {
         mvc.perform(get("/api/repositories/acme/demo/index-status").param("commitSha", SHA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("NOT_INDEXED"))
+                .andExpect(jsonPath("$.data.commitSha").isEmpty());
+    }
+
+    @Test
+    void requestedShaMissFallsBackToLatestQueuedDefaultBranchJob() throws Exception {
+        when(repositories.find("github", "acme", "demo")).thenReturn(Optional.of(repository()));
+        when(jobs.findReadySnapshot(7L, SHA, "text-embedding", 1024, 1)).thenReturn(Optional.empty());
+        when(jobs.findLatest(7L, SHA)).thenReturn(Optional.empty());
+        when(jobs.findLatest(7L, "main")).thenReturn(Optional.of(job(RagIndexJob.Status.QUEUED, null)));
+
+        mvc.perform(get("/api/repositories/acme/demo/index-status").param("commitSha", SHA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("QUEUED"))
                 .andExpect(jsonPath("$.data.commitSha").isEmpty());
     }
 
@@ -142,7 +155,7 @@ class RepositoryIndexControllerTest {
                 .andExpect(jsonPath("$.data.status").value("QUEUED"))
                 .andExpect(jsonPath("$.data.repository").value("acme/demo"))
                 .andExpect(jsonPath("$.data.requestedRef").value("release"))
-                .andExpect(jsonPath("$.data.jobId").doesNotExist())
+                .andExpect(jsonPath("$.data.jobId").value(13))
                 .andReturn();
         assertSafe(result);
         verifyNoInteractions(index);
@@ -216,6 +229,6 @@ class RepositoryIndexControllerTest {
     private static void assertSafe(MvcResult result) throws Exception {
         String body = result.getResponse().getContentAsString();
         assertThat(body).doesNotContain("token", "secret", "query", "prompt", "content", "vector",
-                "repositoryId", "jobId", "chunkId", "traceId");
+                "repositoryId", "chunkId", "traceId");
     }
 }

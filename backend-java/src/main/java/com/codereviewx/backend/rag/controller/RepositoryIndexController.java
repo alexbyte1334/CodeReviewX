@@ -34,17 +34,17 @@ public class RepositoryIndexController {
         String owner=parts[0], name=parts[1].replaceFirst("\\.git$", "");
         if (repositories.find("github",owner,name).flatMap(r -> jobs.findLatest(r.id(),request.ref())).map(j -> j.status()== RagIndexJob.Status.QUEUED || j.status()== RagIndexJob.Status.RUNNING).orElse(false)) throw new RagConflictException("Active index exists");
         var repo= repositories.ensure("github",owner,name,"https://github.com/"+owner+"/"+name+".git",request.ref(),"",1024,1);
-        jobs.createOrGetActive(repo.id(),request.ref(),"API", "",1024,1);
-        return ApiResponse.success(new RepositoryIndexResponse("QUEUED",owner+"/"+name,request.ref()));
+        long jobId=jobs.createOrGetActive(repo.id(),request.ref(),"API", "",1024,1);
+        return ApiResponse.success(new RepositoryIndexResponse(jobId,"QUEUED",owner+"/"+name,request.ref()));
     }
     @GetMapping("/{owner}/{repo}/index-status")
     public ApiResponse<RepositoryIndexStatusResponse> status(@PathVariable @Pattern(regexp="[A-Za-z0-9_.-]+") String owner,@PathVariable @Pattern(regexp="[A-Za-z0-9_.-]+") String repo,@RequestParam @Pattern(regexp="[0-9a-f]{40}") String commitSha) {
         if (!enabled) throw new RagDisabledException();
         var record=repositories.find("github",owner,repo.replaceFirst("\\.git$", "")).orElseThrow(()->new RagNotFoundException("Repository not found"));
         RagIndexJob value = jobs.findReadySnapshot(record.id(), commitSha, record.embeddingModel(), record.embeddingDimensions(), record.indexVersion())
-                .orElseGet(() -> jobs.findLatest(record.id(), commitSha).orElse(null));
+                .orElseGet(() -> jobs.findLatest(record.id(), commitSha).orElseGet(() -> jobs.findLatest(record.id(), record.defaultBranch()).orElse(null)));
         if (value == null) return ApiResponse.success(new RepositoryIndexStatusResponse("NOT_INDEXED", null, null, null, null));
-        return ApiResponse.success(new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), null,
+        return ApiResponse.success(new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), value.indexedChunkCount(),
                 value.errorCode(), value.errorMessage()));
     }
     @PostMapping("/{owner}/{repo}/reindex") @ResponseStatus(HttpStatus.ACCEPTED)
@@ -55,7 +55,7 @@ public class RepositoryIndexController {
         if (!enabled) throw new RagDisabledException();
         var record=repositories.find("github",owner,repo.replaceFirst("\\.git$", "")).orElseThrow(()->new RagNotFoundException("Repository not found"));
         if (jobs.findLatest(record.id(),ref).map(j -> j.status()== RagIndexJob.Status.QUEUED || j.status()== RagIndexJob.Status.RUNNING).orElse(false)) throw new RagConflictException("Active index exists");
-        jobs.createOrGetActive(record.id(),ref,"API",record.embeddingModel(),record.embeddingDimensions(),record.indexVersion());
-        return ApiResponse.success(new RepositoryIndexResponse("QUEUED",owner+"/"+repo.replaceFirst("\\.git$", ""),ref));
+        long jobId=jobs.createOrGetActive(record.id(),ref,"API",record.embeddingModel(),record.embeddingDimensions(),record.indexVersion());
+        return ApiResponse.success(new RepositoryIndexResponse(jobId,"QUEUED",owner+"/"+repo.replaceFirst("\\.git$", ""),ref));
     }
 }

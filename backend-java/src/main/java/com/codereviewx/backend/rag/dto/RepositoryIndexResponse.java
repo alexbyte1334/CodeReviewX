@@ -1,3 +1,3 @@
 package com.codereviewx.backend.rag.dto;
 
-public record RepositoryIndexResponse(String status, String repository, String requestedRef) {}
+public record RepositoryIndexResponse(long jobId, String status, String repository, String requestedRef) {}

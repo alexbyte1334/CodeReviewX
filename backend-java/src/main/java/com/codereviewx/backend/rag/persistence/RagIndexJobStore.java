@@ -218,7 +218,7 @@ public class RagIndexJobStore {
                 heartbeat == null ? null : heartbeat.toLocalDateTime(),
                 result.getString("error_code"), result.getString("error_message"),
                 result.getString("embedding_model"), result.getInt("embedding_dimensions"),
-                result.getInt("index_version"));
+                result.getInt("index_version"), result.getInt("indexed_chunk_count"));
     }
 
     private static String truncate(String value) {
