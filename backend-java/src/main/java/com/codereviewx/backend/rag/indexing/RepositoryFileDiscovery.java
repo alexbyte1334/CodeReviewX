@@ -3,6 +3,7 @@ package com.codereviewx.backend.rag.indexing;
 import com.codereviewx.backend.rag.config.RagProperties;
 import com.codereviewx.backend.rag.model.Language;
 import com.codereviewx.backend.rag.model.RepositoryFile;
+import com.codereviewx.backend.rag.security.RagSecurityPolicy;
 import org.eclipse.jgit.dircache.DirCacheIterator;
 import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.Repository;
@@ -182,6 +183,9 @@ public final class RepositoryFileDiscovery {
     }
 
     private static boolean shouldSkipFile(String fileName) {
+        if (RagSecurityPolicy.isSensitivePath(fileName)) {
+            return true;
+        }
         String lower = fileName.toLowerCase(Locale.ROOT);
         return SKIPPED_FILES.contains(lower)
                 || (lower.startsWith(".env.") && !SAFE_ENV_TEMPLATES.contains(lower))
