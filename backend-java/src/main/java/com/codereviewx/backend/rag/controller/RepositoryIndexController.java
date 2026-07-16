@@ -14,6 +14,8 @@ import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.lang.Nullable;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.net.URI;
 
@@ -23,7 +25,8 @@ public class RepositoryIndexController {
     private final RagRepositoryStore repositories; private final RagIndexJobStore jobs; private final RagIndexService index;
     private final boolean enabled;
     public RepositoryIndexController(@Nullable RagRepositoryStore repositories, @Nullable RagIndexJobStore jobs, @Nullable RagIndexService index) { this(repositories,jobs,index,true); }
-    public RepositoryIndexController(RagRepositoryStore repositories, RagIndexJobStore jobs, RagIndexService index, boolean enabled) { this.repositories= repositories; this.jobs=jobs; this.index=index; this.enabled=enabled; }
+    @Autowired
+    public RepositoryIndexController(@Nullable RagRepositoryStore repositories, @Nullable RagIndexJobStore jobs, @Nullable RagIndexService index, @Value("${codereviewx.rag.enabled:false}") boolean enabled) { this.repositories= repositories; this.jobs=jobs; this.index=index; this.enabled=enabled; }
     public record Request(@NotBlank @Size(max=1000) @Pattern(regexp="https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?") String repoUrl,
                           @NotBlank @Size(max=255) @Pattern(regexp="[A-Za-z0-9_.-]+") String ref) {}
     @PostMapping("/index") @ResponseStatus(HttpStatus.ACCEPTED)

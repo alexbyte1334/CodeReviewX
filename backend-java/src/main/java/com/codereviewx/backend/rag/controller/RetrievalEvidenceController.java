@@ -3,13 +3,15 @@ package com.codereviewx.backend.rag.controller;
 import com.codereviewx.backend.common.ApiResponse;
 import com.codereviewx.backend.rag.dto.RetrievalTraceResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
 
 @RestController
 public class RetrievalEvidenceController {
  private final JdbcTemplate jdbc; private final boolean enabled;
- public RetrievalEvidenceController(JdbcTemplate jdbc){this(jdbc,true);} public RetrievalEvidenceController(JdbcTemplate jdbc, boolean enabled){this.jdbc=jdbc;this.enabled=enabled;}
+ public RetrievalEvidenceController(JdbcTemplate jdbc){this(jdbc,true);} @Autowired public RetrievalEvidenceController(JdbcTemplate jdbc, @Value("${codereviewx.rag.enabled:false}") boolean enabled){this.jdbc=jdbc;this.enabled=enabled;}
  @GetMapping("/api/review-runs/{runId}/retrieval") public ApiResponse<RetrievalTraceResponse> run(@PathVariable long runId){
   if (!enabled) throw new RagDisabledException(); if(runId<=0) throw new RagInvalidRequestException();
   var rows=jdbc.query("SELECT degraded,latency_ms,vector_candidate_count+lexical_candidate_count,selected_count FROM rag_retrieval_trace WHERE review_run_id=? ORDER BY created_at DESC,id DESC LIMIT 1",(r,n)->new RetrievalTraceResponse(r.getBoolean(1),r.getBoolean(1)?"RETRIEVAL_DEGRADED":null,r.getLong(2),r.getInt(3),r.getInt(4),null,List.of()),runId);
