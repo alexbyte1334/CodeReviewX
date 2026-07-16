@@ -23,17 +23,22 @@ public class ReviewIssueEvidenceStore {
         Map<String, RagEvidence> byLabel = bundle.evidence().stream().collect(Collectors.toMap(RagEvidence::label, Function.identity()));
         int rank = 1;
         for (String label : finding.getEvidenceChunkIds()) {
-            RagEvidence evidence = byLabel.get(label); if (evidence == null) continue;
+            RagEvidence evidence = byLabel.get(label); if (evidence == null) {
+                throw new IllegalStateException("Grounded finding references unknown evidence label");
+            }
             if (evidence.sourceIdentity().chunkId() == null
                     || evidence.sourceIdentity().contentHash() == null
                     || evidence.sourceIdentity().contentHash().isBlank()) {
                 throw new IllegalStateException("Verified evidence source identity is incomplete");
             }
             String excerpt = RagSecurityPolicy.redactOutbound(evidence.content()).substring(0, Math.min(2000, RagSecurityPolicy.redactOutbound(evidence.content()).length()));
-            jdbc.update("INSERT INTO review_issue_evidence(review_issue_id,rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            int updated = jdbc.update("INSERT INTO review_issue_evidence(review_issue_id,rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     issue.getId(), evidence.sourceIdentity().chunkId(), label, evidence.path(), evidence.startLine(), evidence.endLine(),
                     evidence.sourceIdentity().contentHash(), excerpt,
                     rank++, evidence.score(), LocalDateTime.now());
+            if (updated != 1) throw new IllegalStateException("Evidence persistence affected unexpected row count");
         }
+        if (rank == 1 && !finding.getEvidenceChunkIds().isEmpty())
+            throw new IllegalStateException("Grounded finding has no persisted evidence");
     }
 }

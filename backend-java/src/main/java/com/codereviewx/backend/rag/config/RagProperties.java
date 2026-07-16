@@ -10,6 +10,9 @@ public class RagProperties {
     public static final int V1_EMBEDDING_DIMENSIONS = 1024;
 
     private boolean enabled;
+    private int reviewPercentage;
+    private boolean fallbackEnabled = true;
+    private boolean requireEvidence = true;
     private String embeddingBaseUrl = "";
     private String embeddingApiKey = "";
     private String embeddingModel = "BAAI/bge-m3";
@@ -30,6 +33,9 @@ public class RagProperties {
     private int shutdownGraceSeconds = 30;
 
     public void validate() {
+        if (reviewPercentage < 0 || reviewPercentage > 100) {
+            throw new IllegalStateException("RAG review percentage must be between 0 and 100");
+        }
         if (embeddingDimensions != V1_EMBEDDING_DIMENSIONS) {
             throw new IllegalStateException("RAG embedding dimensions must be 1024 for the V1 schema");
         }
@@ -67,6 +73,22 @@ public class RagProperties {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public int getReviewPercentage() { return reviewPercentage; }
+
+    public void setReviewPercentage(int reviewPercentage) { this.reviewPercentage = reviewPercentage; }
+
+    public boolean isFallbackEnabled() { return fallbackEnabled; }
+
+    public void setFallbackEnabled(boolean fallbackEnabled) { this.fallbackEnabled = fallbackEnabled; }
+
+    public boolean isRequireEvidence() { return requireEvidence; }
+
+    public void setRequireEvidence(boolean requireEvidence) { this.requireEvidence = requireEvidence; }
+
+    public boolean shouldUseRag(long reviewTaskId) {
+        return enabled && Math.floorMod(reviewTaskId, 100) < reviewPercentage;
     }
 
     public String getEmbeddingBaseUrl() {
@@ -213,10 +235,14 @@ public class RagProperties {
         this.shutdownGraceSeconds = shutdownGraceSeconds;
     }
 
+
     @Override
     public String toString() {
         return "RagProperties{"
                 + "enabled=" + enabled
+                + ", reviewPercentage=" + reviewPercentage
+                + ", fallbackEnabled=" + fallbackEnabled
+                + ", requireEvidence=" + requireEvidence
                 + ", embeddingModel='" + embeddingModel + '\''
                 + ", embeddingDimensions=" + embeddingDimensions
                 + ", embeddingBatchSize=" + embeddingBatchSize

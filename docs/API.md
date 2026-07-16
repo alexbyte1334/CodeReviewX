@@ -281,3 +281,25 @@ NOT_PUBLISHED -> PUBLISHING -> PUBLISHED | FAILED
 The old document described a planned Python FastAPI `ai-service` API. That
 service is not implemented and is not called by the current application. All
 active review orchestration lives in `backend-java`.
+# RAG API contract (implemented routes)
+
+RAG routes are available only when `RAG_ENABLED=true`; they return bounded
+metadata/evidence excerpts, never full chunks or secrets:
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/repositories/index` | JSON `{repoUrl,ref}`; enqueue index, HTTP 202 |
+| GET | `/api/repositories/{owner}/{repo}/index-status?ref=main` | status/count/error |
+| POST | `/api/repositories/{owner}/{repo}/reindex?ref=main` | force index, HTTP 202 |
+| GET | `/api/review-runs/{runId}/retrieval` | latest retrieval trace |
+| GET | `/api/review-tasks/{taskId}/issues/{issueKey}/evidence` | bounded issue evidence |
+| POST | `/api/review-tasks` | review; RAG selection is server-side by task id bucket |
+| GET | `/api/review-runs/{runId}/comment-previews` | preview/evidence-safe metadata |
+| POST | `/api/review-runs/{runId}/comment-previews/{previewId}/publish` | publish only with `confirmed:true` |
+
+Index job states are `QUEUED -> RUNNING -> READY|FAILED`; an absent repository
+returns `RAG_NOT_FOUND`; an existing repository with no matching job returns
+`NOT_INDEXED`. Implemented errors are `RAG_DISABLED`, `RAG_CONFLICT`,
+`RAG_NOT_FOUND`, `RAG_INVALID_REQUEST`, validation `400`, and the existing
+review errors listed above. Provider/index failures are represented by the
+ returned safe error code/message.

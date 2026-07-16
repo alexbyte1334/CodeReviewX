@@ -20,6 +20,7 @@ class ReviewIssueEvidenceStoreTest {
     @Test
     void persistsOriginalChunkIdentityAndHashWithBoundedExcerpt() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
         RagProperties properties = new RagProperties(); properties.setEnabled(true);
         ReviewIssueEvidenceStore store = new ReviewIssueEvidenceStore(jdbc, properties);
         ReviewIssueEntity issue = new ReviewIssueEntity(); issue.setId(44L);

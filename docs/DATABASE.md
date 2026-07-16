@@ -171,3 +171,21 @@ and head SHA.
 H2 is intentionally used for local demonstration. A production deployment should
 move to PostgreSQL or MySQL, add managed secret storage, and revisit indexing,
 retention, and migration policies.
+# Production RAG tables and retention
+
+PostgreSQL/pgvector is the only RAG retrieval store. V4 creates the repository,
+job, document, chunk, retrieval-trace and issue-evidence tables. V5 adds
+`rag_index_snapshot` and backfills only a provable active READY snapshot. V6
+adds `snapshot_id` to documents/chunks, snapshot-scoped foreign keys and
+uniqueness. V7 adds job heartbeat/lease fields and an active-job uniqueness
+index. Snapshot identity includes repository, commit, model, dimensions and
+index version, preventing cross-commit retrieval. Chunks use `vector(1024)`
+HNSW plus generated `TSVECTOR` GIN lexical search; evidence excerpts cap at
+2,000 characters and are deleted with their issue.
+
+Model/dimension upgrades create a new immutable snapshot; V1 remains 1024 and
+there is no down migration. Retention runs on `RAG_RETENTION_CLEANUP_CRON`
+(default `0 15 2 * * *`) and hardcodes READY snapshots newer than 30 days plus
+the latest five per repository. It does not delete retrieval traces. Back up
+PostgreSQL before cleanup and never delete the active snapshot before a
+replacement is READY.

@@ -17,6 +17,9 @@ spring:
 codereviewx:
   rag:
     enabled: ${RAG_ENABLED:false}
+    review-percentage: ${RAG_REVIEW_PERCENTAGE:0}
+    fallback-enabled: ${RAG_FALLBACK_ENABLED:true}
+    require-evidence: ${RAG_REQUIRE_EVIDENCE:true}
     embedding-base-url: ${RAG_EMBEDDING_BASE_URL:}
     embedding-api-key: ${RAG_EMBEDDING_API_KEY:}
     embedding-model: ${RAG_EMBEDDING_MODEL:BAAI/bge-m3}
@@ -35,3 +38,5 @@ codereviewx:
     max-scanned-entries: ${RAG_MAX_SCANNED_ENTRIES:50000}
     max-scanned-bytes: ${RAG_MAX_SCANNED_BYTES:524288000}
     shutdown-grace-seconds: ${RAG_SHUTDOWN_GRACE_SECONDS:30}
+    retention:
+      cleanup-cron: ${RAG_RETENTION_CLEANUP_CRON:0 15 2 * * *}

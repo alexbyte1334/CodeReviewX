@@ -5,11 +5,13 @@
 [![Java 17](https://img.shields.io/badge/Java-17-blue.svg)](backend-java)
 [![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](frontend)
 
-面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。
+面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。Production profile 提供 PostgreSQL/pgvector hybrid RAG；默认仍以 legacy bounded context 运行。
 
 > 当前版本为可本地运行的 MVP：支持手动 diff、GitHub PR metadata/diff 自动拉取、changed-file repository context index、小米 MiMo 双 AI agent、Semgrep-style/dependency finding 合并、本地 comment preview 与人工确认后发布 GitHub PR 评论。
 
 ![CodeReviewX review workspace](docs/assets/codereviewx-review-workspace.jpg)
+
+生产 RAG 的索引、检索、rerank、证据门禁、灰度与回滚见 [`docs/RAG_OPERATIONS.md`](docs/RAG_OPERATIONS.md)；离线质量门禁见 [`docs/RAG_EVALUATION.md`](docs/RAG_EVALUATION.md)。
 
 ---
 
@@ -35,8 +37,10 @@
 |---|---|
 | 后端 | Spring Boot 3、Java 17、Maven、Spring Data JPA |
 | 前端 | React 18、TypeScript、Vite |
-| 数据库 | H2（本地文件模式，重启后数据保留） |
+| 数据库 | H2（本地 demo）；PostgreSQL + pgvector（production RAG profile） |
 | AI Provider | 小米 MiMo OpenAI 兼容 API |
+
+启用 production RAG 还需要 PostgreSQL/pgvector 与 embedding/rerank 供应商；完整环境变量、限制和降级语义见运行手册。
 
 ---
 

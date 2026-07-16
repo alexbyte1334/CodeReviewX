@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.*;
 @TestPropertySource(properties = {
         "codereviewx.github.token=test-token",
         "codereviewx.rag.enabled=true",
+        "codereviewx.rag.review-percentage=100",
         "codereviewx.rag.embedding-base-url=http://127.0.0.1/embedding",
         "codereviewx.rag.embedding-api-key=test-embedding-key",
         "codereviewx.rag.rerank-base-url=http://127.0.0.1/rerank",

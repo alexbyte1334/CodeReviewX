@@ -20,10 +20,10 @@ review workflows. It demonstrates a complete engineering loop:
    back to GitHub.
 8. Preserve safe trace, snapshot, and provider summaries for observability.
 
-The project is not positioned as a production SaaS. It intentionally omits
-multi-user authentication, GitHub App installation, queue workers, full
-repository clone/indexing, semantic/vector RAG, and production database
-infrastructure.
+The project is not positioned as a production SaaS: multi-user authentication
+and GitHub App installation remain out of scope. The production profile now
+provides bounded repository clone/indexing and semantic/vector RAG on
+PostgreSQL/pgvector; the default H2 demo profile intentionally does not.
 
 ## 2. Current Runtime Shape
 
@@ -36,8 +36,11 @@ React frontend
 ```
 
 There is no active Python `ai-service` process in the current runtime.
-`ai-service/` remains only as a historical placeholder and possible future
-extraction point for heavier repository analysis or provider workers.
+`ai-service/` remains only as a historical placeholder; the active runtime is
+fully implemented in `backend-java`. The production profile includes PostgreSQL/pgvector indexing, hybrid retrieval,
+rerank, evidence persistence, rollout switches, and an explicit legacy fallback;
+it is not claimed as production-ready until the Docker smoke and CI gates below
+are observed.
 
 ## 3. Implemented Capabilities
 
@@ -158,8 +161,30 @@ Evals and static analysis:
 ```bash
 node scripts/run-evals.mjs
 node scripts/static-scan.mjs
+node scripts/secret-scan.mjs
+node scripts/dependency-scan.mjs
+node scripts/run-rag-evals.mjs
 git diff --check
 ```
+
+## 6. Task 12 delivery evidence (2026-07-16)
+
+- Current base commit before this documentation commit: `c4a058b48e896b1b135d70a3368320d6295211db`.
+- `node scripts/run-rag-evals.mjs`: passed offline deterministic mode. Recall@10
+  1.00, MRR@10 0.7222, nDCG@10 0.7586, forbidden-hit 0, cross-commit
+  contamination 0, expected-finding pass 1.00, p95 latency 5.48 ms.
+- `node scripts/run-evals.mjs`: passed (schema pass 100%, expected finding hit
+  100%). `git diff --check`: passed.
+- Focused rollout/evidence-gate tests passed. The full Maven suite was run but is
+  not green in this environment: Docker/Testcontainers is unavailable, local
+  socket binding is denied for HTTP client tests, and unrelated secure-stream
+  checkout tests fail. These are recorded blockers, not claimed passes.
+- `docker compose build` and `bash scripts/rag-smoke.sh`: not run/passed because
+  Docker is unavailable. No smoke `jobId`/`runId` exists. CI run: not run/unknown.
+
+The project handoff is `DONE_WITH_CONCERNS`: operations/evaluation docs and
+rollout switches are delivered, but Definition of Done remains open until a
+Docker-enabled environment runs PostgreSQL migration, compose smoke, and CI.
 
 ## 6. Recommended Interview Narrative
 
@@ -170,18 +195,18 @@ Use this project to explain:
 - why raw model output should not directly mutate application state;
 - how trace and snapshot tables make the review workflow observable without
   leaking secrets;
-- why the project uses a bounded changed-file context index now, and what is
-  still required for full semantic repository understanding;
+- how the production profile uses PostgreSQL/pgvector full-repository hybrid
+  retrieval while the H2 profile remains a local demo;
 - how human confirmation reduces risk before external side effects;
 - how bounded GitHub diff loading controls cost, latency, and privacy.
 
 ## 7. Next Engineering Steps
 
-### Full Repository Context Worker
+### Production Integration Gate
 
-Extend the current changed-file context index into a separate worker that can
-clone or checkout repositories safely, index related files/tests/config, and
-return sanitized bounded context to the review pipeline.
+Run the PostgreSQL/pgvector migration, Compose smoke, and CI in a Docker-enabled
+environment; record the real job/run IDs and keep the release at 0% until all
+quality, security, evidence, and latency gates pass.
 
 ### Live Eval Capture
 
@@ -194,8 +219,8 @@ Replace the current lightweight heuristics with a controlled external Semgrep
 and dependency-analysis worker. Preserve the existing source provenance and
 safe-summary rules.
 
-### Production Readiness
+### Operational Hardening
 
-For a production version, add OAuth or GitHub App installation, async queueing,
-retry/cancellation, PostgreSQL or MySQL, managed secret storage, and audit
-logging.
+Add managed secret storage, authentication/GitHub App installation, queue
+retry/cancellation, and audited retention/deletion workflows without changing
+the existing evidence and publish invariants.

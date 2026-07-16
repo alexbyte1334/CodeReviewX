@@ -23,6 +23,9 @@ class RagPropertiesTest {
         properties.setRerankBaseUrl("https://rerank.private.example");
 
         assertThat(properties.isEnabled()).isFalse();
+        assertThat(properties.getReviewPercentage()).isZero();
+        assertThat(properties.isFallbackEnabled()).isTrue();
+        assertThat(properties.isRequireEvidence()).isTrue();
         assertThat(properties.getEmbeddingModel()).isEqualTo("BAAI/bge-m3");
         assertThat(properties.getEmbeddingDimensions()).isEqualTo(1024);
         assertThat(properties.getEmbeddingBatchSize()).isEqualTo(32);
@@ -111,6 +114,23 @@ class RagPropertiesTest {
         assertStartupFailure("codereviewx.rag.max-scanned-entries=0", "limits");
         assertStartupFailure("codereviewx.rag.max-scanned-bytes=0", "limits");
         assertStartupFailure("codereviewx.rag.shutdown-grace-seconds=0", "limits");
+        assertStartupFailure("codereviewx.rag.review-percentage=-1", "percentage");
+        assertStartupFailure("codereviewx.rag.review-percentage=101", "percentage");
+    }
+
+    @Test
+    void reviewSelectionUsesStableTaskIdModuloBucket() {
+        RagProperties properties = new RagProperties();
+        properties.setEnabled(true);
+        properties.setReviewPercentage(10);
+
+        assertThat(properties.shouldUseRag(0L)).isTrue();
+        assertThat(properties.shouldUseRag(9L)).isTrue();
+        assertThat(properties.shouldUseRag(10L)).isFalse();
+        assertThat(properties.shouldUseRag(109L)).isTrue();
+        assertThat(properties.shouldUseRag(-1L)).isFalse();
+        properties.setReviewPercentage(100);
+        assertThat(properties.shouldUseRag(Long.MIN_VALUE)).isTrue();
     }
 
     private ApplicationContextRunner completeEnabledContext() {

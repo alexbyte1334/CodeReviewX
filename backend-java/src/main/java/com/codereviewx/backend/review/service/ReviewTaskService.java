@@ -194,7 +194,7 @@ public class ReviewTaskService {
                 run.getId(), task, result.getMetadata(), diffResult.getDiff(), diffFinishedAt);
 
         RagReviewContextFacade.PreparedContext prepared =
-                ragReviewContextFacade.prepare(result.getMetadata(), diffResult.getDiff(), run.getId());
+                ragReviewContextFacade.prepare(result.getMetadata(), diffResult.getDiff(), task.getId(), run.getId());
         RepositoryContextIndexResult repositoryContext = prepared.legacyContext();
 
         LocalDateTime staticStartedAt = LocalDateTime.now();

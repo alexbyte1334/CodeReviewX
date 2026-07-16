@@ -286,3 +286,20 @@ Core tables:
   still local/CI tooling, not a long-running analysis worker.
 - H2 is for local development; production would need PostgreSQL or MySQL plus
   managed secret storage.
+# Production RAG boundary (V4)
+
+The production profile is a staged pipeline, not a single “RAG call”:
+
+`indexing (Git checkout -> files -> chunks -> embedding -> snapshot)` -> `hybrid retrieval (lexical + pgvector)` -> `RRF + rerank` -> `context/evidence assembly` -> `MiMo generation` -> `evidence validation` -> `comment preview` -> `confirmed GitHub publish`.
+
+Indexing writes only the repository/commit snapshot. Retrieval selects candidates;
+rerank orders them; generation proposes findings and never authorizes publication.
+Evidence validation checks labels, commit/path/line/hash and persists excerpts;
+publish validates confirmation and target metadata and calls GitHub separately.
+On model/index failure the bounded changed-file context is the legacy fallback
+when `RAG_FALLBACK_ENABLED=true`; otherwise the review fails closed.
+
+Rollout is evaluated per persisted `reviewTaskId`: `floorMod(reviewTaskId,100) <
+RAG_REVIEW_PERCENTAGE`. The supported observation gates are 10% (>=20 reviews,
+no P0/P1), 50% (>=50 reviews, no P0/P1), then 100%. `RAG_ENABLED=false` or
+percentage 0 selects the legacy path.

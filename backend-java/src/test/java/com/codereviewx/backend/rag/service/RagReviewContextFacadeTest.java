@@ -16,6 +16,21 @@ import static org.mockito.Mockito.*;
 
 class RagReviewContextFacadeTest {
     @Test
+    void rolloutBucketBypassesRagAndFallbackCanFailClosed() {
+        Fixture bypassed = new Fixture();
+        bypassed.properties.setReviewPercentage(10);
+        when(bypassed.legacy.index(any(), any())).thenReturn(RepositoryContextIndexResult.empty());
+        assertThat(bypassed.facade.prepare(metadata(), diff(), 10L, 9L).legacyFallback()).isTrue();
+        verify(bypassed.index, never()).ensureIndexed(any());
+
+        Fixture failClosed = new Fixture();
+        failClosed.properties.setReviewPercentage(100);
+        failClosed.properties.setFallbackEnabled(false);
+        assertThatThrownBy(() -> failClosed.facade.prepare(metadata(), diff(), 9L, 9L))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("fallback is disabled");
+        verify(failClosed.legacy, never()).index(any(), any());
+    }
+    @Test
     void readyRecordsExactRagTraceAndPropagatesInternalFailure() {
         Fixture fixture = new Fixture();
         when(fixture.index.ensureIndexed(any())).thenReturn(new RagIndexResolution(1, 2L, "a".repeat(40), RagIndexResolution.Status.READY));
@@ -100,11 +115,12 @@ class RagReviewContextFacadeTest {
         });
         final RepositoryContextIndexService legacy = mock(RepositoryContextIndexService.class);
         final ReviewTraceRecorder traces = mock(ReviewTraceRecorder.class);
+        final RagProperties properties = new RagProperties();
         final RagReviewContextFacade facade;
         Fixture() { this(new MutableClock()); }
         Fixture(MutableClock clock) { this(clock, millis -> clock.advance(millis)); }
         @SuppressWarnings("unchecked") Fixture(MutableClock clock, RagReviewContextFacade.Sleeper sleeper) {
-            RagProperties properties = new RagProperties(); properties.setEnabled(true);
+            properties.setEnabled(true); properties.setReviewPercentage(100);
             ObjectProvider<RagIndexService> indexes = mock(ObjectProvider.class);
             ObjectProvider<HybridRagRetrievalService> retrievals = mock(ObjectProvider.class);
             ObjectProvider<RagContextAssembler> assemblers = mock(ObjectProvider.class);

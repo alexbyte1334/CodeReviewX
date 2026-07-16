@@ -17,6 +17,8 @@ public interface ReviewToolTraceRepository extends JpaRepository<ReviewToolTrace
 
     int countByReviewRunIdAndStatus(Long reviewRunId, ToolTraceStatus status);
 
+    List<ReviewToolTraceEntity> findByReviewRunIdAndToolName(Long reviewRunId, String toolName);
+
     @Query("""
             select trace.reviewRunId as reviewRunId, count(trace) as itemCount
             from ReviewToolTraceEntity trace
