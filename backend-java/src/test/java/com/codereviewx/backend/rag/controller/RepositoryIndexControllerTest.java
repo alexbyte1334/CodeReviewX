@@ -121,6 +121,18 @@ class RepositoryIndexControllerTest {
     }
 
     @Test
+    void failedStatusByRefUsesGenericSafeErrorMessage() throws Exception {
+        when(repositories.find("github", "acme", "demo")).thenReturn(Optional.of(repository()));
+        RagIndexJob failed = new RagIndexJob(11, 7, "release", null, RagIndexJob.Status.FAILED, 1,
+                null, null, null, "CHECKOUT_FAILED", "https://secret/token internal stack", "text-embedding", 1024, 1);
+        when(jobs.findLatest(7L, "release")).thenReturn(Optional.of(failed));
+        mvc.perform(get("/api/repositories/acme/demo/index-status").param("ref", "release"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("FAILED"))
+                .andExpect(jsonPath("$.data.errorCode").value("CHECKOUT_FAILED"))
+                .andExpect(jsonPath("$.data.errorMessage").value("checkout failed"));
+    }
+
+    @Test
     void statusRequiresCommitShaOrRefAndRejectsUnsafeRef() throws Exception {
         mvc.perform(get("/api/repositories/acme/demo/index-status")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/repositories/acme/demo/index-status").param("ref", "bad/ref")).andExpect(status().isBadRequest());

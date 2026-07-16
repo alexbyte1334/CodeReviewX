@@ -172,7 +172,7 @@ export default function App() {
     };
     if (repositoryIndexStatus?.status === 'QUEUED' || repositoryIndexStatus?.status === 'INDEXING' || current.repositoryIndex?.status === 'QUEUED' || current.repositoryIndex?.status === 'INDEXING') poll();
     return () => { stopped = true; if (timer) clearTimeout(timer); indexGeneration.current++; };
-  }, [selectedTask?.id, selectedTask?.repoUrl, selectedTask?.repositoryIndex?.status, selectedTask?.repositoryIndex?.commitSha, repositoryIndexStatus?.status, repositoryIndexRef]);
+  }, [selectedTask?.id, selectedTask?.repoUrl, selectedTask?.repositoryIndex?.status, selectedTask?.repositoryIndex?.commitSha, repositoryIndexRef]);
 
   async function handleRequestRepositoryIndex() {
     if (!selectedTask) return;
@@ -202,13 +202,15 @@ export default function App() {
   }
 
   async function handleIssueEvidence(issueId: string) {
-    if (!selectedTask || evidenceByIssue[issueId] || evidenceInFlight.current.has(issueId)) return;
+    if (!selectedTask) return;
+    const evidenceKey = `${selectedTask.id}:${issueId}`;
+    if (evidenceByIssue[issueId] || evidenceInFlight.current.has(evidenceKey)) return;
     const generation = taskGeneration.current;
-    evidenceInFlight.current.add(issueId);
+    evidenceInFlight.current.add(evidenceKey);
     setEvidenceLoadingIssue(issueId); setEvidenceLoadingByIssue((p) => ({ ...p, [issueId]: true })); setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: null }));
     try { const res = await getRetrievalEvidence(selectedTask.id, issueId); if (generation !== taskGeneration.current) return; if (res.success && res.data) setEvidenceByIssue((prev) => ({ ...prev, [issueId]: res.data! })); else setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: res.message || 'Evidence unavailable.' })); }
     catch { if (generation === taskGeneration.current) setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: 'Evidence unavailable.' })); }
-    finally { evidenceInFlight.current.delete(issueId); if (generation === taskGeneration.current) { setEvidenceLoadingIssue(null); setEvidenceLoadingByIssue((p) => ({ ...p, [issueId]: false })); } }
+    finally { evidenceInFlight.current.delete(evidenceKey); if (generation === taskGeneration.current) { setEvidenceLoadingIssue(null); setEvidenceLoadingByIssue((p) => ({ ...p, [issueId]: false })); } }
   }
 
   async function loadToolTrace(runId: number) {

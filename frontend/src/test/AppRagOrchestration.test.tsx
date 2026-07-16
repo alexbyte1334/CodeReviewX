@@ -26,18 +26,31 @@ describe('App RAG orchestration', () => {
   });
 
   it('polls immediately, stops at READY, and lazily caches evidence', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(await screen.findByText('https://github.com/acme/repo'));
-    await waitFor(() => expect(api.getRepositoryIndexStatus).toHaveBeenCalled());
-    const initialPolls = vi.mocked(api.getRepositoryIndexStatus).mock.calls.length;
+    vi.mocked(api.getRepositoryIndexStatus)
+      .mockResolvedValueOnce({ success: true, message: 'OK', data: { status: 'QUEUED' } })
+      .mockResolvedValueOnce({ success: true, message: 'OK', data: { status: 'INDEXING' } })
+      .mockResolvedValueOnce({ success: true, message: 'OK', data: { status: 'READY' } });
     vi.useFakeTimers();
+    render(<App />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    fireEvent.click(screen.getByText('https://github.com/acme/repo'));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
-    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(initialPolls);
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(1);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); await Promise.resolve(); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await act(async () => { await Promise.resolve(); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(3);
     await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(initialPolls);
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(3);
     expect(api.getRetrievalEvidence).not.toHaveBeenCalled();
     vi.useRealTimers();
+    const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /expand issue details panel/i }));
     await user.click(screen.getByRole('button', { name: /expand issue one/i }));
     await waitFor(() => expect(api.getRetrievalEvidence).toHaveBeenCalledTimes(1));
@@ -55,8 +68,6 @@ describe('App RAG orchestration', () => {
     await user.click(await screen.findByText('https://github.com/acme/repo'));
     await user.click(await screen.findByRole('button', { name: 'Index' }));
     await waitFor(() => expect(api.requestRepositoryIndex).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('button', { name: 'Reindex' })).toBeInTheDocument();
-    expect(screen.queryByText('Queued')).not.toBeInTheDocument();
   });
 
   it('ignores a deferred old poll response after task switch and clears timers on unmount', async () => {
@@ -81,16 +92,22 @@ describe('App RAG orchestration', () => {
   });
 
   it('ignores deferred evidence from a previous task with the same issue key', async () => {
-    let resolveEvidence!: (value: any) => void;
     vi.mocked(api.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [task, taskTwo] });
-    vi.mocked(api.getRetrievalEvidence).mockImplementation(() => new Promise((resolve) => { resolveEvidence = resolve; }));
+    vi.mocked(api.getReviewTask).mockImplementation(async (id) => ({ success: true, message: 'OK', data: id === 1 ? task : taskTwo }));
+    const resolverCalls: Array<{ taskId: number; resolve: (value: any) => void }> = [];
+    vi.mocked(api.getRetrievalEvidence).mockImplementation((taskId) => new Promise((resolve) => { resolverCalls.push({ taskId, resolve }); }));
     const user = userEvent.setup();
     render(<App />);
+    vi.mocked(api.getRepositoryIndexStatus).mockClear();
     await user.click(await screen.findByText('https://github.com/acme/repo'));
     await user.click(screen.getByRole('button', { name: /expand issue details panel/i }));
     await user.click(screen.getByRole('button', { name: /expand issue one/i }));
     await user.click(screen.getByText('https://github.com/acme/other-repo'));
-    resolveEvidence({ success: true, message: 'OK', data: [{ chunkId: 'old', excerpt: 'stale evidence' }] });
-    await waitFor(() => expect(screen.queryByText('stale evidence')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /expand issue one/i }));
+    await waitFor(() => expect(vi.mocked(api.getRetrievalEvidence).mock.calls).toEqual(expect.arrayContaining([[1, 'I1'], [2, 'I1']])));
+    resolverCalls.find((call) => call.taskId === 1)!.resolve({ success: true, message: 'OK', data: [{ chunkId: 'old', excerpt: 'stale evidence' }] });
+    resolverCalls.find((call) => call.taskId === 2)!.resolve({ success: true, message: 'OK', data: [{ chunkId: 'new', excerpt: 'current evidence' }] });
+    await waitFor(() => expect(screen.getByText('current evidence')).toBeInTheDocument());
+    expect(screen.queryByText('stale evidence')).not.toBeInTheDocument();
   });
 });

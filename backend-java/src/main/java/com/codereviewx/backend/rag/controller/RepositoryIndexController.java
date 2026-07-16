@@ -47,13 +47,17 @@ public class RepositoryIndexController {
         if (commitSha == null || commitSha.isBlank()) {
             RagIndexJob value = jobs.findLatest(record.id(), ref).orElse(null);
             if (value == null) return ApiResponse.success(new RepositoryIndexStatusResponse("NOT_INDEXED", null, null, null, null));
-            return ApiResponse.success(new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), value.indexedChunkCount(), value.errorCode(), value.errorMessage()));
+            return ApiResponse.success(statusResponse(value));
         }
         RagIndexJob value = jobs.findReadySnapshot(record.id(), commitSha, record.embeddingModel(), record.embeddingDimensions(), record.indexVersion())
                 .orElseGet(() -> jobs.findLatest(record.id(), commitSha).orElse(null));
         if (value == null) return ApiResponse.success(new RepositoryIndexStatusResponse("NOT_INDEXED", null, null, null, null));
-        return ApiResponse.success(new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), value.indexedChunkCount(),
-                value.errorCode(), safeErrorMessage(value.errorCode())));
+        return ApiResponse.success(statusResponse(value));
+    }
+
+    private static RepositoryIndexStatusResponse statusResponse(RagIndexJob value) {
+        return new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), value.indexedChunkCount(),
+                value.errorCode(), safeErrorMessage(value.errorCode()));
     }
 
     private static String safeErrorMessage(String code) {
