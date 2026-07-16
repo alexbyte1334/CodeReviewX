@@ -173,6 +173,15 @@ async function expandAllIssueCards(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('ReviewTaskDetail', () => {
+  it('isolates evidence errors by issue', async () => {
+    const user = userEvent.setup();
+    render(<ReviewTaskDetail {...baseProps} task={mockTask} evidenceByIssue={{ 'ISSUE-2': [{ citationLabel: 'E1', path: 'safe/file.ts', startLine: 2, endLine: 3, excerpt: 'safe excerpt', rank: 1, score: 0.9 }] }} evidenceErrorByIssue={{ 'ISSUE-1': 'Evidence failed' }} />);
+    await expandIssuesPanel(user);
+    await user.click(screen.getByRole('button', { name: /expand Potential missing/i }));
+    await user.click(screen.getByRole('button', { name: /expand Service method/i }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Evidence failed');
+    expect(screen.getByText('safe excerpt')).toBeInTheDocument();
+  });
   it('requests repository indexing and evidence when activated', async () => {
     const user = userEvent.setup();
     const onIndex = vi.fn();

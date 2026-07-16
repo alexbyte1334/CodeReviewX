@@ -33,6 +33,8 @@ interface ReviewTaskDetailProps {
   evidenceByIssue?: Record<string, RetrievalEvidence[]>;
   evidenceLoadingIssue?: string | null;
   evidenceError?: string | null;
+  evidenceLoadingByIssue?: Record<string, boolean>;
+  evidenceErrorByIssue?: Record<string, string | null>;
   onIssueEvidenceRequest?: (issueId: string) => void;
 }
 
@@ -431,7 +433,7 @@ export function ReviewTaskDetail({
   toolTraceError = null,
   onCommentPreviewSelectionChange,
   onPublishSelectedCommentPreviews,
-  repositoryIndexStatus, onRequestRepositoryIndex, onRequestRepositoryReindex, evidenceByIssue, evidenceLoadingIssue, evidenceError, onIssueEvidenceRequest,
+  repositoryIndexStatus, onRequestRepositoryIndex, onRequestRepositoryReindex, evidenceByIssue, evidenceLoadingIssue, evidenceError, evidenceLoadingByIssue, evidenceErrorByIssue, onIssueEvidenceRequest,
 }: ReviewTaskDetailProps) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
@@ -512,7 +514,7 @@ export function ReviewTaskDetail({
             ) : (
               <div className="issue-card-list">
                 {task.issues.map((issue) => (
-                  <IssueCard key={issue.id} issue={issue} evidence={evidenceByIssue?.[issue.id]} evidenceLoading={evidenceLoadingIssue === issue.id} evidenceError={evidenceError} onEvidenceRequest={() => onIssueEvidenceRequest?.(issue.id)} />
+                  <IssueCard key={issue.id} issue={issue} evidence={evidenceByIssue?.[issue.id]} evidenceLoading={evidenceLoadingByIssue?.[issue.id] ?? evidenceLoadingIssue === issue.id} evidenceError={evidenceErrorByIssue?.[issue.id] ?? evidenceError} onEvidenceRequest={() => onIssueEvidenceRequest?.(issue.id)} />
                 ))}
               </div>
             )}

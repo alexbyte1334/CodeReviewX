@@ -50,10 +50,19 @@ public class RepositoryIndexController {
             return ApiResponse.success(new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), value.indexedChunkCount(), value.errorCode(), value.errorMessage()));
         }
         RagIndexJob value = jobs.findReadySnapshot(record.id(), commitSha, record.embeddingModel(), record.embeddingDimensions(), record.indexVersion())
-                .orElseGet(() -> jobs.findLatest(record.id(), commitSha).orElseGet(() -> jobs.findLatest(record.id(), record.defaultBranch()).orElse(null)));
+                .orElseGet(() -> jobs.findLatest(record.id(), commitSha).orElse(null));
         if (value == null) return ApiResponse.success(new RepositoryIndexStatusResponse("NOT_INDEXED", null, null, null, null));
         return ApiResponse.success(new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), value.indexedChunkCount(),
-                value.errorCode(), value.errorMessage()));
+                value.errorCode(), safeErrorMessage(value.errorCode())));
+    }
+
+    private static String safeErrorMessage(String code) {
+        if (code == null) return null;
+        return switch (code) {
+            case "SHALLOW_CLONE_UNAVAILABLE", "REPOSITORY_NOT_FOUND", "EMBEDDING_UNAVAILABLE", "INDEX_LIMIT_EXCEEDED",
+                    "CHECKOUT_FAILED", "CHUNKING_FAILED" -> code.replace('_', ' ').toLowerCase();
+            default -> "Indexing failed";
+        };
     }
     @PostMapping("/{owner}/{repo}/reindex") @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<RepositoryIndexResponse> reindex(

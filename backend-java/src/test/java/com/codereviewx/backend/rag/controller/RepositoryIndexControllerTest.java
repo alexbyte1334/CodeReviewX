@@ -101,15 +101,14 @@ class RepositoryIndexControllerTest {
     }
 
     @Test
-    void requestedShaMissFallsBackToLatestQueuedDefaultBranchJob() throws Exception {
+    void requestedShaMissDoesNotUseDefaultBranchJob() throws Exception {
         when(repositories.find("github", "acme", "demo")).thenReturn(Optional.of(repository()));
         when(jobs.findReadySnapshot(7L, SHA, "text-embedding", 1024, 1)).thenReturn(Optional.empty());
         when(jobs.findLatest(7L, SHA)).thenReturn(Optional.empty());
-        when(jobs.findLatest(7L, "main")).thenReturn(Optional.of(job(RagIndexJob.Status.QUEUED, null)));
 
         mvc.perform(get("/api/repositories/acme/demo/index-status").param("commitSha", SHA))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andExpect(jsonPath("$.data.status").value("NOT_INDEXED"))
                 .andExpect(jsonPath("$.data.commitSha").isEmpty());
     }
 

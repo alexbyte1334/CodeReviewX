@@ -52,7 +52,11 @@ export default function App() {
   const [evidenceByIssue, setEvidenceByIssue] = useState<Record<string, RetrievalEvidence[]>>({});
   const [evidenceLoadingIssue, setEvidenceLoadingIssue] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [evidenceLoadingByIssue, setEvidenceLoadingByIssue] = useState<Record<string, boolean>>({});
+  const [evidenceErrorByIssue, setEvidenceErrorByIssue] = useState<Record<string, string | null>>({});
   const indexGeneration = useRef(0);
+  const taskGeneration = useRef(0);
+  const evidenceInFlight = useRef(new Set<string>());
   const workspaceRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -115,6 +119,7 @@ export default function App() {
   }
 
   async function handleSelectTask(task: ReviewTask) {
+    taskGeneration.current += 1;
     setActiveNav('history');
     expandPanel('findings');
     setDetailLoading(true);
@@ -125,6 +130,7 @@ export default function App() {
     setToolTraceItems([]);
     setSelectedTask(null);
     setEvidenceByIssue({}); setEvidenceError(null); setRepositoryIndexStatus(task.repositoryIndex ?? null);
+    setEvidenceLoadingByIssue({}); setEvidenceErrorByIssue({});
     try {
       const res = await getReviewTask(task.id);
       if (res.success && res.data) {
@@ -170,28 +176,39 @@ export default function App() {
 
   async function handleRequestRepositoryIndex() {
     if (!selectedTask) return;
+    const generation = taskGeneration.current;
     const match = selectedTask.repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#]+)(?:\.git)?/i);
     if (!match) { setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Unsupported repository URL' }); return; }
     setRepositoryIndexStatus({ status: 'QUEUED' });
-    const res = await requestRepositoryIndex(selectedTask.repoUrl, selectedTask.repositoryIndex?.commitSha ?? 'HEAD');
-    if (res.success && res.data) { setRepositoryIndexRef(res.data.requestedRef ?? 'HEAD'); setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha }); }
-    else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message });
+    try {
+      const res = await requestRepositoryIndex(selectedTask.repoUrl, selectedTask.repositoryIndex?.commitSha ?? 'HEAD');
+      if (generation !== taskGeneration.current) return;
+      if (res.success && res.data) { setRepositoryIndexRef(res.data.requestedRef ?? 'HEAD'); setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha }); }
+      else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message || 'Index request failed.' });
+    } catch { if (generation === taskGeneration.current) setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Index request failed.' }); }
   }
   async function handleRequestRepositoryReindex() {
     if (!selectedTask) return;
+    const generation = taskGeneration.current;
     const match = selectedTask.repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#]+)(?:\.git)?/i);
     if (!match) return;
     setRepositoryIndexStatus({ status: 'QUEUED' });
-    const res = await requestRepositoryReindex(match[1], match[2], selectedTask.repositoryIndex?.commitSha ?? undefined);
-    if (res.success && res.data) setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha });
-    else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message });
+    try {
+      const res = await requestRepositoryReindex(match[1], match[2], selectedTask.repositoryIndex?.commitSha ?? undefined);
+      if (generation !== taskGeneration.current) return;
+      if (res.success && res.data) { setRepositoryIndexRef(res.data.requestedRef ?? repositoryIndexRef); setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha }); }
+      else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message || 'Reindex request failed.' });
+    } catch { if (generation === taskGeneration.current) setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Reindex request failed.' }); }
   }
 
   async function handleIssueEvidence(issueId: string) {
-    if (!selectedTask || evidenceByIssue[issueId]) return;
-    setEvidenceLoadingIssue(issueId); setEvidenceError(null);
-    try { const res = await getRetrievalEvidence(selectedTask.id, issueId); if (res.success && res.data) setEvidenceByIssue((prev) => ({ ...prev, [issueId]: res.data! })); else setEvidenceError(res.message || 'Evidence unavailable.'); }
-    catch { setEvidenceError('Evidence unavailable.'); } finally { setEvidenceLoadingIssue(null); }
+    if (!selectedTask || evidenceByIssue[issueId] || evidenceInFlight.current.has(issueId)) return;
+    const generation = taskGeneration.current;
+    evidenceInFlight.current.add(issueId);
+    setEvidenceLoadingIssue(issueId); setEvidenceLoadingByIssue((p) => ({ ...p, [issueId]: true })); setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: null }));
+    try { const res = await getRetrievalEvidence(selectedTask.id, issueId); if (generation !== taskGeneration.current) return; if (res.success && res.data) setEvidenceByIssue((prev) => ({ ...prev, [issueId]: res.data! })); else setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: res.message || 'Evidence unavailable.' })); }
+    catch { if (generation === taskGeneration.current) setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: 'Evidence unavailable.' })); }
+    finally { evidenceInFlight.current.delete(issueId); if (generation === taskGeneration.current) { setEvidenceLoadingIssue(null); setEvidenceLoadingByIssue((p) => ({ ...p, [issueId]: false })); } }
   }
 
   async function loadToolTrace(runId: number) {
@@ -464,6 +481,8 @@ export default function App() {
                   evidenceByIssue={evidenceByIssue}
                   evidenceLoadingIssue={evidenceLoadingIssue}
                   evidenceError={evidenceError}
+                  evidenceLoadingByIssue={evidenceLoadingByIssue}
+                  evidenceErrorByIssue={evidenceErrorByIssue}
                   onIssueEvidenceRequest={handleIssueEvidence}
                 />
               </section>

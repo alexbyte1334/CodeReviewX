@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(IllegalArgumentException.class) @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleIllegalArgument(IllegalArgumentException ex) { return ApiResponse.failure("Invalid request"); }
     @ExceptionHandler(RagNotFoundException.class) @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleRagNotFound(RagNotFoundException ex) { return ApiResponse.failure("Not found"); }
     @ExceptionHandler(RagConflictException.class) @ResponseStatus(HttpStatus.CONFLICT)

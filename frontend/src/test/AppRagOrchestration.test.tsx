@@ -1,0 +1,96 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import App from '../App';
+import * as api from '../api/reviewTaskApi';
+import type { ReviewTask } from '../types/reviewTask';
+
+vi.mock('../api/reviewTaskApi', () => ({
+  getHealth: vi.fn(), listReviewTasks: vi.fn(), getReviewTask: vi.fn(), getCommentPreviews: vi.fn(),
+  getToolTrace: vi.fn(), getRepositoryIndexStatus: vi.fn(), requestRepositoryIndex: vi.fn(),
+  requestRepositoryReindex: vi.fn(), getRetrievalEvidence: vi.fn(), updateCommentPreviewSelection: vi.fn(),
+  publishSelectedCommentPreviews: vi.fn(),
+}));
+
+const task: ReviewTask = { id: 1, repoUrl: 'https://github.com/acme/repo', prNumber: 1, status: 'SUCCESS', summary: 'ok', riskLevel: 'LOW', errorMessage: null, createdAt: '2026-01-01', updatedAt: '2026-01-01', latestRunId: null, repositoryIndex: { status: 'QUEUED', commitSha: 'a'.repeat(40) }, issues: [{ id: 'I1', severity: 'LOW', category: 'TEST', source: 'MIMO', status: 'OPEN', filePath: 'src/a.ts', startLine: 1, endLine: 1, title: 'Issue one', description: 'd', recommendation: 'r' }] };
+const taskTwo: ReviewTask = { ...task, id: 2, repoUrl: 'https://github.com/acme/other-repo', repositoryIndex: { status: 'QUEUED', commitSha: 'b'.repeat(40) } };
+
+describe('App RAG orchestration', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.mocked(api.getHealth).mockResolvedValue({ success: true, message: 'OK', data: { status: 'UP', service: 'x' } });
+    vi.mocked(api.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [task] });
+    vi.mocked(api.getReviewTask).mockResolvedValue({ success: true, message: 'OK', data: task });
+    vi.mocked(api.getRepositoryIndexStatus).mockResolvedValue({ success: true, message: 'OK', data: { status: 'READY' } });
+    vi.mocked(api.getRetrievalEvidence).mockResolvedValue({ success: true, message: 'OK', data: [] });
+  });
+
+  it('polls immediately, stops at READY, and lazily caches evidence', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText('https://github.com/acme/repo'));
+    await waitFor(() => expect(api.getRepositoryIndexStatus).toHaveBeenCalled());
+    const initialPolls = vi.mocked(api.getRepositoryIndexStatus).mock.calls.length;
+    vi.useFakeTimers();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(initialPolls);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(api.getRepositoryIndexStatus).toHaveBeenCalledTimes(initialPolls);
+    expect(api.getRetrievalEvidence).not.toHaveBeenCalled();
+    vi.useRealTimers();
+    await user.click(screen.getByRole('button', { name: /expand issue details panel/i }));
+    await user.click(screen.getByRole('button', { name: /expand issue one/i }));
+    await waitFor(() => expect(api.getRetrievalEvidence).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: /collapse issue one/i }));
+    await user.click(screen.getByRole('button', { name: /expand issue one/i }));
+    expect(api.getRetrievalEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows FAILED with a safe retry after an index request rejection', async () => {
+    vi.mocked(api.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [{ ...task, repositoryIndex: { status: 'NOT_INDEXED' } }] });
+    vi.mocked(api.getReviewTask).mockResolvedValue({ success: true, message: 'OK', data: { ...task, repositoryIndex: { status: 'NOT_INDEXED' } } });
+    vi.mocked(api.requestRepositoryIndex).mockRejectedValue(new Error('secret backend detail'));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText('https://github.com/acme/repo'));
+    await user.click(await screen.findByRole('button', { name: 'Index' }));
+    await waitFor(() => expect(api.requestRepositoryIndex).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Reindex' })).toBeInTheDocument();
+    expect(screen.queryByText('Queued')).not.toBeInTheDocument();
+  });
+
+  it('ignores a deferred old poll response after task switch and clears timers on unmount', async () => {
+    vi.mocked(api.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [task, taskTwo] });
+    vi.mocked(api.getReviewTask).mockImplementation(async (id) => ({ success: true, message: 'OK', data: id === 1 ? task : taskTwo }));
+    let resolvePoll!: (value: any) => void;
+    vi.mocked(api.getRepositoryIndexStatus).mockImplementation(() => new Promise((resolve) => { resolvePoll = resolve; }));
+    const { unmount } = render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByText('https://github.com/acme/repo'));
+    fireEvent.click(screen.getByText('https://github.com/acme/other-repo'));
+    vi.useFakeTimers();
+    await act(async () => { await Promise.resolve(); });
+    resolvePoll({ success: true, message: 'OK', data: { status: 'FAILED', errorMessage: 'stale' } });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText('stale')).not.toBeInTheDocument();
+    const callsBeforeUnmount = vi.mocked(api.getRepositoryIndexStatus).mock.calls.length;
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(vi.mocked(api.getRepositoryIndexStatus).mock.calls.length).toBe(callsBeforeUnmount);
+    vi.useRealTimers();
+  });
+
+  it('ignores deferred evidence from a previous task with the same issue key', async () => {
+    let resolveEvidence!: (value: any) => void;
+    vi.mocked(api.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [task, taskTwo] });
+    vi.mocked(api.getRetrievalEvidence).mockImplementation(() => new Promise((resolve) => { resolveEvidence = resolve; }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText('https://github.com/acme/repo'));
+    await user.click(screen.getByRole('button', { name: /expand issue details panel/i }));
+    await user.click(screen.getByRole('button', { name: /expand issue one/i }));
+    await user.click(screen.getByText('https://github.com/acme/other-repo'));
+    resolveEvidence({ success: true, message: 'OK', data: [{ chunkId: 'old', excerpt: 'stale evidence' }] });
+    await waitFor(() => expect(screen.queryByText('stale evidence')).not.toBeInTheDocument());
+  });
+});

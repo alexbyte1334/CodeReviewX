@@ -7,9 +7,20 @@ import {
   listReviewTasks,
   publishSelectedCommentPreviews,
   updateCommentPreviewSelection,
+  getRepositoryIndexStatus, requestRepositoryReindex,
 } from '../api/reviewTaskApi';
 
 describe('reviewTaskApi', () => {
+  it('uses commitSha for full hashes and ref otherwise; reindex uses query POST', async () => {
+    vi.mocked(fetch).mockResolvedValue({ json: async () => ({ success: true, message: 'OK', data: null }) } as Response);
+    await getRepositoryIndexStatus('o', 'r', 'a'.repeat(40));
+    expect(vi.mocked(fetch).mock.calls[0][0]).toContain('commitSha=');
+    await getRepositoryIndexStatus('o', 'r', 'main');
+    expect(vi.mocked(fetch).mock.calls[1][0]).toContain('ref=main');
+    await requestRepositoryReindex('o', 'r', 'main');
+    expect(vi.mocked(fetch).mock.calls[2][0]).toContain('/reindex?ref=main');
+    expect(vi.mocked(fetch).mock.calls[2][1]).toMatchObject({ method: 'POST' });
+  });
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
   });
