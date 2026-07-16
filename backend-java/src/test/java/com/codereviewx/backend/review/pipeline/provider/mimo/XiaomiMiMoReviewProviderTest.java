@@ -147,7 +147,7 @@ class XiaomiMiMoReviewProviderTest {
         for (String finding : List.of(
                 findingJson("[]", "safe description"),
                 findingJson("[\"C9\"]", "safe description"),
-                findingJson("[\"C1\"]", "bounded evidence content"))) {
+                findingJson("[\"C1\"]", "bounded evidence content with enough unique source tokens"))) {
             org.mockito.Mockito.reset(client);
             org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
                     .thenReturn(TestMiMoAgentResponses.taskPlanJson());
@@ -177,7 +177,8 @@ class XiaomiMiMoReviewProviderTest {
 
     private ReviewContext ragContext() {
         RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(
-                new RagEvidence("C1", "src/A.java", 1, 2, "head", "bounded evidence content", 0.9),
+                new RagEvidence("C1", "src/A.java", 1, 2, "head",
+                        "bounded evidence content with enough unique source tokens", 0.9),
                 new RagEvidence("C2", "src/A.java", 3, 4, "head", "other evidence", 0.8)),
                 "prompt", RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
         return new ReviewContext(1L, "https://github.com/example/repo", 9, LocalDateTime.now(),

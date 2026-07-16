@@ -26,17 +26,30 @@ import com.codereviewx.backend.review.persistence.repository.*;
 import com.codereviewx.backend.review.persistence.entity.ReviewToolTraceEntity;
 import com.codereviewx.backend.review.pipeline.provider.mimo.*;
 import com.codereviewx.backend.rag.service.RagReviewContextFacade;
+import com.codereviewx.backend.rag.service.RagIndexService;
+import com.codereviewx.backend.rag.service.RagIndexResolution;
+import com.codereviewx.backend.rag.retrieval.HybridRagRetrievalService;
+import com.codereviewx.backend.rag.retrieval.RerankClient;
+import com.codereviewx.backend.rag.retrieval.RerankedChunk;
+import com.codereviewx.backend.rag.persistence.ReviewIssueEvidenceStore;
+import com.codereviewx.backend.rag.indexing.RagIndexWorker;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
-import java.time.LocalDateTime;
 
 @SpringBootTest
-@TestPropertySource(properties = "codereviewx.github.token=test-token")
+@TestPropertySource(properties = {
+        "codereviewx.github.token=test-token",
+        "codereviewx.rag.enabled=true",
+        "codereviewx.rag.embedding-base-url=http://127.0.0.1/embedding",
+        "codereviewx.rag.embedding-api-key=test-embedding-key",
+        "codereviewx.rag.rerank-base-url=http://127.0.0.1/rerank",
+        "codereviewx.rag.rerank-api-key=test-rerank-key"
+})
 class ReviewTaskServiceRagIntegrationTest {
 
     @Autowired private ReviewEvidenceValidator validator;
     @Autowired private ReviewTaskService service;
-    @Autowired private ReviewTraceRecorder traceRecorder;
+    @Autowired private RagReviewContextFacade ragFacade;
     @Autowired private ReviewToolTraceRepository toolTraceRepository;
     @Autowired private ReviewCommentPreviewRepository previewRepository;
     @Autowired private ReviewProviderTraceRepository providerTraceRepository;
@@ -47,7 +60,11 @@ class ReviewTaskServiceRagIntegrationTest {
     @MockBean private GithubPrMetadataLoader metadataLoader;
     @MockBean private GithubPrDiffLoader diffLoader;
     @MockBean private XiaomiMiMoClient mimoClient;
-    @MockBean private RagReviewContextFacade ragFacade;
+    @MockBean private RagIndexService ragIndexService;
+    @MockBean private HybridRagRetrievalService retrievalService;
+    @MockBean private RerankClient rerankClient;
+    @MockBean private ReviewIssueEvidenceStore evidenceStore;
+    @MockBean private RagIndexWorker ragIndexWorker;
     private final GithubPrDiff diff = new GithubPrDiff(
             "diff --git a/src/App.ts b/src/App.ts\n@@ -9,2 +10,3 @@\n+const value = risky();\n",
             1, 80, false, List.of(new GithubPrDiffFile("src/App.ts", "modified", 1, 0, 1, 40, false)));
@@ -63,24 +80,23 @@ class ReviewTaskServiceRagIntegrationTest {
 
     @Test
     void githubPrReadyRunsExactGroundedTraceWithoutLegacyIndexAndExcludesUngroundedPreview() {
+        assertThat(org.mockito.Mockito.mockingDetails(ragFacade).isMock()).isFalse();
         GithubPrMetadata metadata = new GithubPrMetadata("example", "repo", 18, "Review", "octocat", "main",
                 "feature", "b".repeat(40), "a".repeat(40), "open", "x", "x", 1, 1, 1);
         GithubPrDiff reviewDiff = new GithubPrDiff("diff --git a/src/App.ts b/src/App.ts\n@@ -1 +1 @@\n+const password = request.query.password;",
                 1, 80, false, List.of(new GithubPrDiffFile("src/App.ts", "modified", 1, 0, 1, 20, false)));
-        RagEvidence evidence = new RagEvidence("C1", "src/App.ts", 1, 2, metadata.headSha(),
-                "supporting source", 0.9, false, false, new com.codereviewx.backend.rag.retrieval.RagEvidenceSourceIdentity(77L, "source-hash"));
-        RagEvidenceBundle ready = new RagEvidenceBundle(List.of(evidence), "[EVIDENCE C1]", RagEvidenceBundle.DegradedReason.NONE,
-                RagContextAssembler.RetrievalHealth.HEALTHY);
         when(metadataLoader.load(anyString(), eq(18))).thenReturn(GithubPrMetadataLoadResult.success(metadata));
         when(diffLoader.load(metadata)).thenReturn(GithubPrDiffLoadResult.success(reviewDiff));
-        when(ragFacade.prepare(eq(metadata), eq(reviewDiff), anyLong())).thenAnswer(invocation -> {
-            Long runId = invocation.getArgument(2);
-            for (String name : List.of("rag.index.ensure", "rag.query.build", "rag.retrieve.hybrid", "rag.rerank", "rag.context.assemble")) {
-                LocalDateTime now = LocalDateTime.now();
-                traceRecorder.recordToolTrace(runId, traceRecorder.countToolTraces(runId) + 1, name,
-                        com.codereviewx.backend.review.enums.ToolTraceStatus.SUCCESS, "safe", null, null, now, now);
-            }
-            return new RagReviewContextFacade.PreparedContext(RepositoryContextIndexResult.empty(), ready, false);
+        when(ragIndexService.ensureIndexed(metadata)).thenReturn(new RagIndexResolution(
+                1L, 2L, metadata.headSha(), RagIndexResolution.Status.READY));
+        HybridRagRetrievalService.Match match = new HybridRagRetrievalService.Match(77L, "src/App.ts", "TS",
+                "password", 1, 2, "source-hash", "supporting source", 1.25, 0.9);
+        when(retrievalService.retrieve(any())).thenReturn(new HybridRagRetrievalService.Result(
+                HybridRagRetrievalService.Status.READY, 3L, 1, 1, List.of(match),
+                RagContextAssembler.RetrievalHealth.HEALTHY));
+        when(rerankClient.rerank(anyString(), anyList())).thenAnswer(invocation -> {
+            List<com.codereviewx.backend.rag.retrieval.RerankCandidate> candidates = invocation.getArgument(1);
+            return candidates.stream().map(candidate -> new RerankedChunk(candidate, 0.95)).toList();
         });
         when(mimoClient.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
                 .thenReturn(TestMiMoAgentResponses.taskPlanJson());
