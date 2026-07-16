@@ -65,6 +65,28 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 curl http://localhost:8080/api/health
 ```
 
+### Production-like RAG delivery stack
+
+The repository includes reproducible backend/frontend images and a pgvector
+compose stack. Configure `RAG_ENABLED=true`, `RAG_EMBEDDING_BASE_URL`,
+`RAG_EMBEDDING_API_KEY`, `RAG_RERANK_BASE_URL`, and `RAG_RERANK_API_KEY` in a
+local `.env` file, then run:
+
+```bash
+docker compose build
+docker compose up -d postgres backend frontend
+docker compose ps
+bash scripts/rag-smoke.sh
+```
+
+`/actuator/health/liveness` only reports process liveness. Readiness checks
+database, GitHub, embedding, and rerank independently; unavailable external
+models leave the app running but keep readiness DOWN and `/api/health` reports
+`ragReady=false`. The smoke script prints only opaque IDs and counts, never
+keys or source excerpts. Install `jq` before running the smoke script; set
+`RAG_SMOKE_REPO_URL`, `RAG_SMOKE_REF` (the PR head ref/SHA), and
+`RAG_SMOKE_PR_NUMBER` for a real GitHub PR fixture.
+
 ### 2. 启动前端
 
 ```bash

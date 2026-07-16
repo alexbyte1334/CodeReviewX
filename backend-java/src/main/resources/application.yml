@@ -26,7 +26,11 @@ server:
 
 management:
   endpoints.web.exposure.include: health,info,metrics,prometheus
-  endpoint.health.show-details: never
+  endpoint.health:
+    show-details: when_authorized
+    probes.enabled: true
+    group.readiness:
+      include: readinessState,database,github,embedding,rerank
 
 codereviewx:
   rag:

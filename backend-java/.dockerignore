@@ -1,0 +1,7 @@
+.env*
+.git
+target
+data
+*.log
+src/test
+reports
