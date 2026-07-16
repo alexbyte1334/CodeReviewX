@@ -104,7 +104,13 @@ public class XiaomiMiMoFindingParser {
                 title,
                 description,
                 recommendation
+                , parseEvidenceLabels(record.get("evidenceChunkIds"))
         );
+    }
+
+    private List<String> parseEvidenceLabels(Object value) {
+        if (!(value instanceof List<?> values)) return List.of();
+        return values.stream().map(this::sanitizeText).filter(java.util.Objects::nonNull).distinct().toList();
     }
 
     private IssueSeverity parseSeverity(Object value) {

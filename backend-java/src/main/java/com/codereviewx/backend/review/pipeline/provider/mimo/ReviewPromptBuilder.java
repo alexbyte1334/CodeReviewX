@@ -43,6 +43,7 @@ public class ReviewPromptBuilder {
                   "title": "string",
                   "description": "string",
                   "recommendation": "string"
+                  ,"evidenceChunkIds": ["C2","C5"]
                 }
               ]
             }""";
@@ -95,6 +96,10 @@ public class ReviewPromptBuilder {
                 --- PR DIFF END ---
                 """.formatted(context.getDiffText())
                 : "No PR diff is available yet. Use only repoUrl, prNumber, and bounded metadata.";
+        String evidenceContext = context.hasRagEvidence()
+                ? "\n--- RAG EVIDENCE START ---\n" + context.getRagEvidenceBundle().promptBlock()
+                + "\n--- RAG EVIDENCE END ---\n"
+                : "";
 
         return """
                 Execute the review using this approved TaskPlan JSON.
@@ -108,6 +113,7 @@ public class ReviewPromptBuilder {
 
                 Review context:
                 %s
+                %s
 
                 Return only one CandidateReview JSON object using this schema:
                 %s
@@ -119,7 +125,10 @@ public class ReviewPromptBuilder {
                 - Use only allowed enum values.
                 - Do not include issueKey; IssueGenerator will assign final keys.
                 - If there are no meaningful findings, return an empty findings array.
-                """.formatted(taskPlanJson, context.getRepoUrl(), context.getPrNumber(), reviewContext, CANDIDATE_REVIEW_SCHEMA);
+                - When RAG evidence is provided, every finding must cite at least one provided evidence label.
+                - Never use unknown evidence labels; evidence is grounding only; never copy evidence blocks verbatim into descriptions.
+                """.formatted(taskPlanJson, context.getRepoUrl(), context.getPrNumber(), reviewContext, evidenceContext,
+                CANDIDATE_REVIEW_SCHEMA);
     }
 
     public String buildGatekeeperPrompt(String taskPlanJson, String candidateReviewJson) {
@@ -140,6 +149,7 @@ public class ReviewPromptBuilder {
                 Rules:
                 - Approve only if findings are grounded and use the allowed schema.
                 - Reject if the review invents files, uses unsupported enum values, or ignores constraints.
+                - Reject missing or unknown evidence labels when evidence was provided.
                 - Return only JSON with no markdown.
                 """.formatted(taskPlanJson, candidateReviewJson, GATE_DECISION_SCHEMA);
     }

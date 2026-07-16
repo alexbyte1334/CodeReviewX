@@ -49,7 +49,8 @@ public class MiMoIssueGenerator {
                 endLine,
                 title,
                 description,
-                recommendation
+                recommendation,
+                candidate.getEvidenceChunkIds()
         );
     }
 

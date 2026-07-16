@@ -2,9 +2,13 @@ package com.codereviewx.backend.review.pipeline.provider.mimo;
 
 import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.pipeline.ReviewContext;
+import com.codereviewx.backend.rag.retrieval.RagEvidence;
+import com.codereviewx.backend.rag.retrieval.RagEvidenceBundle;
+import com.codereviewx.backend.rag.retrieval.RagContextAssembler;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,6 +65,25 @@ class ReviewPromptBuilderTest {
     }
 
     @Test
+    void buildExecutorPrompt_withRagEvidence_requiresKnownEvidenceLabels() {
+        RagEvidence evidence = new RagEvidence("C2", "src/App.ts", 10, 20, "head-sha",
+                "export const value = 1;", 0.91);
+        RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(evidence),
+                "[EVIDENCE C2]\npath: src/App.ts\nlines: 10-20\ncontent:\nexport const value = 1;\n[/EVIDENCE C2]",
+                RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+        ReviewContext context = new ReviewContext(1L, "https://github.com/example/repo", 10,
+                LocalDateTime.now(), "diff --git a/src/App.ts b/src/App.ts\n@@ -10 +10 @@\n+export const value = 1;",
+                "mimo", ReviewMode.GITHUB_PR, bundle);
+
+        String prompt = promptBuilder.buildExecutorPrompt(context, TestMiMoAgentResponses.taskPlanJson());
+
+        assertThat(prompt).contains("[EVIDENCE C2]");
+        assertThat(prompt).contains("\"evidenceChunkIds\": [\"C2\",\"C5\"]");
+        assertThat(prompt).contains("cite at least one provided evidence label");
+        assertThat(prompt).contains("never copy evidence blocks verbatim");
+    }
+
+    @Test
     void buildExecutorPrompt_withoutDiff_statesDiffUnavailable() {
         String prompt = promptBuilder.buildExecutorPrompt(contextWithoutDiff(), TestMiMoAgentResponses.taskPlanJson());
 
@@ -79,5 +102,6 @@ class ReviewPromptBuilderTest {
         assertThat(prompt).contains("--- CANDIDATE REVIEW JSON START ---");
         assertThat(prompt).contains("\"approved\": true");
         assertThat(prompt).contains("Reject if the review invents files");
+        assertThat(prompt).contains("unknown evidence labels");
     }
 }

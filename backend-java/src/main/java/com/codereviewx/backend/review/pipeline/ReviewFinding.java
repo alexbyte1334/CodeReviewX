@@ -1,5 +1,7 @@
 package com.codereviewx.backend.review.pipeline;
 
+import java.util.List;
+
 import com.codereviewx.backend.review.enums.IssueCategory;
 import com.codereviewx.backend.review.enums.IssueSeverity;
 import com.codereviewx.backend.review.enums.IssueSource;
@@ -22,6 +24,7 @@ public class ReviewFinding {
     private final String title;
     private final String description;
     private final String recommendation;
+    private final List<String> evidenceChunkIds;
 
     public ReviewFinding(String issueKey,
                          IssueSeverity severity,
@@ -34,6 +37,13 @@ public class ReviewFinding {
                          String title,
                          String description,
                          String recommendation) {
+        this(issueKey, severity, category, source, status, filePath, startLine, endLine, title, description,
+                recommendation, List.of());
+    }
+
+    public ReviewFinding(String issueKey, IssueSeverity severity, IssueCategory category, IssueSource source,
+                         IssueStatus status, String filePath, Integer startLine, Integer endLine, String title,
+                         String description, String recommendation, List<String> evidenceChunkIds) {
         this.issueKey = issueKey;
         this.severity = severity;
         this.category = category;
@@ -45,6 +55,7 @@ public class ReviewFinding {
         this.title = title;
         this.description = description;
         this.recommendation = recommendation;
+        this.evidenceChunkIds = evidenceChunkIds == null ? List.of() : List.copyOf(evidenceChunkIds);
     }
 
     public String getIssueKey() {
@@ -89,5 +100,9 @@ public class ReviewFinding {
 
     public String getRecommendation() {
         return recommendation;
+    }
+
+    public List<String> getEvidenceChunkIds() {
+        return evidenceChunkIds;
     }
 }

@@ -33,6 +33,7 @@ public class CandidateReview {
         private String title;
         private String description;
         private String recommendation;
+        private List<String> evidenceChunkIds;
 
         public String getSeverity() {
             return severity;
@@ -97,5 +98,9 @@ public class CandidateReview {
         public void setRecommendation(String recommendation) {
             this.recommendation = recommendation;
         }
+
+        public List<String> getEvidenceChunkIds() { return evidenceChunkIds; }
+
+        public void setEvidenceChunkIds(List<String> evidenceChunkIds) { this.evidenceChunkIds = evidenceChunkIds; }
     }
 }
