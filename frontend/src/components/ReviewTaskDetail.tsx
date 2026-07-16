@@ -7,6 +7,9 @@ import { riskLevelDisplayLabel } from '../utils/riskLevel';
 import { LoadingState } from './LoadingState';
 import { ErrorMessage } from './ErrorMessage';
 import { CollapsiblePanel } from './CollapsiblePanel';
+import { RepositoryIndexStatus } from './RepositoryIndexStatus';
+import { RetrievalEvidencePanel } from './RetrievalEvidencePanel';
+import type { RepositoryIndexStatus as RepositoryIndexStatusType, RetrievalEvidence } from '../types/reviewTask';
 
 interface ReviewTaskDetailProps {
   task: ReviewTask | null;
@@ -24,6 +27,12 @@ interface ReviewTaskDetailProps {
   toolTraceError?: string | null;
   onCommentPreviewSelectionChange?: (previewId: number, selected: boolean) => void;
   onPublishSelectedCommentPreviews?: () => void;
+  repositoryIndexStatus?: RepositoryIndexStatusType | null;
+  onRequestRepositoryIndex?: () => void;
+  evidenceByIssue?: Record<string, RetrievalEvidence[]>;
+  evidenceLoadingIssue?: string | null;
+  evidenceError?: string | null;
+  onIssueEvidenceRequest?: (issueId: string) => void;
 }
 
 function riskBadgeClass(riskLevel: string): string {
@@ -164,7 +173,7 @@ function ReviewSummaryPanel({
   );
 }
 
-function IssueCard({ issue }: { issue: ReviewIssue }) {
+function IssueCard({ issue, evidence, evidenceLoading, evidenceError, onEvidenceRequest }: { issue: ReviewIssue; evidence?: RetrievalEvidence[]; evidenceLoading?: boolean; evidenceError?: string | null; onEvidenceRequest?: () => void }) {
   const [open, setOpen] = useState(false);
   const lineRange =
     issue.endLine && issue.endLine !== issue.startLine
@@ -176,7 +185,7 @@ function IssueCard({ issue }: { issue: ReviewIssue }) {
       <button
         type="button"
         className="issue-card-trigger"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => { const next = !v; if (next) onEvidenceRequest?.(); return next; }); }}
         aria-expanded={open}
         aria-label={open ? `Collapse ${issue.title}` : `Expand ${issue.title}`}
       >
@@ -219,6 +228,7 @@ function IssueCard({ issue }: { issue: ReviewIssue }) {
             <span className="issue-card-section-label">Recommendation</span>
             <p className="issue-card-section-text">{issue.recommendation}</p>
           </div>
+          {open && <RetrievalEvidencePanel items={evidence ?? []} loading={evidenceLoading} error={evidenceError} />}
         </div>
       </div>
     </article>
@@ -420,6 +430,7 @@ export function ReviewTaskDetail({
   toolTraceError = null,
   onCommentPreviewSelectionChange,
   onPublishSelectedCommentPreviews,
+  repositoryIndexStatus, onRequestRepositoryIndex, evidenceByIssue, evidenceLoadingIssue, evidenceError, onIssueEvidenceRequest,
 }: ReviewTaskDetailProps) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
@@ -469,6 +480,8 @@ export function ReviewTaskDetail({
 
       {!loading && !error && task && issueSummary && (
         <div className="detail-content">
+          <RepositoryIndexStatus status={repositoryIndexStatus} onIndex={onRequestRepositoryIndex} />
+          {task.retrievalDegraded && <span role="status" className="badge badge-warning">Degraded retrieval</span>}
           <CollapsiblePanel
             panelId="panel-findings-summary"
             title="Review Summary"
@@ -498,7 +511,7 @@ export function ReviewTaskDetail({
             ) : (
               <div className="issue-card-list">
                 {task.issues.map((issue) => (
-                  <IssueCard key={issue.id} issue={issue} />
+                  <IssueCard key={issue.id} issue={issue} evidence={evidenceByIssue?.[issue.id]} evidenceLoading={evidenceLoadingIssue === issue.id} evidenceError={evidenceError} onEvidenceRequest={() => onIssueEvidenceRequest?.(issue.id)} />
                 ))}
               </div>
             )}

@@ -53,6 +53,10 @@ public class RagIndexJobStore {
         return query("SELECT * FROM rag_index_job WHERE id=?", id).stream().findFirst();
     }
 
+    public Optional<RagIndexJob> findLatest(long repositoryId, String requestedRef) {
+        return query("SELECT * FROM rag_index_job WHERE repository_id=? AND requested_ref=? ORDER BY id DESC LIMIT 1", repositoryId, requestedRef).stream().findFirst();
+    }
+
     public Optional<RagIndexJob> findReadySnapshot(long repositoryId, String commitSha, String embeddingModel,
                                                    int embeddingDimensions, int indexVersion) {
         return query("""

@@ -69,7 +69,15 @@ export interface ReviewTask {
   latestRunId?: number | null;
   traceSummary?: TraceSummary | null;
   commentPreviewCount?: number;
+  repositoryIndex?: RepositoryIndexStatus;
+  retrievalDegraded?: boolean;
 }
+
+export type RepositoryIndexState = 'NOT_INDEXED' | 'QUEUED' | 'INDEXING' | 'READY' | 'FAILED' | 'DEGRADED';
+export interface RepositoryIndexStatus { status: RepositoryIndexState; commitSha?: string | null; indexedChunks?: number; errorCode?: string | null; errorMessage?: string | null; }
+export interface RepositoryIndexResponse { jobId?: number | null; status: RepositoryIndexState; repository?: string; requestedRef?: string; }
+export interface RetrievalEvidence { citationLabel: string; path: string; startLine: number; endLine: number; excerpt: string; rank: number; score: number; }
+export interface RetrievalTrace { degraded: boolean; degradedReason?: string | null; latencyMs: number; candidateCount: number; selectedCount: number; model?: string | null; evidence: RetrievalEvidence[]; }
 
 export interface CommentPreview {
   id: number;

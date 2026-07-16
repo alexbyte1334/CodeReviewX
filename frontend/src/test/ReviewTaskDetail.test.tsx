@@ -173,6 +173,16 @@ async function expandAllIssueCards(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('ReviewTaskDetail', () => {
+  it('requests repository indexing and evidence when activated', async () => {
+    const user = userEvent.setup();
+    const onIndex = vi.fn();
+    render(<ReviewTaskDetail {...baseProps} task={{ ...mockTask, repositoryIndex: { status: 'NOT_INDEXED' } }} onRequestRepositoryIndex={onIndex} />);
+    await user.click(screen.getByRole('button', { name: 'Index' }));
+    expect(onIndex).toHaveBeenCalledTimes(1);
+    await expandIssuesPanel(user);
+    await user.click(screen.getByRole('button', { name: /expand Potential missing authorization check/i }));
+    expect(screen.getByText(/No evidence available/i)).toBeInTheDocument();
+  });
   it('shows placeholder when no task selected', () => {
     render(<ReviewTaskDetail {...baseProps} task={null} summary="Select a review" />);
     expect(screen.getByText(/no review selected/i)).toBeInTheDocument();

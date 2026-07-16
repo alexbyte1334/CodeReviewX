@@ -3,6 +3,7 @@ import type { CommentPreview, ReviewTask, ToolTraceItem } from './types/reviewTa
 import {
   getCommentPreviews,
   getHealth,
+  getRepositoryIndexStatus, requestRepositoryIndex, getRetrievalEvidence,
   getReviewTask,
   getToolTrace,
   listReviewTasks,
@@ -18,6 +19,7 @@ import { WorkspaceToolbar } from './components/WorkspaceToolbar';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { useColorTheme } from './hooks/useColorTheme';
 import type { BackendStatus, PanelId } from './types/ui';
+import type { RepositoryIndexStatus, RetrievalEvidence } from './types/reviewTask';
 import { PRODUCT_LIMITS } from './types/ui';
 import './styles/app.css';
 
@@ -45,6 +47,11 @@ export default function App() {
   const [toolTraceItems, setToolTraceItems] = useState<ToolTraceItem[]>([]);
   const [toolTraceLoading, setToolTraceLoading] = useState(false);
   const [toolTraceError, setToolTraceError] = useState<string | null>(null);
+  const [repositoryIndexStatus, setRepositoryIndexStatus] = useState<RepositoryIndexStatus | null>(null);
+  const [evidenceByIssue, setEvidenceByIssue] = useState<Record<string, RetrievalEvidence[]>>({});
+  const [evidenceLoadingIssue, setEvidenceLoadingIssue] = useState<string | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const indexGeneration = useRef(0);
   const workspaceRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -116,6 +123,7 @@ export default function App() {
     setToolTraceError(null);
     setToolTraceItems([]);
     setSelectedTask(null);
+    setEvidenceByIssue({}); setEvidenceError(null); setRepositoryIndexStatus(task.repositoryIndex ?? null);
     try {
       const res = await getReviewTask(task.id);
       if (res.success && res.data) {
@@ -136,6 +144,44 @@ export default function App() {
     } finally {
       setDetailLoading(false);
     }
+  }
+
+  useEffect(() => {
+    const current = selectedTask;
+    if (!current) return;
+    const match = current.repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#]+)(?:\.git)?/i);
+    const sha = current.repositoryIndex?.commitSha;
+    if (!match || !sha) return;
+    const generation = ++indexGeneration.current;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const res = await getRepositoryIndexStatus(match[1], match[2], sha);
+        if (stopped || generation !== indexGeneration.current) return;
+        if (res.success && res.data) { setRepositoryIndexStatus(res.data); if (res.data.status === 'QUEUED' || res.data.status === 'INDEXING') timer = setTimeout(poll, 2000); }
+      } catch { if (!stopped) setRepositoryIndexStatus((prev) => ({ ...(prev ?? { status: 'NOT_INDEXED' }), status: 'FAILED', errorMessage: 'Unable to load index status' })); }
+    };
+    if (repositoryIndexStatus?.status === 'QUEUED' || repositoryIndexStatus?.status === 'INDEXING' || current.repositoryIndex?.status === 'QUEUED' || current.repositoryIndex?.status === 'INDEXING') poll();
+    return () => { stopped = true; if (timer) clearTimeout(timer); indexGeneration.current++; };
+  }, [selectedTask?.id, selectedTask?.repoUrl, selectedTask?.repositoryIndex?.status, selectedTask?.repositoryIndex?.commitSha, repositoryIndexStatus?.status]);
+
+  async function handleRequestRepositoryIndex() {
+    if (!selectedTask) return;
+    const match = selectedTask.repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#]+)(?:\.git)?/i);
+    if (!match) { setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Unsupported repository URL' }); return; }
+    setRepositoryIndexStatus({ status: 'QUEUED' });
+    const res = await requestRepositoryIndex(selectedTask.repoUrl, selectedTask.repositoryIndex?.commitSha ?? 'HEAD');
+    if (res.success && res.data) setRepositoryIndexStatus({ status: res.data.status, commitSha: selectedTask.repositoryIndex?.commitSha });
+    else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message });
+  }
+
+  async function handleIssueEvidence(issueId: string) {
+    if (!selectedTask || evidenceByIssue[issueId]) return;
+    setEvidenceLoadingIssue(issueId); setEvidenceError(null);
+    try { const res = await getRetrievalEvidence(selectedTask.id, issueId); if (res.success && res.data) setEvidenceByIssue((prev) => ({ ...prev, [issueId]: res.data! })); else setEvidenceError(res.message || 'Evidence unavailable.'); }
+    catch { setEvidenceError('Evidence unavailable.'); } finally { setEvidenceLoadingIssue(null); }
   }
 
   async function loadToolTrace(runId: number) {
@@ -402,6 +448,12 @@ export default function App() {
                   toolTraceError={toolTraceError}
                   onCommentPreviewSelectionChange={handleCommentPreviewSelection}
                   onPublishSelectedCommentPreviews={handlePublishSelectedCommentPreviews}
+                  repositoryIndexStatus={repositoryIndexStatus}
+                  onRequestRepositoryIndex={handleRequestRepositoryIndex}
+                  evidenceByIssue={evidenceByIssue}
+                  evidenceLoadingIssue={evidenceLoadingIssue}
+                  evidenceError={evidenceError}
+                  onIssueEvidenceRequest={handleIssueEvidence}
                 />
               </section>
             </div>

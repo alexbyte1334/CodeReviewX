@@ -1,0 +1,2 @@
+import type { RepositoryIndexStatus as Status } from '../types/reviewTask';
+export function RepositoryIndexStatus({status,onIndex}:{status?:Status|null;onIndex?:()=>void}) { const value=status?.status ?? 'NOT_INDEXED'; const label=value==='INDEXING'?'Indexing':value[0]+value.slice(1).toLowerCase().replace('_',' '); return <div className="status-widget"><span>{label}</span>{onIndex && (value==='NOT_INDEXED'||value==='FAILED'||value==='DEGRADED') && <button type="button" onClick={onIndex}>{value==='NOT_INDEXED'?'Index':'Reindex'}</button>}</div>; }
