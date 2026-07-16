@@ -5,6 +5,7 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
@@ -53,6 +54,7 @@ class JGitRepositoryCheckoutServiceTest {
     void checksOutExactCommitDetachedAndCleansUpIdempotently() throws Exception {
         RepositoryFixture fixture = createRepository();
         Path root = workRoot("work");
+        assumeSecureDirectoryStream(root);
         JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
                 root, 1, fixture.bare().toUri().toString());
 
@@ -76,8 +78,10 @@ class JGitRepositoryCheckoutServiceTest {
     @Test
     void fallsBackToFetchingExactShaOutsideInitialDepth() throws Exception {
         RepositoryFixture fixture = createRepository();
+        Path root = workRoot("fallback-work");
+        assumeSecureDirectoryStream(root);
         JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
-                workRoot("fallback-work"), 1, fixture.bare().toUri().toString());
+                root, 1, fixture.bare().toUri().toString());
 
         try (CheckedOutRepository checkedOut = service.checkout(metadata(fixture.firstSha()))) {
             assertThat(checkedOut.commitSha()).isEqualTo(fixture.firstSha());
@@ -88,6 +92,7 @@ class JGitRepositoryCheckoutServiceTest {
     @Test
     void failuresCleanTemporaryCheckoutAndNeverLeakToken() throws Exception {
         Path root = workRoot("failure-work");
+        assumeSecureDirectoryStream(root);
         String token = "secret-token-never-print";
         JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
                 root, 1, tempDir.resolve("missing.git").toUri().toString(), token);
@@ -167,6 +172,7 @@ class JGitRepositoryCheckoutServiceTest {
     void cleanupRejectsWorkspaceReplacedBySymlinkAndDoesNotDeleteTarget() throws Exception {
         RepositoryFixture fixture = createRepository();
         Path root = workRoot("cleanup-root");
+        assumeSecureDirectoryStream(root);
         JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
                 root, 1, fixture.bare().toUri().toString());
         CheckedOutRepository checkedOut = service.checkout(metadata(fixture.secondSha()));
@@ -203,6 +209,7 @@ class JGitRepositoryCheckoutServiceTest {
     void creationDetectsAncestorSwapAfterSecureRootOpenWithoutWritingOutside() throws Exception {
         Path root = workRoot("create-race-root");
         Files.createDirectories(root);
+        assumeSecureDirectoryStream(root);
         Path movedRoot = workRoot("create-race-original");
         Path outside = workRoot("create-race-outside");
         Files.createDirectories(outside);
@@ -228,6 +235,7 @@ class JGitRepositoryCheckoutServiceTest {
     void secureCleanupCannotBeRedirectedByAncestorSwapAfterRootOpen() throws Exception {
         RepositoryFixture fixture = createRepository();
         Path root = workRoot("cleanup-race-root");
+        assumeSecureDirectoryStream(root);
         Path movedRoot = workRoot("cleanup-race-original");
         Path outside = workRoot("cleanup-race-outside");
         Files.createDirectories(outside);
@@ -255,11 +263,31 @@ class JGitRepositoryCheckoutServiceTest {
     }
 
     @Test
-    void unixProviderOffersSecureDirectoryStreamForCheckoutRoot() throws Exception {
+    void providerWithoutSecureDirectoryStreamFailsClosedBeforeWritingWorkspace() throws Exception {
         Path root = workRoot("secure-stream-root");
         Files.createDirectories(root);
         try (var stream = Files.newDirectoryStream(root)) {
-            assertThat(stream).isInstanceOf(SecureDirectoryStream.class);
+            if (stream instanceof SecureDirectoryStream<?>) {
+                return;
+            }
+        }
+        Path outside = workRoot("secure-stream-outside");
+        Files.createDirectories(outside);
+        Files.writeString(outside.resolve("sentinel.txt"), "safe");
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                root, 1, tempDir.resolve("missing.git").toUri().toString());
+
+        assertThatThrownBy(() -> service.checkout(metadata("0".repeat(40))))
+                .hasMessage("Repository checkout failed");
+        assertThat(Files.list(root)).isEmpty();
+        assertThat(outside.resolve("sentinel.txt")).hasContent("safe");
+    }
+
+    private static void assumeSecureDirectoryStream(Path root) throws Exception {
+        Files.createDirectories(root);
+        try (var stream = Files.newDirectoryStream(root)) {
+            Assumptions.assumeTrue(stream instanceof SecureDirectoryStream<?>,
+                    "filesystem provider does not support SecureDirectoryStream");
         }
     }
 
