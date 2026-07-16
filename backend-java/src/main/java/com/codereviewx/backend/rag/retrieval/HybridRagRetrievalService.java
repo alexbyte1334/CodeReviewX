@@ -62,6 +62,8 @@ public class HybridRagRetrievalService {
 
     public Result retrieve(Request request) {
         Timer.Sample sample = metrics == null ? null : Timer.start();
+        boolean degraded = false;
+        try {
         Objects.requireNonNull(request, "request");
         validateConfiguration();
         SnapshotIdentity snapshot = exactReadySnapshot(request.repositoryId(), request.commitSha());
@@ -93,11 +95,16 @@ public class HybridRagRetrievalService {
                 : RagContextAssembler.RetrievalHealth.HEALTHY;
         List<Match> matches = fusion.fuse(vector, lexical).stream().map(this::toMatch).toList();
         Result result = new Result(Status.READY, snapshot.snapshotId(), vector.size(), lexical.size(), matches, health);
-        if (sample != null) sample.stop(metrics.retrievalDuration());
-        metricsRecord(health);
+        degraded = health != RagContextAssembler.RetrievalHealth.HEALTHY;
         return result;
+        } catch (RuntimeException exception) {
+            degraded = true;
+            throw exception;
+        } finally {
+            if (sample != null) sample.stop(metrics.retrievalDuration());
+            if (metrics != null) metrics.recordRetrieval(degraded);
+        }
     }
-    private void metricsRecord(RagContextAssembler.RetrievalHealth health) { if (metrics != null) metrics.recordRetrieval(health != RagContextAssembler.RetrievalHealth.HEALTHY); }
 
     private SnapshotIdentity exactReadySnapshot(long repositoryId, String commitSha) {
         if (repositoryId <= 0 || commitSha == null || commitSha.isBlank()) {

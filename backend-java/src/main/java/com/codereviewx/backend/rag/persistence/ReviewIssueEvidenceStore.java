@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.codereviewx.backend.rag.security.RagSecurityPolicy;
 
 @Repository
 public class ReviewIssueEvidenceStore {
@@ -28,7 +29,7 @@ public class ReviewIssueEvidenceStore {
                     || evidence.sourceIdentity().contentHash().isBlank()) {
                 throw new IllegalStateException("Verified evidence source identity is incomplete");
             }
-            String excerpt = evidence.content().substring(0, Math.min(2000, evidence.content().length()));
+            String excerpt = RagSecurityPolicy.redactOutbound(evidence.content()).substring(0, Math.min(2000, RagSecurityPolicy.redactOutbound(evidence.content()).length()));
             jdbc.update("INSERT INTO review_issue_evidence(review_issue_id,rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     issue.getId(), evidence.sourceIdentity().chunkId(), label, evidence.path(), evidence.startLine(), evidence.endLine(),
                     evidence.sourceIdentity().contentHash(), excerpt,

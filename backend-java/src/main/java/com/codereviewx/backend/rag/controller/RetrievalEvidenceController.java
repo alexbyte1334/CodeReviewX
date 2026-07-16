@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
+import com.codereviewx.backend.rag.security.RagSecurityPolicy;
 
 @RestController
 public class RetrievalEvidenceController {
@@ -18,6 +19,6 @@ public class RetrievalEvidenceController {
   if(rows.isEmpty()) throw new RagNotFoundException("Retrieval trace not found"); return ApiResponse.success(rows.get(0)); }
  @GetMapping("/api/review-tasks/{taskId}/issues/{issueKey}/evidence") public ApiResponse<List<RetrievalTraceResponse.Evidence>> evidence(@PathVariable long taskId,@PathVariable String issueKey){
   if (!enabled) throw new RagDisabledException(); if(taskId<=0 || issueKey==null || !issueKey.matches("[A-Za-z0-9_.:-]{1,64}")) throw new RagInvalidRequestException();
-  var rows=jdbc.query("SELECT e.citation_label,e.path,e.start_line,e.end_line,e.evidence_excerpt,e.retrieval_rank,e.retrieval_score FROM review_issue_evidence e JOIN review_issue i ON i.id=e.review_issue_id WHERE i.review_task_id=? AND i.issue_key=? ORDER BY e.retrieval_rank,e.citation_label",(r,n)->new RetrievalTraceResponse.Evidence(r.getString(1),r.getString(2),r.getInt(3),r.getInt(4),r.getString(5),r.getInt(6),r.getDouble(7)),taskId,issueKey);
+  var rows=jdbc.query("SELECT e.citation_label,e.path,e.start_line,e.end_line,e.evidence_excerpt,e.retrieval_rank,e.retrieval_score FROM review_issue_evidence e JOIN review_issue i ON i.id=e.review_issue_id WHERE i.review_task_id=? AND i.issue_key=? ORDER BY e.retrieval_rank,e.citation_label",(r,n)->new RetrievalTraceResponse.Evidence(r.getString(1),r.getString(2),r.getInt(3),r.getInt(4),RagSecurityPolicy.redactOutbound(r.getString(5)),r.getInt(6),r.getDouble(7)),taskId,issueKey);
   if (rows.isEmpty()) throw new RagNotFoundException("Issue not found"); return ApiResponse.success(rows); }
 }
