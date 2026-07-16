@@ -168,9 +168,10 @@ and head SHA.
 
 ## 10. Production Database Note
 
-H2 is intentionally used for local demonstration. A production deployment should
-move to PostgreSQL or MySQL, add managed secret storage, and revisit indexing,
-retention, and migration policies.
+H2 is intentionally used for local demonstration with RAG disabled. The
+production RAG profile uses PostgreSQL 16 + pgvector and the V4-V7 migrations
+below; a deployed service must additionally provide managed secrets, backups,
+retention monitoring, and migration controls.
 # Production RAG tables and retention
 
 PostgreSQL/pgvector is the only RAG retrieval store. V4 creates the repository,

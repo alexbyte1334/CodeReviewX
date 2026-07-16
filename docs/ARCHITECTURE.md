@@ -11,11 +11,11 @@ designed for portfolio and interview demonstration: a user submits a GitHub PR
 or pasted unified diff, the system runs a bounded AI review, persists evidence,
 and lets the user manually publish selected comment previews back to GitHub.
 
-The current implementation is intentionally not a production SaaS. It has no
-multi-user auth, no GitHub App installation flow, no queue worker, no full
-repository clone, and no semantic/vector RAG or long-term memory system. It
-does include a bounded changed-file repository context index for GitHub PR
-reviews.
+The current implementation is intentionally not a multi-tenant production
+SaaS. It has no multi-user auth or GitHub App installation flow. The default H2
+profile keeps the bounded changed-file context path; the production PostgreSQL
+profile adds asynchronous full-repository clone/index snapshots, pgvector plus
+full-text hybrid retrieval, reranking, and evidence-gated review.
 
 ## 2. Runtime Architecture
 
@@ -34,7 +34,7 @@ reviews.
 | - ReviewTask API              |
 | - ReviewRun orchestration     |
 | - GitHub metadata/diff loader |
-| - Repository context index    |
+| - Legacy context + RAG module |
 | - MiMo dual-agent provider    |
 | - Static finding merger       |
 | - trace/snapshot persistence  |
@@ -44,8 +44,8 @@ reviews.
        | JPA / Flyway
        v
 +-------------------------------+
-| H2 file database              |
-| local runtime persistence     |
+| H2 local demo or PostgreSQL   |
+| 16 + pgvector production RAG  |
 +-------------------------------+
 
 External HTTP dependencies:
@@ -70,8 +70,13 @@ ReviewTaskService creates review_task + review_run
         |
         +-- MANUAL_DIFF: use pasted bounded diff
         |
-        +-- GITHUB_PR: github.pr.metadata.load -> github.pr.diff.load
-        |              -> repository.context.index
+        +-- GITHUB_PR legacy: github.pr.metadata.load -> github.pr.diff.load
+        |                    -> repository.context.index
+        |
+        +-- GITHUB_PR RAG: github.pr.metadata.load -> github.pr.diff.load
+                             -> rag.index.ensure -> rag.query.build
+                             -> rag.retrieve.hybrid -> rag.rerank
+                             -> rag.context.assemble
         |
         v
 Static finding pass
@@ -139,8 +144,9 @@ Responsibilities:
 - Validate review task requests.
 - Resolve `MANUAL_DIFF` vs `GITHUB_PR` mode.
 - Load bounded GitHub PR metadata and files patch when needed.
-- Load bounded changed-file contents at the PR head SHA for a lightweight
-  lexical repository context index.
+- Preserve bounded changed-file context for H2/local fallback.
+- Clone/index immutable repository commit snapshots and retrieve bounded
+  pgvector/full-text evidence in the PostgreSQL RAG profile.
 - Generate Semgrep-style and dependency-hygiene findings and persist them as
   normal review issues with explicit `source` provenance.
 - Execute the MiMo dual-agent review workflow.
@@ -152,7 +158,8 @@ Responsibilities:
 
 Boundaries:
 
-- Does not clone repositories or run full repository analysis.
+- Does not execute repository code; clone/index work is bounded by file, byte,
+  path, and commit-SHA controls.
 - Does not expose GitHub token, MiMo keys, raw prompts, raw model output, or raw
   full diff through public APIs.
 - Does not silently fall back to mock results for new tasks.
@@ -169,10 +176,9 @@ Current status:
 
 Future extraction option:
 
-- A later version may move full repository cloning/indexing, external Semgrep
-  execution, semantic/vector RAG, and provider orchestration into a dedicated
-  service. If that happens, this architecture document should be updated before
-  code is split.
+- A later version may extract the existing in-process RAG indexing and provider
+  orchestration into a dedicated worker/service. External Semgrep execution
+  also remains a possible extraction.
 
 ## 5. Review Modes
 
@@ -279,13 +285,15 @@ Core tables:
 
 - No OAuth or GitHub App.
 - No team or account model.
-- No async queue, retry worker, cancellation, or progress streaming.
-- No full repository indexing or clone-based analysis.
-- No semantic/vector RAG, MCP, function-calling tools, or durable memory.
+- No asynchronous review-execution queue, separately deployed worker,
+  cancellation, or progress streaming; RAG indexing does use an in-process
+  leased worker with retry.
+- No cross-repository knowledge graph, MCP/function-calling tools, or durable
+  conversational memory.
 - Request-time static findings are lightweight heuristics; external Semgrep is
   still local/CI tooling, not a long-running analysis worker.
-- H2 is for local development; production would need PostgreSQL or MySQL plus
-  managed secret storage.
+- H2 is local-development only. Production RAG uses PostgreSQL 16 + pgvector
+  and still requires managed secret storage and deployment access controls.
 # Production RAG boundary (V4)
 
 The production profile is a staged pipeline, not a single “RAG call”:

@@ -169,7 +169,8 @@ git diff --check
 
 ## 6. Task 12 delivery evidence (2026-07-16)
 
-- Verified branch head before this evidence refresh: `3cfdc15796e006d0d061e5c4cf555d189c8551d0`.
+- Verified implementation includes commits through `3cfdc15796e006d0d061e5c4cf555d189c8551d0`;
+  this evidence refresh and subsequent fact-document corrections are documentation-only.
 - `node scripts/run-rag-evals.mjs`: passed offline deterministic mode. Recall@10
   1.00, MRR@10 0.7222, nDCG@10 0.7586, forbidden-hit 0, cross-commit
   contamination 0, expected-finding pass 1.00, p95 latency 9.50 ms.

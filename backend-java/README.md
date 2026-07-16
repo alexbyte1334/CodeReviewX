@@ -153,10 +153,10 @@ Current review input behavior:
 Current limitations:
 
 - No GitHub App integration.
-- No repository is cloned or fully parsed.
-- No full repository analysis or production-grade review claim.
+- The H2 profile does not clone repositories; the PostgreSQL RAG profile clones
+  and indexes bounded immutable commit snapshots without executing repository code.
 - No visual diff viewer or syntax highlighting.
-- No semantic/vector RAG, MCP, Function Calling, or memory system.
+- No MCP, Function Calling, cross-repository graph, or durable memory system.
 - No production auth or team model.
 - No external Semgrep process is executed in the request path; the pipeline uses
   lightweight built-in Semgrep-style heuristics.
@@ -308,10 +308,13 @@ Expected response:
 
 ## Module Boundaries
 
-- Does: provide REST API, manage ReviewTask and ReviewRun lifecycle, persist tasks/issues/traces/snapshots/comment previews, accept optional pasted diff context, load bounded GitHub PR metadata/files patch/changed-file context, run request-time lightweight static finding checks, run the Xiaomi MiMo dual-agent provider, and publish selected comment previews after explicit user confirmation.
-- Does not: install a GitHub App, clone repositories, perform full repository analysis, execute the external Semgrep binary in the request path, or expose provider internals, raw full diff, prompts, model output, GitHub token, or MiMo keys through the public API.
-- Does not: provide semantic/vector RAG, MCP/Function Calling/memory features, production authentication, team workflows, issue resolution workflows, async queue processing, cancellation, or retry workers.
+- Does: provide REST API, manage ReviewTask and ReviewRun lifecycle, persist tasks/issues/traces/snapshots/comment previews, preserve bounded fallback context, index immutable repository commits in PostgreSQL/pgvector, run hybrid retrieval/reranking/evidence validation, run lightweight static findings and MiMo review, and publish selected previews after explicit confirmation.
+- Does not: install a GitHub App, execute repository code or the external Semgrep binary in the request path, or expose provider internals, raw full diff, prompts, model output, GitHub token, or MiMo keys through the public API.
+- Does not: provide MCP/Function Calling/durable memory, production authentication, team workflows, issue resolution workflows, cancellation, or a separately deployed queue worker.
 
 ## Production Expansion Notes
 
-The current backend is intentionally local-first and uses H2 file storage. A production version should replace H2 with PostgreSQL or MySQL, add managed secret storage, introduce async review execution, and move long-running repository context analysis into a separately deployable worker or service.
+The default local profile uses H2 with RAG disabled. The production profile uses
+PostgreSQL 16 + pgvector and an in-process asynchronous indexing worker. A
+deployed service still needs managed secrets, production authentication, and
+may later extract long-running indexing into a separate worker.

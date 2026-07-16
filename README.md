@@ -171,7 +171,8 @@ curl -X POST http://localhost:8080/api/review-tasks \
 flowchart TD
     User["Developer / Interview demo"] --> Frontend["React Review Workspace"]
     Frontend --> Backend["Spring Boot REST API"]
-    Backend --> H2["H2 local database"]
+    Backend --> H2["H2 local demo"]
+    Backend --> PG["PostgreSQL + pgvector RAG"]
     Backend --> GitHub["GitHub REST API"]
     Backend --> MiMo["Xiaomi MiMo API"]
     GitHub --> Metadata["PR metadata + files patch"]
@@ -188,7 +189,7 @@ flowchart TD
 核心边界：
 
 - `MANUAL_DIFF`：只使用用户粘贴的 bounded unified diff，额外跑 Semgrep-style 启发式规则。
-- `GITHUB_PR`：读取 PR metadata、files patch，并按文件数/字节限制拉取 changed-file 内容；这是 lightweight lexical context index，不是 full clone，也不是 vector database RAG。
+- `GITHUB_PR`：H2/local 模式保留 bounded changed-file fallback；production profile 按 head SHA 建立不可变全仓库快照，使用 pgvector + PostgreSQL FTS 混合召回、重排和 evidence gate。
 - `MiMo`：AI-1 生成 plan 和 gate，AI-2 执行审查；只有 gate 通过的 JSON 会被 deterministic IssueGenerator 转为 issue。
 - `Static Analysis`：当前请求链路内置轻量规则，生成 `SEMGREP` / `DEPENDENCY` source 的 persisted issue；项目级 `.semgrep.yml` 仍由本地/CI 静态扫描脚本执行。
 
@@ -201,14 +202,14 @@ sequenceDiagram
     participant BE as Backend
     participant GH as GitHub
     participant MM as MiMo
-    participant DB as H2
+    participant DB as H2 / PostgreSQL
 
     U->>FE: Create review task
     FE->>BE: POST /api/review-tasks
     alt GITHUB_PR mode
         BE->>GH: github.pr.metadata.load
         BE->>GH: github.pr.diff.load
-        BE->>GH: repository.context.index
+        BE->>DB: rag.index.ensure / hybrid retrieval
     else MANUAL_DIFF mode
         BE->>BE: use pasted bounded diff
     end
@@ -338,13 +339,12 @@ npm test -- --run
 以下能力**尚未实现**，请勿在产品中误称已支持：
 
 - OAuth / GitHub App
-- 仓库 clone 与全量代码分析
-- 向量数据库式 semantic RAG、全仓库索引、历史 review memory
+- 跨仓库知识图谱与历史 review memory
 - MCP、Function Calling
 - 生产级认证与团队协作
-- MySQL / PostgreSQL 生产数据库
+- 多租户生产认证、托管密钥与 GitHub App 安装
 
-GitHub PR 模式当前读取 PR metadata、files patch 和 changed-file 内容索引；它不 clone 仓库、不做全量 repository analysis。超大 PR 会按安全限制截断或失败。
+GitHub PR 的 production RAG profile 会安全 clone 指定 commit 并建立有界全仓库索引；它不会执行仓库代码。H2 profile 继续使用 changed-file fallback。超大仓库或 PR 会按文件、字节、chunk 和上下文预算截断或失败。
 
 ---
 
