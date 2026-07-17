@@ -1,5 +1,7 @@
 package com.codereviewx.backend.rag.retrieval;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -69,8 +71,8 @@ final class RagRetrievalQualityMetrics {
                 break;
             }
         }
-        double recall = relevant.isEmpty() ? 0.0 : (double) hits / relevant.size();
-        double mrr = firstRelevant < 0 ? 0.0 : 1.0 / (firstRelevant + 1);
+        double recall = stable(relevant.isEmpty() ? 0.0 : (double) hits / relevant.size());
+        double mrr = stable(firstRelevant < 0 ? 0.0 : 1.0 / (firstRelevant + 1));
         double dcg = 0.0;
         Set<String> scoredRelevant = new LinkedHashSet<>();
         for (int index = 0; index < topTen.size(); index++) {
@@ -82,7 +84,7 @@ final class RagRetrievalQualityMetrics {
         for (int index = 0; index < Math.min(10, relevant.size()); index++) {
             idealDcg += 1.0 / log2(index + 2);
         }
-        double ndcg = idealDcg == 0.0 ? 0.0 : dcg / idealDcg;
+        double ndcg = stable(idealDcg == 0.0 ? 0.0 : dcg / idealDcg);
         int forbiddenHits = (int) result.selectedKeys().stream().filter(result.forbiddenKeys()::contains).count();
         boolean crossCommit = result.selectedCommits().stream()
                 .anyMatch(commit -> !result.targetCommit().equals(commit));
@@ -92,7 +94,11 @@ final class RagRetrievalQualityMetrics {
     }
 
     private static double average(List<CaseMetrics> values, MetricValue metric) {
-        return values.isEmpty() ? 0.0 : values.stream().mapToDouble(metric::get).average().orElseThrow();
+        return values.isEmpty() ? 0.0 : stable(values.stream().mapToDouble(metric::get).average().orElseThrow());
+    }
+
+    private static double stable(double value) {
+        return BigDecimal.valueOf(value).setScale(12, RoundingMode.HALF_UP).doubleValue();
     }
 
     private static double log2(double value) {

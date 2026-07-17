@@ -16,8 +16,8 @@
   "excludes" : [ "MiMo finding generation", "finding quality", "evidence validation pass rate", "grounded finding precision", "network model latency" ],
   "metrics" : {
     "recallAt10" : 1.0,
-    "mrrAt10" : 0.8333333333333334,
-    "ndcgAt10" : 0.8710490642551528,
+    "mrrAt10" : 0.833333333333,
+    "ndcgAt10" : 0.871049064255,
     "forbiddenHits" : 0.0,
     "crossCommitContamination" : 0.0,
     "contextBudgetViolations" : 0.0
@@ -49,7 +49,7 @@
     "metrics" : {
       "recallAt10" : 1.0,
       "mrrAt10" : 1.0,
-      "ndcgAt10" : 0.9197207891481876,
+      "ndcgAt10" : 0.919720789148,
       "forbiddenHits" : 0,
       "crossCommitContamination" : false,
       "contextBudgetViolation" : false
@@ -95,7 +95,7 @@
     "metrics" : {
       "recallAt10" : 1.0,
       "mrrAt10" : 0.5,
-      "ndcgAt10" : 0.6934264036172708,
+      "ndcgAt10" : 0.693426403617,
       "forbiddenHits" : 0,
       "crossCommitContamination" : false,
       "contextBudgetViolation" : false

@@ -85,6 +85,34 @@ class RagRetrievalQualityAcceptanceTest {
         assertThat(wrongLineSegments.failures()).contains("recallAt10", "mrrAt10", "ndcgAt10");
     }
 
+    @Test
+    void qualityMetricsUseStableTwelveDecimalPrecision() {
+        RagRetrievalQualityMetrics metrics = RagRetrievalQualityMetrics.from(List.of(
+                new RagRetrievalQualityMetrics.CaseResult("stable-ndcg",
+                        List.of("src/api.ts#1", "src/service.ts#1"),
+                        List.of("src/api.ts#1", "src/filler.ts#1", "src/service.ts#1"),
+                        List.of(), "target-commit",
+                        List.of("target-commit", "target-commit", "target-commit"), 120)));
+
+        assertThat(metrics.metrics().get("ndcgAt10")).isEqualTo(0.919720789148);
+        assertThat(metrics.cases()).singleElement().satisfies(item ->
+                assertThat(item.ndcgAt10()).isEqualTo(0.919720789148));
+    }
+
+    @Test
+    void aggregateMetricsUseStablePrecisionWithoutMaskingThresholdFailures() {
+        RagRetrievalQualityMetrics metrics = RagRetrievalQualityMetrics.from(List.of(
+                new RagRetrievalQualityMetrics.CaseResult("first-rank", List.of("relevant#1"),
+                        List.of("relevant#1"), List.of(), "target-commit",
+                        List.of("target-commit"), 120),
+                new RagRetrievalQualityMetrics.CaseResult("third-rank", List.of("relevant#1"),
+                        List.of("filler#1", "filler#2", "relevant#1"), List.of(), "target-commit",
+                        List.of("target-commit", "target-commit", "target-commit"), 120)));
+
+        assertThat(metrics.metrics().get("mrrAt10")).isEqualTo(0.666666666667);
+        assertThat(metrics.failures()).containsExactly("mrrAt10");
+    }
+
     private static RagRetrievalQualityMetrics metrics(List<String> selectedKeys, List<String> selectedCommits,
                                                       List<String> forbiddenKeys, int contextCharacters) {
         return RagRetrievalQualityMetrics.from(List.of(new RagRetrievalQualityMetrics.CaseResult(
