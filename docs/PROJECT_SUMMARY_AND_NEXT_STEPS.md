@@ -189,9 +189,10 @@ git diff --check
 
 ## 6. Task 12 delivery evidence (2026-07-17)
 
-- Implementation branch: `codex/production-rag-delivery`. The final
-  implementation commit and GitHub Actions run are recorded after the local
-  evidence commit is created and pushed.
+- Implementation branch: `codex/production-rag-delivery`. Final local
+  acceptance implementation commit:
+  `95d83f52d78efb7f98c9b0bccb2226c251446a83`. The GitHub Actions run is
+  recorded after the branch is pushed.
 - Tasks 1-12 have independent primary commits: `e1bfdc0`, `d1e4c8b`,
   `eca328a`, `0e65384`, `39c1824`, `07b312c`, `c1f69a0`, `9c73ead`,
   `1f47d5b`, `8c1a369`, `c4a058b`, and `a85493e`, followed by focused review
