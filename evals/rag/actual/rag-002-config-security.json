@@ -1,0 +1,1 @@
+{"finding":{"severity":"high","category":"security","file":"src/config.ts","title":"JWT secret configuration","description":"JWT secret is configured in application settings","recommendation":"Use secret storage"},"evidenceChunkKeys":["src/config.ts"]}

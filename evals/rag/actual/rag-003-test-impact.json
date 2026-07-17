@@ -1,0 +1,1 @@
+{"finding":{"severity":"low","category":"test","file":"test/api.test.ts","title":"loadUser coverage","description":"API behavior has loadUser test coverage","recommendation":"Keep the regression test"},"evidenceChunkKeys":["test/api.test.ts","src/api.ts"]}

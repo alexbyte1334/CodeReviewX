@@ -1,0 +1,68 @@
+{
+  "schemaVersion" : 1,
+  "engine" : "java-production-review-pipeline",
+  "status" : "PASS",
+  "fixtures" : {
+    "mimo" : "deterministic-json",
+    "network" : false
+  },
+  "productionPath" : [ "ReviewTaskService", "XiaomiMiMoReviewProvider", "MiMoAgentJsonParser", "MiMoIssueGenerator", "ReviewEvidenceValidator", "ReviewIssueRepository", "ReviewIssueEvidencePersister" ],
+  "metrics" : {
+    "evidenceValidationPassRate" : 1.0,
+    "groundedFindingPrecision" : 1.0,
+    "expectedFindingPassRate" : 1.0
+  },
+  "thresholds" : {
+    "evidenceValidationPassRate" : 0.95,
+    "groundedFindingPrecisionBaseline" : 1.0,
+    "expectedFindingPassRate" : 1.0
+  },
+  "failures" : [ ],
+  "cases" : [ {
+    "id" : "rag-001-cross-file-call",
+    "mutation" : "NONE",
+    "expectedFinding" : true,
+    "producedMimoFindings" : 1,
+    "persistedEvidenceAssociations" : 1,
+    "selectedChunkKeys" : [ "src/service.ts#1", "src/api.ts#1" ],
+    "evidenceValidated" : true,
+    "grounded" : true,
+    "expectedFindingPassed" : true
+  }, {
+    "id" : "rag-002-config-security",
+    "mutation" : "NONE",
+    "expectedFinding" : true,
+    "producedMimoFindings" : 1,
+    "persistedEvidenceAssociations" : 1,
+    "selectedChunkKeys" : [ "src/config.ts#1" ],
+    "evidenceValidated" : true,
+    "grounded" : true,
+    "expectedFindingPassed" : true
+  }, {
+    "id" : "rag-003-test-impact",
+    "mutation" : "NONE",
+    "expectedFinding" : true,
+    "producedMimoFindings" : 1,
+    "persistedEvidenceAssociations" : 1,
+    "selectedChunkKeys" : [ "test/api.test.ts#1", "src/api.ts#1" ],
+    "evidenceValidated" : true,
+    "grounded" : true,
+    "expectedFindingPassed" : true
+  }, {
+    "id" : "rag-004-negative-control",
+    "mutation" : "NONE",
+    "expectedFinding" : false,
+    "producedMimoFindings" : 0,
+    "persistedEvidenceAssociations" : 0,
+    "selectedChunkKeys" : [ ],
+    "evidenceValidated" : true,
+    "grounded" : true,
+    "expectedFindingPassed" : true
+  }, {
+    "id" : "rag-005-rag-on-dependency-hygiene",
+    "mutation" : "NONE",
+    "expectedFinding" : "DEPENDENCY",
+    "producedDependencyFindings" : 1,
+    "expectedFindingPassed" : true
+  } ]
+}

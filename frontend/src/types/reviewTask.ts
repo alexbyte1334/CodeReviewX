@@ -51,6 +51,15 @@ export interface TraceSummary {
   providerFallback: boolean;
 }
 
+export interface IngestionSummary {
+  headSha: string | null;
+  baseSha: string | null;
+  changedFiles: number | null;
+  additions: number | null;
+  deletions: number | null;
+  truncated: boolean | null;
+}
+
 export interface ReviewTask {
   id: number;
   repoUrl: string;
@@ -67,9 +76,17 @@ export interface ReviewTask {
   providerUsed?: HistoricalReviewProvider;
   providerHit?: boolean;
   latestRunId?: number | null;
+  reviewMode?: 'MANUAL_DIFF' | 'GITHUB_PR' | null;
+  ingestionSummary?: IngestionSummary | null;
   traceSummary?: TraceSummary | null;
   commentPreviewCount?: number;
 }
+
+export type RepositoryIndexState = 'NOT_INDEXED' | 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
+export interface RepositoryIndexStatus { status: RepositoryIndexState; commitSha?: string | null; indexedChunks?: number; errorCode?: string | null; errorMessage?: string | null; }
+export interface RepositoryIndexResponse { jobId: number; status: RepositoryIndexState; repository?: string; requestedRef?: string; }
+export interface RetrievalEvidence { citationLabel: string; path: string; startLine: number; endLine: number; excerpt: string; rank: number; score: number; }
+export interface RetrievalTrace { degraded: boolean; degradedReason?: string | null; latencyMs: number; candidateCount: number; selectedCount: number; model?: string | null; evidence: RetrievalEvidence[]; }
 
 export interface CommentPreview {
   id: number;

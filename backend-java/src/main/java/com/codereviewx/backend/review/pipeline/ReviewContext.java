@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import com.codereviewx.backend.review.enums.ReviewMode;
+import com.codereviewx.backend.rag.retrieval.RagEvidenceBundle;
 
 /**
  * Input context for a review pipeline run.
@@ -18,6 +19,7 @@ public class ReviewContext {
     private final String diffText;
     private final String requestedProvider;
     private final ReviewMode reviewMode;
+    private final RagEvidenceBundle ragEvidenceBundle;
     private final List<ReviewAgentStep> agentSteps = new ArrayList<>();
 
     public ReviewContext(Long taskId, String repoUrl, Integer prNumber, LocalDateTime createdAt) {
@@ -35,7 +37,7 @@ public class ReviewContext {
                          String diffText,
                          String requestedProvider) {
         this(taskId, repoUrl, prNumber, createdAt, diffText, requestedProvider,
-                diffText == null || diffText.isBlank() ? ReviewMode.GITHUB_PR : ReviewMode.MANUAL_DIFF);
+                diffText == null || diffText.isBlank() ? ReviewMode.GITHUB_PR : ReviewMode.MANUAL_DIFF, null);
     }
 
     public ReviewContext(Long taskId,
@@ -45,6 +47,12 @@ public class ReviewContext {
                          String diffText,
                          String requestedProvider,
                          ReviewMode reviewMode) {
+        this(taskId, repoUrl, prNumber, createdAt, diffText, requestedProvider, reviewMode, null);
+    }
+
+    public ReviewContext(Long taskId, String repoUrl, Integer prNumber, LocalDateTime createdAt,
+                         String diffText, String requestedProvider, ReviewMode reviewMode,
+                         RagEvidenceBundle ragEvidenceBundle) {
         this.taskId = taskId;
         this.repoUrl = repoUrl;
         this.prNumber = prNumber;
@@ -52,6 +60,7 @@ public class ReviewContext {
         this.diffText = diffText;
         this.requestedProvider = requestedProvider;
         this.reviewMode = reviewMode;
+        this.ragEvidenceBundle = ragEvidenceBundle;
     }
 
     public Long getTaskId() {
@@ -84,6 +93,14 @@ public class ReviewContext {
 
     public ReviewMode getReviewMode() {
         return reviewMode;
+    }
+
+    public RagEvidenceBundle getRagEvidenceBundle() {
+        return ragEvidenceBundle;
+    }
+
+    public boolean hasRagEvidence() {
+        return ragEvidenceBundle != null && !ragEvidenceBundle.evidence().isEmpty();
     }
 
     public void addAgentStep(ReviewAgentStep step) {

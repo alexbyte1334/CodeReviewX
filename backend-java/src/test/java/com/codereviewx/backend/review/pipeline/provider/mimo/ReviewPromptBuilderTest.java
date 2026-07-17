@@ -2,9 +2,14 @@ package com.codereviewx.backend.review.pipeline.provider.mimo;
 
 import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.pipeline.ReviewContext;
+import com.codereviewx.backend.rag.retrieval.RagEvidence;
+import com.codereviewx.backend.rag.retrieval.RagEvidenceBundle;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalHealth;
+import com.codereviewx.backend.rag.retrieval.RagContextAssembler;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,6 +66,45 @@ class ReviewPromptBuilderTest {
     }
 
     @Test
+    void allExternalPromptsRedactRuntimeSecretsAndCanonicalizeRepositoryUrl() {
+        String token = "sk-" + String.join("", "Runtime", "Secret", "9876543210");
+        ReviewContext context = new ReviewContext(1L,
+                "https://oauth-user:" + token + "@github.com/Example/Repo.git?access_token=" + token,
+                10, LocalDateTime.now(), "diff --git a/A b/A\n+Authorization: Bearer " + token,
+                "mimo", ReviewMode.GITHUB_PR);
+        String taskPlan = "{\"query\":\"inspect " + token + "\"}";
+        String candidate = "{\"summary\":\"found " + token + "\",\"findings\":[]}";
+
+        String planner = promptBuilder.buildPlannerPrompt(context);
+        String executor = promptBuilder.buildExecutorPrompt(context, taskPlan);
+        String gatekeeper = promptBuilder.buildGatekeeperPrompt(taskPlan, candidate, context);
+
+        assertThat(List.of(planner, executor, gatekeeper)).allSatisfy(prompt -> assertThat(prompt)
+                .doesNotContain(token, "oauth-user", "access_token="));
+        assertThat(planner).contains("https://github.com/example/repo");
+        assertThat(executor).contains("https://github.com/example/repo", "diff --git a/A b/A", "[REDACTED]");
+    }
+
+    @Test
+    void buildExecutorPrompt_withRagEvidence_requiresKnownEvidenceLabels() {
+        RagEvidence evidence = new RagEvidence("C2", "src/App.ts", 10, 20, "head-sha",
+                "export const value = 1;", 0.91);
+        RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(evidence),
+                "[EVIDENCE C2]\npath: src/App.ts\nlines: 10-20\ncontent:\nexport const value = 1;\n[/EVIDENCE C2]",
+                RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
+        ReviewContext context = new ReviewContext(1L, "https://github.com/example/repo", 10,
+                LocalDateTime.now(), "diff --git a/src/App.ts b/src/App.ts\n@@ -10 +10 @@\n+export const value = 1;",
+                "mimo", ReviewMode.GITHUB_PR, bundle);
+
+        String prompt = promptBuilder.buildExecutorPrompt(context, TestMiMoAgentResponses.taskPlanJson());
+
+        assertThat(prompt).contains("[EVIDENCE C2]");
+        assertThat(prompt).contains("\"evidenceChunkIds\": [\"C2\",\"C5\"]");
+        assertThat(prompt).contains("cite at least one provided evidence label");
+        assertThat(prompt).contains("never copy evidence blocks verbatim");
+    }
+
+    @Test
     void buildExecutorPrompt_withoutDiff_statesDiffUnavailable() {
         String prompt = promptBuilder.buildExecutorPrompt(contextWithoutDiff(), TestMiMoAgentResponses.taskPlanJson());
 
@@ -79,5 +123,18 @@ class ReviewPromptBuilderTest {
         assertThat(prompt).contains("--- CANDIDATE REVIEW JSON START ---");
         assertThat(prompt).contains("\"approved\": true");
         assertThat(prompt).contains("Reject if the review invents files");
+        assertThat(prompt).contains("unknown evidence labels");
+    }
+
+    @Test
+    void buildGatekeeperPrompt_withRagContextIncludesAllowedLabelsAndBoundedMetadata() {
+        RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(
+                new RagEvidence("C1", "src/A.java", 2, 4, "head", "secret source", 0.9)),
+                "prompt", RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
+        ReviewContext context = new ReviewContext(1L, "https://github.com/example/repo", 10, LocalDateTime.now(),
+                "diff", "mimo", ReviewMode.GITHUB_PR, bundle);
+        String prompt = promptBuilder.buildGatekeeperPrompt("{}", "{}", context);
+        assertThat(prompt).contains("allowedEvidenceLabels: [C1]", "C1 path=src/A.java lines=2-4")
+                .doesNotContain("secret source");
     }
 }

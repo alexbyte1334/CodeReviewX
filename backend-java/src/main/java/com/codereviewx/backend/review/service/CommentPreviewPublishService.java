@@ -21,13 +21,16 @@ public class CommentPreviewPublishService {
     private final ReviewInputSnapshotRepository inputSnapshotRepository;
     private final ReviewCommentPreviewRepository commentPreviewRepository;
     private final GithubPrCommentPublisher githubPrCommentPublisher;
+    private final RagEvidencePublishGate evidencePublishGate;
 
     public CommentPreviewPublishService(ReviewInputSnapshotRepository inputSnapshotRepository,
                                         ReviewCommentPreviewRepository commentPreviewRepository,
-                                        GithubPrCommentPublisher githubPrCommentPublisher) {
+                                        GithubPrCommentPublisher githubPrCommentPublisher,
+                                        RagEvidencePublishGate evidencePublishGate) {
         this.inputSnapshotRepository = inputSnapshotRepository;
         this.commentPreviewRepository = commentPreviewRepository;
         this.githubPrCommentPublisher = githubPrCommentPublisher;
+        this.evidencePublishGate = evidencePublishGate;
     }
 
     public ReviewCommentPreviewEntity publishOne(Long runId, Long previewId) {
@@ -100,6 +103,7 @@ public class CommentPreviewPublishService {
     }
 
     private void validatePublishTarget(ReviewInputSnapshotEntity snapshot, ReviewCommentPreviewEntity preview) {
+        evidencePublishGate.validate(preview);
         if (snapshot.getOwner() == null || snapshot.getOwner().isBlank()
                 || snapshot.getRepo() == null || snapshot.getRepo().isBlank()
                 || snapshot.getPrNumber() == null

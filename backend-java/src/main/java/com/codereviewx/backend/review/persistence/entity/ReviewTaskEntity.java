@@ -5,7 +5,6 @@ import com.codereviewx.backend.review.enums.ReviewTaskStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Lob;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -14,6 +13,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import org.hibernate.Length;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,8 +33,7 @@ public class ReviewTaskEntity {
     @Column(nullable = false)
     private Integer prNumber;
 
-    @Lob
-    @Column(name = "diff_text")
+    @Column(name = "diff_text", length = Length.LONG32)
     private String diffText;
 
     @Enumerated(EnumType.STRING)

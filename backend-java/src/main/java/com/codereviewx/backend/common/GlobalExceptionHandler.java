@@ -9,11 +9,33 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.codereviewx.backend.rag.controller.RagNotFoundException;
+import com.codereviewx.backend.rag.controller.RagConflictException;
+import com.codereviewx.backend.rag.controller.RagDisabledException;
+import com.codereviewx.backend.rag.controller.RagInvalidRequestException;
+import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(IllegalArgumentException.class) @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleIllegalArgument(IllegalArgumentException ex) { return ApiResponse.failure("Invalid request"); }
+    @ExceptionHandler(RagNotFoundException.class) @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleRagNotFound(RagNotFoundException ex) { return ApiResponse.failure("Not found"); }
+    @ExceptionHandler(RagConflictException.class) @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleRagConflict(RagConflictException ex) { return ApiResponse.failure("Already queued"); }
+    @ExceptionHandler(RagDisabledException.class) @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ApiResponse<Void> handleRagDisabled(RagDisabledException ex) { return ApiResponse.failure("RAG unavailable"); }
+    @ExceptionHandler({RagInvalidRequestException.class, ConstraintViolationException.class,
+            MissingServletRequestParameterException.class, MethodArgumentTypeMismatchException.class,
+            HttpMessageNotReadableException.class, HandlerMethodValidationException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleRagInvalidRequest(Exception ex) { return ApiResponse.failure("Invalid request"); }
 
     @ExceptionHandler(ReviewTaskNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)

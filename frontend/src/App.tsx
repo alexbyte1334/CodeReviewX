@@ -3,6 +3,7 @@ import type { CommentPreview, ReviewTask, ToolTraceItem } from './types/reviewTa
 import {
   getCommentPreviews,
   getHealth,
+  getRepositoryIndexStatus, requestRepositoryIndex, requestRepositoryReindex, getRetrievalEvidence, getRetrievalTrace,
   getReviewTask,
   getToolTrace,
   listReviewTasks,
@@ -18,10 +19,17 @@ import { WorkspaceToolbar } from './components/WorkspaceToolbar';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { useColorTheme } from './hooks/useColorTheme';
 import type { BackendStatus, PanelId } from './types/ui';
+import type { RepositoryIndexStatus, RetrievalEvidence } from './types/reviewTask';
 import { PRODUCT_LIMITS } from './types/ui';
 import './styles/app.css';
 
 type NavSection = 'workspace' | 'history';
+const FULL_COMMIT_SHA = /^[0-9a-f]{40}$/;
+
+function githubRepositoryParts(repoUrl: string): [string, string] | null {
+  const match = repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?\/?$/i);
+  return match ? [match[1], match[2]] : null;
+}
 
 export default function App() {
   const { theme, toggleTheme } = useColorTheme();
@@ -45,6 +53,21 @@ export default function App() {
   const [toolTraceItems, setToolTraceItems] = useState<ToolTraceItem[]>([]);
   const [toolTraceLoading, setToolTraceLoading] = useState(false);
   const [toolTraceError, setToolTraceError] = useState<string | null>(null);
+  const [repositoryIndexStatus, setRepositoryIndexStatus] = useState<RepositoryIndexStatus | null>(null);
+  const [repositoryIndexError, setRepositoryIndexError] = useState<string | null>(null);
+  const [repositoryIndexLoading, setRepositoryIndexLoading] = useState(false);
+  const [indexMutationLoading, setIndexMutationLoading] = useState(false);
+  const [retrievalDegraded, setRetrievalDegraded] = useState<boolean | null>(null);
+  const [indexPollTrigger, setIndexPollTrigger] = useState(0);
+  const [evidenceByIssue, setEvidenceByIssue] = useState<Record<string, RetrievalEvidence[]>>({});
+  const [evidenceLoadingIssue, setEvidenceLoadingIssue] = useState<string | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [evidenceLoadingByIssue, setEvidenceLoadingByIssue] = useState<Record<string, boolean>>({});
+  const [evidenceErrorByIssue, setEvidenceErrorByIssue] = useState<Record<string, string | null>>({});
+  const indexGeneration = useRef(0);
+  const taskGeneration = useRef(0);
+  const indexMutationInFlight = useRef(false);
+  const evidenceInFlight = useRef(new Set<string>());
   const workspaceRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -107,42 +130,162 @@ export default function App() {
   }
 
   async function handleSelectTask(task: ReviewTask) {
+    const generation = ++taskGeneration.current;
     setActiveNav('history');
     expandPanel('findings');
     setDetailLoading(true);
     setDetailError(null);
     setCommentPreviewError(null);
     setCommentPreviews([]);
+    setCommentPreviewLoading(false);
     setToolTraceError(null);
     setToolTraceItems([]);
+    setToolTraceLoading(false);
+    indexMutationInFlight.current = false;
+    setIndexMutationLoading(false);
     setSelectedTask(null);
+    setEvidenceByIssue({}); setEvidenceError(null); setRepositoryIndexStatus(null); setRepositoryIndexError(null); setRetrievalDegraded(null);
+    setEvidenceLoadingByIssue({}); setEvidenceErrorByIssue({});
     try {
       const res = await getReviewTask(task.id);
+      if (generation !== taskGeneration.current) return;
       if (res.success && res.data) {
         setSelectedTask(res.data);
         if (res.data.latestRunId) {
           await Promise.all([
-            loadCommentPreviews(res.data.latestRunId),
-            loadToolTrace(res.data.latestRunId),
+            loadCommentPreviews(res.data.latestRunId, generation),
+            loadToolTrace(res.data.latestRunId, generation),
+            loadRetrievalState(res.data.latestRunId, generation),
           ]);
         }
       } else {
         setDetailError(res.message || 'Task not found.');
       }
     } catch {
+      if (generation !== taskGeneration.current) return;
       setDetailError(
         'Backend is unavailable. Check that backend-java is running on localhost:8080.',
       );
     } finally {
-      setDetailLoading(false);
+      if (generation === taskGeneration.current) setDetailLoading(false);
     }
   }
 
-  async function loadToolTrace(runId: number) {
+  useEffect(() => {
+    const current = selectedTask;
+    if (!current) return;
+    const repository = githubRepositoryParts(current.repoUrl);
+    const sha = current.ingestionSummary?.headSha;
+    if (!repository || !sha || !FULL_COMMIT_SHA.test(sha)) return;
+    const generation = ++indexGeneration.current;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      if (stopped) return;
+      setRepositoryIndexLoading(true);
+      setRepositoryIndexError(null);
+      try {
+        const res = await getRepositoryIndexStatus(repository[0], repository[1], sha);
+        if (stopped || generation !== indexGeneration.current) return;
+        if (res.success && res.data) {
+          setRepositoryIndexStatus(res.data);
+          if (res.data.status === 'QUEUED' || res.data.status === 'RUNNING') timer = setTimeout(poll, 2000);
+        } else {
+          setRepositoryIndexStatus(null);
+          setRepositoryIndexError('Unable to load index status.');
+        }
+      } catch {
+        if (!stopped && generation === indexGeneration.current) {
+          setRepositoryIndexStatus(null);
+          setRepositoryIndexError('Unable to load index status.');
+        }
+      } finally {
+        if (!stopped && generation === indexGeneration.current) setRepositoryIndexLoading(false);
+      }
+    };
+    poll();
+    return () => { stopped = true; if (timer) clearTimeout(timer); indexGeneration.current++; };
+  }, [selectedTask?.id, selectedTask?.repoUrl, selectedTask?.ingestionSummary?.headSha, indexPollTrigger]);
+
+  async function handleRequestRepositoryIndex() {
+    if (!selectedTask || indexMutationInFlight.current) return;
+    const generation = taskGeneration.current;
+    const sha = selectedTask.ingestionSummary?.headSha;
+    if (!sha || !FULL_COMMIT_SHA.test(sha)) { setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Repository head SHA is unavailable.' }); return; }
+    if (!githubRepositoryParts(selectedTask.repoUrl)) { setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Unsupported repository URL' }); return; }
+    indexMutationInFlight.current = true;
+    setIndexMutationLoading(true);
+    setRepositoryIndexError(null);
+    setRepositoryIndexStatus({ status: 'QUEUED', commitSha: sha });
+    try {
+      const res = await requestRepositoryIndex(selectedTask.repoUrl, sha);
+      if (generation !== taskGeneration.current) return;
+      if (res.success && res.data) { setRepositoryIndexStatus({ status: res.data.status, commitSha: sha }); setIndexPollTrigger((value) => value + 1); }
+      else if (res.httpStatus === 409) { setRepositoryIndexStatus({ status: 'QUEUED', commitSha: sha }); setIndexPollTrigger((value) => value + 1); }
+      else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message || 'Index request failed.' });
+    } catch { if (generation === taskGeneration.current) setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Index request failed.' }); }
+    finally {
+      if (generation === taskGeneration.current) {
+        indexMutationInFlight.current = false;
+        setIndexMutationLoading(false);
+      }
+    }
+  }
+  async function handleRequestRepositoryReindex() {
+    if (!selectedTask || indexMutationInFlight.current) return;
+    const generation = taskGeneration.current;
+    const repository = githubRepositoryParts(selectedTask.repoUrl);
+    const sha = selectedTask.ingestionSummary?.headSha;
+    if (!sha || !FULL_COMMIT_SHA.test(sha)) { setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Repository head SHA is unavailable.' }); return; }
+    if (!repository) { setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Unsupported repository URL' }); return; }
+    indexMutationInFlight.current = true;
+    setIndexMutationLoading(true);
+    setRepositoryIndexError(null);
+    setRepositoryIndexStatus({ status: 'QUEUED', commitSha: sha });
+    try {
+      const res = await requestRepositoryReindex(repository[0], repository[1], sha);
+      if (generation !== taskGeneration.current) return;
+      if (res.success && res.data) { setRepositoryIndexStatus({ status: res.data.status, commitSha: sha }); setIndexPollTrigger((value) => value + 1); }
+      else if (res.httpStatus === 409) { setRepositoryIndexStatus({ status: 'QUEUED', commitSha: sha }); setIndexPollTrigger((value) => value + 1); }
+      else setRepositoryIndexStatus({ status: 'FAILED', errorMessage: res.message || 'Reindex request failed.' });
+    } catch { if (generation === taskGeneration.current) setRepositoryIndexStatus({ status: 'FAILED', errorMessage: 'Reindex request failed.' }); }
+    finally {
+      if (generation === taskGeneration.current) {
+        indexMutationInFlight.current = false;
+        setIndexMutationLoading(false);
+      }
+    }
+  }
+
+  async function loadRetrievalState(runId: number, generation: number) {
+    try {
+      const res = await getRetrievalTrace(runId);
+      if (generation !== taskGeneration.current) return;
+      setRetrievalDegraded(res.success && res.data ? Boolean(res.data.degraded) : null);
+    } catch {
+      if (generation === taskGeneration.current) setRetrievalDegraded(null);
+    }
+  }
+
+  async function handleIssueEvidence(issueId: string) {
+    if (!selectedTask) return;
+    const evidenceKey = `${selectedTask.id}:${issueId}`;
+    if (evidenceByIssue[issueId] || evidenceInFlight.current.has(evidenceKey)) return;
+    const generation = taskGeneration.current;
+    evidenceInFlight.current.add(evidenceKey);
+    setEvidenceLoadingIssue(issueId); setEvidenceLoadingByIssue((p) => ({ ...p, [issueId]: true })); setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: null }));
+    try { const res = await getRetrievalEvidence(selectedTask.id, issueId); if (generation !== taskGeneration.current) return; if (res.success && res.data) setEvidenceByIssue((prev) => ({ ...prev, [issueId]: res.data! })); else setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: res.message || 'Evidence unavailable.' })); }
+    catch { if (generation === taskGeneration.current) setEvidenceErrorByIssue((p) => ({ ...p, [issueId]: 'Evidence unavailable.' })); }
+    finally { evidenceInFlight.current.delete(evidenceKey); if (generation === taskGeneration.current) { setEvidenceLoadingIssue(null); setEvidenceLoadingByIssue((p) => ({ ...p, [issueId]: false })); } }
+  }
+
+  async function loadToolTrace(runId: number, generation: number) {
+    if (generation !== taskGeneration.current) return;
     setToolTraceLoading(true);
     setToolTraceError(null);
     try {
       const res = await getToolTrace(runId);
+      if (generation !== taskGeneration.current) return;
       if (res.success && res.data) {
         setToolTraceItems(res.data.items);
       } else {
@@ -150,18 +293,22 @@ export default function App() {
         setToolTraceItems([]);
       }
     } catch {
-      setToolTraceError('Backend is unavailable. Agent trace could not be loaded.');
-      setToolTraceItems([]);
+      if (generation === taskGeneration.current) {
+        setToolTraceError('Backend is unavailable. Agent trace could not be loaded.');
+        setToolTraceItems([]);
+      }
     } finally {
-      setToolTraceLoading(false);
+      if (generation === taskGeneration.current) setToolTraceLoading(false);
     }
   }
 
-  async function loadCommentPreviews(runId: number) {
+  async function loadCommentPreviews(runId: number, generation: number) {
+    if (generation !== taskGeneration.current) return;
     setCommentPreviewLoading(true);
     setCommentPreviewError(null);
     try {
       const res = await getCommentPreviews(runId);
+      if (generation !== taskGeneration.current) return;
       if (res.success && res.data) {
         setCommentPreviews(res.data.items);
       } else {
@@ -169,10 +316,12 @@ export default function App() {
         setCommentPreviews([]);
       }
     } catch {
-      setCommentPreviewError('Backend is unavailable. Comment previews could not be loaded.');
-      setCommentPreviews([]);
+      if (generation === taskGeneration.current) {
+        setCommentPreviewError('Backend is unavailable. Comment previews could not be loaded.');
+        setCommentPreviews([]);
+      }
     } finally {
-      setCommentPreviewLoading(false);
+      if (generation === taskGeneration.current) setCommentPreviewLoading(false);
     }
   }
 
@@ -402,6 +551,27 @@ export default function App() {
                   toolTraceError={toolTraceError}
                   onCommentPreviewSelectionChange={handleCommentPreviewSelection}
                   onPublishSelectedCommentPreviews={handlePublishSelectedCommentPreviews}
+                  repositoryIndexStatus={repositoryIndexStatus}
+                  retrievalDegraded={retrievalDegraded}
+                  indexActionsDisabled={
+                    !FULL_COMMIT_SHA.test(selectedTask?.ingestionSummary?.headSha ?? '')
+                    || (repositoryIndexStatus === null && repositoryIndexError === null)
+                    || repositoryIndexLoading
+                    || indexMutationLoading
+                  }
+                  indexActionError={
+                    selectedTask && !FULL_COMMIT_SHA.test(selectedTask.ingestionSummary?.headSha ?? '')
+                      ? 'Repository head SHA is unavailable.'
+                      : repositoryIndexError
+                  }
+                  onRequestRepositoryIndex={handleRequestRepositoryIndex}
+                  onRequestRepositoryReindex={handleRequestRepositoryReindex}
+                  evidenceByIssue={evidenceByIssue}
+                  evidenceLoadingIssue={evidenceLoadingIssue}
+                  evidenceError={evidenceError}
+                  evidenceLoadingByIssue={evidenceLoadingByIssue}
+                  evidenceErrorByIssue={evidenceErrorByIssue}
+                  onIssueEvidenceRequest={handleIssueEvidence}
                 />
               </section>
             </div>

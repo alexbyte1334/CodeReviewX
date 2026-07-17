@@ -14,6 +14,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import com.codereviewx.backend.rag.retrieval.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 class XiaomiMiMoReviewProviderTest {
 
@@ -136,5 +139,56 @@ class XiaomiMiMoReviewProviderTest {
                 .isInstanceOf(MiMoAgentException.class)
                 .extracting("errorCode")
                 .isEqualTo(ReviewErrorCodes.MIMO_GATE_REJECTED);
+    }
+
+    @Test
+    void reviewRejectsMissingUnknownAndVerbatimEvidenceBeforeGatekeeper() {
+        context = ragContext();
+        for (String finding : List.of(
+                findingJson("[]", "safe description"),
+                findingJson("[\"C9\"]", "safe description"),
+                findingJson("[\"C1\"]", "bounded evidence content with enough unique source tokens"))) {
+            org.mockito.Mockito.reset(client);
+            org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                    .thenReturn(TestMiMoAgentResponses.taskPlanJson());
+            org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                    .thenReturn("{\"summary\":\"x\",\"findings\":[" + finding + "]}");
+            assertThatThrownBy(() -> provider.review(context)).isInstanceOf(MiMoAgentException.class)
+                    .extracting("errorCode").isEqualTo(ReviewErrorCodes.MIMO_REVIEW_INVALID);
+            verify(client, never()).complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString());
+        }
+    }
+
+    @Test
+    void reviewAcceptsValidMultipleKnownEvidenceLabelsAndPassesAllowedSetToGatekeeper() {
+        context = ragContext();
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn("{\"summary\":\"x\",\"findings\":[" + findingJson("[\"C1\",\"C2\"]", "safe description") + "]}");
+        org.mockito.ArgumentCaptor<String> gatePrompt = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), gatePrompt.capture(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.approvedGateJson());
+
+        assertThat(provider.review(context).getFindings()).singleElement()
+                .extracting(ReviewFinding::getEvidenceChunkIds).isEqualTo(List.of("C1", "C2"));
+        assertThat(gatePrompt.getValue()).contains("allowedEvidenceLabels: [C1, C2]");
+    }
+
+    private ReviewContext ragContext() {
+        RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(
+                new RagEvidence("C1", "src/A.java", 1, 2, "head",
+                        "bounded evidence content with enough unique source tokens", 0.9),
+                new RagEvidence("C2", "src/A.java", 3, 4, "head", "other evidence", 0.8)),
+                "prompt", RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
+        return new ReviewContext(1L, "https://github.com/example/repo", 9, LocalDateTime.now(),
+                "diff --git a/src/A.java b/src/A.java\n@@ -1 +1,4 @@\n context\n+added", "mimo",
+                com.codereviewx.backend.review.enums.ReviewMode.GITHUB_PR, bundle);
+    }
+
+    private String findingJson(String labels, String description) {
+        return "{\"severity\":\"HIGH\",\"category\":\"BUG\",\"filePath\":\"src/A.java\","
+                + "\"startLine\":1,\"endLine\":1,\"title\":\"title\",\"description\":\"" + description
+                + "\",\"recommendation\":\"fix\",\"evidenceChunkIds\":" + labels + "}";
     }
 }

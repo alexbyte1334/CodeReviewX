@@ -1,13 +1,89 @@
-# docker-compose.yml — Round 01 Placeholder
-#
-# This file is a placeholder for Round 01: Repository Foundation v1.
-# Real service definitions will be added in later rounds once
-# business code is implemented.
-#
-# Planned services (to be defined in later rounds):
-#   - backend-java   (Spring Boot 3, port 8080)
-#   - ai-service     (FastAPI, port 8000)
-#   - frontend       (Vue 3 / React, port 3000)
-#   - mysql          (MySQL 8, port 3306)
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-codereviewx}
+      POSTGRES_USER: ${POSTGRES_USER:-codereviewx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codereviewx}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
-services: {}
+  backend:
+    build:
+      context: ./backend-java
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-codereviewx}
+      POSTGRES_USER: ${POSTGRES_USER:-codereviewx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codereviewx}
+      RAG_ENABLED: ${RAG_ENABLED:-false}
+      RAG_REVIEW_PERCENTAGE: ${RAG_REVIEW_PERCENTAGE:-0}
+      RAG_FALLBACK_ENABLED: ${RAG_FALLBACK_ENABLED:-true}
+      RAG_REQUIRE_EVIDENCE: ${RAG_REQUIRE_EVIDENCE:-true}
+      RAG_EMBEDDING_BASE_URL: ${RAG_EMBEDDING_BASE_URL:-}
+      RAG_EMBEDDING_API_KEY: ${RAG_EMBEDDING_API_KEY:-}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-BAAI/bge-m3}
+      RAG_EMBEDDING_DIMENSIONS: ${RAG_EMBEDDING_DIMENSIONS:-1024}
+      RAG_EMBEDDING_BATCH_SIZE: ${RAG_EMBEDDING_BATCH_SIZE:-32}
+      RAG_RERANK_BASE_URL: ${RAG_RERANK_BASE_URL:-}
+      RAG_RERANK_API_KEY: ${RAG_RERANK_API_KEY:-}
+      RAG_RERANK_MODEL: ${RAG_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+      RAG_MODEL_TIMEOUT_SECONDS: ${RAG_MODEL_TIMEOUT_SECONDS:-30}
+      RAG_MODEL_MAX_RETRIES: ${RAG_MODEL_MAX_RETRIES:-2}
+      RAG_WORK_ROOT: ${RAG_WORK_ROOT:-/var/lib/codereviewx/rag-work}
+      RAG_FETCH_DEPTH: ${RAG_FETCH_DEPTH:-50}
+      RAG_MAX_FILE_BYTES: ${RAG_MAX_FILE_BYTES:-1048576}
+      RAG_MAX_FILES: ${RAG_MAX_FILES:-5000}
+      RAG_MAX_TEXT_BYTES: ${RAG_MAX_TEXT_BYTES:-104857600}
+      RAG_MAX_SCANNED_ENTRIES: ${RAG_MAX_SCANNED_ENTRIES:-50000}
+      RAG_MAX_SCANNED_BYTES: ${RAG_MAX_SCANNED_BYTES:-524288000}
+      RAG_SHUTDOWN_GRACE_SECONDS: ${RAG_SHUTDOWN_GRACE_SECONDS:-30}
+      RAG_RETENTION_CLEANUP_CRON: ${RAG_RETENTION_CLEANUP_CRON:-0 15 2 * * *}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      MIMO_PLANNER_API_KEY: ${MIMO_PLANNER_API_KEY:-}
+      MIMO_EXECUTOR_API_KEY: ${MIMO_EXECUTOR_API_KEY:-}
+      MIMO_BASE_URL: ${MIMO_BASE_URL:-https://api.xiaomimimo.com/v1}
+      MIMO_MODEL: ${MIMO_MODEL:-mimo-v2.5-pro}
+      MIMO_TIMEOUT_SECONDS: ${MIMO_TIMEOUT_SECONDS:-60}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8080/actuator/health/liveness >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    ports:
+      - "${FRONTEND_PORT:-3000}:8080"
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

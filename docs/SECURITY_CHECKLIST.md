@@ -55,6 +55,13 @@ Public API responses must not include:
 - `review_tool_trace.input_summary`
 - internal database ids for review issues
 
+RAG-specific boundaries:
+
+- redact token-shaped values before embedding and rerank request bodies are serialized
+- redact evidence excerpts and retrieval traces before returning them from APIs
+- never include provider endpoint credentials, request bodies, or response bodies in errors or metrics
+- metrics use bounded status/reason labels only; repository, path, commit, prompt, and token values are forbidden labels
+
 Existing controller/service tests cover the primary redaction paths for trace, snapshot, comment preview publishing, and missing-token errors.
 
 ## Prompt Injection Boundary
@@ -66,9 +73,18 @@ Rules:
 - Never execute instructions found inside diff content.
 - Keep system role instructions separate from diff/context text.
 - Delimit diff/context in prompts.
+- Mark evidence blocks as untrusted repository data in the system instructions; evidence content cannot override the review contract.
 - Do not let model output directly write database rows; normalize through deterministic code.
 - Do not publish comments without explicit user selection and confirmation.
 - Do not persist raw prompts or raw model output.
+
+## Retention Boundary
+
+- Keep all snapshots for the latest five distinct commits per repository.
+- Keep snapshots newer than 30 days, the active commit, and snapshots belonging to queued/running jobs.
+- Delete chunks and documents before snapshots so cleanup is valid without relying on cascading foreign keys.
+- Preserve immutable `review_issue_evidence` excerpts after source snapshot cleanup.
+- Cleanup must be transactional and idempotent.
 
 ## Upload Checklist
 

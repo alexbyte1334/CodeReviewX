@@ -1,0 +1,127 @@
+{
+  "schemaVersion" : 2,
+  "engine" : "java-production",
+  "status" : "PASS",
+  "database" : {
+    "product" : "PostgreSQL 16",
+    "extension" : "pgvector",
+    "containerImage" : "pgvector/pgvector:pg16"
+  },
+  "externalFixtures" : {
+    "embedding" : "java-production-deterministic-token-hash-v1",
+    "rerank" : "deterministic-query-content-token-overlap-v1",
+    "purpose" : "stable external model substitutes; retrieval, RRF, and selection remain production Java"
+  },
+  "covers" : [ "Recall@10", "MRR@10", "nDCG@10", "forbidden hits", "cross-commit contamination", "context budget" ],
+  "excludes" : [ "MiMo finding generation", "finding quality", "evidence validation pass rate", "grounded finding precision", "network model latency" ],
+  "metrics" : {
+    "recallAt10" : 1.0,
+    "mrrAt10" : 0.833333333333,
+    "ndcgAt10" : 0.871049064255,
+    "forbiddenHits" : 0.0,
+    "crossCommitContamination" : 0.0,
+    "contextBudgetViolations" : 0.0
+  },
+  "thresholds" : {
+    "recallAt10" : 0.85,
+    "mrrAt10" : 0.7,
+    "ndcgAt10" : 0.75,
+    "forbiddenHits" : 0.0,
+    "crossCommitContamination" : 0.0,
+    "contextBudgetViolations" : 0.0
+  },
+  "failures" : [ ],
+  "cases" : [ {
+    "id" : "rag-001-cross-file-call",
+    "targetCommit" : "target-commit",
+    "query" : "changed createUser call chain and loadUser dependency",
+    "changedPaths" : [ "src/service.ts" ],
+    "relevantChunkKeys" : [ "src/api.ts#1", "src/service.ts#1" ],
+    "forbiddenChunkKeys" : [ "src/validation.ts#1" ],
+    "vectorCandidateCount" : 18,
+    "lexicalCandidateCount" : 1,
+    "retrievedCandidateCount" : 18,
+    "forbiddenCandidateKeys" : [ "src/validation.ts#1" ],
+    "selectedChunkKeys" : [ "src/api.ts#1", "test/api.test.ts#1", "src/service.ts#1", "src/feature.ts#1", "src/health.ts#1", "src/routes.ts#1", "src/metrics.ts#1", "src/storage.ts#1", "src/cache.ts#1", "src/notifications.ts#1", "src/search.ts#1", "src/format.ts#1" ],
+    "selectedPaths" : [ "src/api.ts", "test/api.test.ts", "src/service.ts", "src/feature.ts", "src/health.ts", "src/routes.ts", "src/metrics.ts", "src/storage.ts", "src/cache.ts", "src/notifications.ts", "src/search.ts", "src/format.ts" ],
+    "selectedCommits" : [ "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit" ],
+    "contextCharacters" : 1778,
+    "metrics" : {
+      "recallAt10" : 1.0,
+      "mrrAt10" : 1.0,
+      "ndcgAt10" : 0.919720789148,
+      "forbiddenHits" : 0,
+      "crossCommitContamination" : false,
+      "contextBudgetViolation" : false
+    }
+  }, {
+    "id" : "rag-002-config-security",
+    "targetCommit" : "target-commit",
+    "query" : "database URL and JWT secret configuration security",
+    "changedPaths" : [ "src/config.ts" ],
+    "relevantChunkKeys" : [ "src/config.ts#1" ],
+    "forbiddenChunkKeys" : [ "src/validation.ts#1" ],
+    "vectorCandidateCount" : 18,
+    "lexicalCandidateCount" : 1,
+    "retrievedCandidateCount" : 18,
+    "forbiddenCandidateKeys" : [ "src/validation.ts#1" ],
+    "selectedChunkKeys" : [ "src/config.ts#1", "src/feature.ts#1", "src/health.ts#1", "src/routes.ts#1", "src/metrics.ts#1", "src/storage.ts#1", "src/cache.ts#1", "src/notifications.ts#1", "src/search.ts#1", "src/format.ts#1", "src/queue.ts#1", "src/telemetry.ts#1" ],
+    "selectedPaths" : [ "src/config.ts", "src/feature.ts", "src/health.ts", "src/routes.ts", "src/metrics.ts", "src/storage.ts", "src/cache.ts", "src/notifications.ts", "src/search.ts", "src/format.ts", "src/queue.ts", "src/telemetry.ts" ],
+    "selectedCommits" : [ "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit" ],
+    "contextCharacters" : 1710,
+    "metrics" : {
+      "recallAt10" : 1.0,
+      "mrrAt10" : 1.0,
+      "ndcgAt10" : 1.0,
+      "forbiddenHits" : 0,
+      "crossCommitContamination" : false,
+      "contextBudgetViolation" : false
+    }
+  }, {
+    "id" : "rag-003-test-impact",
+    "targetCommit" : "target-commit",
+    "query" : "tests covering loadUser API behavior",
+    "changedPaths" : [ "src/api.ts" ],
+    "relevantChunkKeys" : [ "test/api.test.ts#1", "src/api.ts#1" ],
+    "forbiddenChunkKeys" : [ "src/validation.ts#1" ],
+    "vectorCandidateCount" : 18,
+    "lexicalCandidateCount" : 1,
+    "retrievedCandidateCount" : 18,
+    "forbiddenCandidateKeys" : [ "src/validation.ts#1" ],
+    "selectedChunkKeys" : [ "src/service.ts#1", "test/api.test.ts#1", "src/api.ts#1", "src/feature.ts#1", "src/health.ts#1", "src/routes.ts#1", "src/metrics.ts#1", "src/storage.ts#1", "src/cache.ts#1", "src/notifications.ts#1", "src/search.ts#1", "src/format.ts#1" ],
+    "selectedPaths" : [ "src/service.ts", "test/api.test.ts", "src/api.ts", "src/feature.ts", "src/health.ts", "src/routes.ts", "src/metrics.ts", "src/storage.ts", "src/cache.ts", "src/notifications.ts", "src/search.ts", "src/format.ts" ],
+    "selectedCommits" : [ "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit", "target-commit" ],
+    "contextCharacters" : 1778,
+    "metrics" : {
+      "recallAt10" : 1.0,
+      "mrrAt10" : 0.5,
+      "ndcgAt10" : 0.693426403617,
+      "forbiddenHits" : 0,
+      "crossCommitContamination" : false,
+      "contextBudgetViolation" : false
+    }
+  }, {
+    "id" : "rag-004-negative-control",
+    "targetCommit" : "old-commit",
+    "query" : "office logo opening hours",
+    "changedPaths" : [ "src/api.ts" ],
+    "relevantChunkKeys" : [ ],
+    "forbiddenChunkKeys" : [ "src/validation.ts#1" ],
+    "vectorCandidateCount" : 16,
+    "lexicalCandidateCount" : 1,
+    "retrievedCandidateCount" : 16,
+    "forbiddenCandidateKeys" : [ "src/validation.ts#1" ],
+    "selectedChunkKeys" : [ "docs/unrelated.md#1", "legacy/notes.md#1", "src/feature.ts#1", "src/health.ts#1", "src/routes.ts#1", "src/metrics.ts#1", "src/storage.ts#1", "src/cache.ts#1", "src/notifications.ts#1", "legacy/old-api.ts#1", "src/format.ts#1", "src/queue.ts#1" ],
+    "selectedPaths" : [ "docs/unrelated.md", "legacy/notes.md", "src/feature.ts", "src/health.ts", "src/routes.ts", "src/metrics.ts", "src/storage.ts", "src/cache.ts", "src/notifications.ts", "legacy/old-api.ts", "src/format.ts", "src/queue.ts" ],
+    "selectedCommits" : [ "old-commit", "old-commit", "old-commit", "old-commit", "old-commit", "old-commit", "old-commit", "old-commit", "old-commit", "old-commit", "old-commit", "old-commit" ],
+    "contextCharacters" : 1587,
+    "metrics" : {
+      "recallAt10" : 0.0,
+      "mrrAt10" : 0.0,
+      "ndcgAt10" : 0.0,
+      "forbiddenHits" : 0,
+      "crossCommitContamination" : false,
+      "contextBudgetViolation" : false
+    }
+  } ]
+}

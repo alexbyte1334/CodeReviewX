@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 6,
+  "mode": "offline-deterministic",
+  "metrics": {
+    "recallAt5": 0.6666666666666666,
+    "recallAt10": 1,
+    "mrrAt10": 0.7222222222222223,
+    "ndcgAt10": 0.7586426587520698,
+    "forbiddenHitRate": 0,
+    "averageSelectedChunks": 12,
+    "averageSelectedChars": 709,
+    "p95SelectedChars": 763,
+    "p95LatencyMs": 0,
+    "contextBudgetViolations": 0,
+    "rerankCandidateViolations": 0,
+    "crossCommitContamination": 0,
+    "evidenceValidationPassRate": 1,
+    "groundedFindingPrecision": 1,
+    "expectedFindingPass": 1
+  },
+  "thresholds": {
+    "recallAt10": 0.85,
+    "mrrAt10": 0.7,
+    "ndcgAt10": 0.75,
+    "forbiddenHitRate": 0,
+    "contextBudgetViolations": 0,
+    "crossCommitContamination": 0,
+    "evidenceValidationPassRate": 0.95,
+    "groundedFindingPrecision": 1,
+    "expectedFindingPass": 1,
+    "p95LatencyMs": 3000
+  },
+  "failures": [],
+  "cases": [
+    {
+      "id": "rag-001-cross-file-call",
+      "recallAt5": 1,
+      "recallAt10": 1,
+      "mrrAt10": 1,
+      "ndcgAt10": 1,
+      "forbiddenHits": 0,
+      "selectedChunks": 12,
+      "selectedChars": 755,
+      "latencyMs": 0,
+      "budgetViolation": false,
+      "crossCommitContamination": false,
+      "expectedFindingPass": true,
+      "evidenceValidationPass": true,
+      "groundedFinding": true,
+      "expectsFinding": true,
+      "routeCounts": {
+        "lexical": 18,
+        "vector": 18
+      },
+      "candidateCount": 18,
+      "rerankCandidateViolation": false
+    },
+    {
+      "id": "rag-002-config-security",
+      "recallAt5": 0,
+      "recallAt10": 1,
+      "mrrAt10": 0.16666666666666666,
+      "ndcgAt10": 0.3562071871080222,
+      "forbiddenHits": 0,
+      "selectedChunks": 12,
+      "selectedChars": 744,
+      "latencyMs": 0,
+      "budgetViolation": false,
+      "crossCommitContamination": false,
+      "expectedFindingPass": true,
+      "evidenceValidationPass": true,
+      "groundedFinding": true,
+      "expectsFinding": true,
+      "routeCounts": {
+        "lexical": 18,
+        "vector": 18
+      },
+      "candidateCount": 18,
+      "rerankCandidateViolation": false
+    },
+    {
+      "id": "rag-003-test-impact",
+      "recallAt5": 1,
+      "recallAt10": 1,
+      "mrrAt10": 1,
+      "ndcgAt10": 0.9197207891481876,
+      "forbiddenHits": 0,
+      "selectedChunks": 12,
+      "selectedChars": 763,
+      "latencyMs": 0,
+      "budgetViolation": false,
+      "crossCommitContamination": false,
+      "expectedFindingPass": true,
+      "evidenceValidationPass": true,
+      "groundedFinding": true,
+      "expectsFinding": true,
+      "routeCounts": {
+        "lexical": 18,
+        "vector": 18
+      },
+      "candidateCount": 18,
+      "rerankCandidateViolation": false
+    },
+    {
+      "id": "rag-004-negative-control",
+      "recallAt5": 0,
+      "recallAt10": 0,
+      "mrrAt10": 0,
+      "ndcgAt10": 0,
+      "forbiddenHits": 0,
+      "selectedChunks": 12,
+      "selectedChars": 574,
+      "latencyMs": 0,
+      "budgetViolation": false,
+      "crossCommitContamination": false,
+      "expectedFindingPass": true,
+      "evidenceValidationPass": true,
+      "groundedFinding": null,
+      "expectsFinding": false,
+      "routeCounts": {
+        "lexical": 16,
+        "vector": 16
+      },
+      "candidateCount": 16,
+      "rerankCandidateViolation": false
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"finding":{"severity":"medium","category":"correctness","file":"src/service.ts","title":"createUser call chain risk","description":"loadUser dependency crosses the service boundary","recommendation":"Add an integration test"},"evidenceChunkKeys":["src/service.ts","src/api.ts"]}

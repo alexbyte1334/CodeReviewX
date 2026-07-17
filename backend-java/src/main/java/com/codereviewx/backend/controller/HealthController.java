@@ -1,6 +1,7 @@
 package com.codereviewx.backend.controller;
 
 import com.codereviewx.backend.common.ApiResponse;
+import com.codereviewx.backend.rag.health.DeliveryReadinessService;
 import com.codereviewx.backend.review.pipeline.provider.mimo.XiaomiMiMoProperties;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,9 +15,11 @@ import java.util.Map;
 public class HealthController {
 
     private final XiaomiMiMoProperties mimoProperties;
+    private final DeliveryReadinessService readiness;
 
-    public HealthController(XiaomiMiMoProperties mimoProperties) {
+    public HealthController(XiaomiMiMoProperties mimoProperties, DeliveryReadinessService readiness) {
         this.mimoProperties = mimoProperties;
+        this.readiness = readiness;
     }
 
     @GetMapping("/health")
@@ -26,6 +29,17 @@ public class HealthController {
         data.put("service", "backend-java");
         data.put("reviewProvider", "mimo");
         data.put("mimoConfigured", mimoProperties.hasRoleApiKeys());
+        DeliveryReadinessService.Snapshot snapshot = readiness.snapshot();
+        data.put("ragReady", snapshot.ragReady());
+        data.put("dependencies", Map.of(
+                "database", state(snapshot.database()),
+                "github", state(snapshot.github()),
+                "embedding", state(snapshot.embedding()),
+                "rerank", state(snapshot.rerank())));
         return ApiResponse.success(data);
+    }
+
+    private static String state(boolean ready) {
+        return ready ? "UP" : "DOWN";
     }
 }

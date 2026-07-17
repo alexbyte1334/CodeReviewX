@@ -5,8 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import org.hibernate.Length;
 
 import java.time.LocalDateTime;
 
@@ -64,8 +64,7 @@ public class ReviewInputSnapshotEntity {
     @Column(name = "context_truncated", nullable = false)
     private Boolean contextTruncated = false;
 
-    @Lob
-    @Column(name = "snapshot_json", nullable = false)
+    @Column(name = "snapshot_json", nullable = false, length = Length.LONG32)
     private String snapshotJson;
 
     @Column(name = "created_at", nullable = false)

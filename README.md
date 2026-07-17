@@ -5,20 +5,22 @@
 [![Java 17](https://img.shields.io/badge/Java-17-blue.svg)](backend-java)
 [![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](frontend)
 
-面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。
+面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。Production profile 提供 PostgreSQL/pgvector full-repository hybrid RAG；默认 H2 demo profile 禁用 RAG，legacy bounded context 仅作为显式 fallback。
 
-> 当前版本为可本地运行的 MVP：支持手动 diff、GitHub PR metadata/diff 自动拉取、changed-file repository context index、小米 MiMo 双 AI agent、Semgrep-style/dependency finding 合并、本地 comment preview 与人工确认后发布 GitHub PR 评论。
+> 当前版本为可本地运行的 MVP：支持手动 diff、GitHub PR metadata/diff 自动拉取、commit-scoped full-repository hybrid RAG、小米 MiMo 双 AI agent、证据校验、Semgrep-style/dependency finding 合并、本地 comment preview 与人工确认后发布 GitHub PR 评论。
 
 ![CodeReviewX review workspace](docs/assets/codereviewx-review-workspace.jpg)
+
+生产 RAG 的索引、检索、rerank、证据门禁、灰度与回滚见 [`docs/RAG_OPERATIONS.md`](docs/RAG_OPERATIONS.md)；离线质量门禁见 [`docs/RAG_EVALUATION.md`](docs/RAG_EVALUATION.md)。
 
 ---
 
 ## 功能特性
 
-- **审查任务管理** — 创建、列表、详情查询，任务与问题持久化到本地 H2 数据库
+- **审查任务管理** — 创建、列表、详情查询；默认 demo 持久化到本地 H2，production profile 持久化到 PostgreSQL
 - **Diff 上下文** — 可选粘贴 unified diff（最大 20,000 字符），为 AI 审查提供代码变更依据
 - **GitHub PR Diff Loader** — `GITHUB_PR` 模式自动拉取 PR files patch，按文件数和 diff 大小做安全限制
-- **Repository Context Index** — `GITHUB_PR` 模式按 PR head SHA 拉取受限 changed-file 内容，作为 lexical repository context 输入 MiMo
+- **Full-repository Hybrid RAG** — production profile 按 PR head SHA 建立不可变全仓库快照，通过 pgvector + PostgreSQL FTS、RRF、rerank 和 evidence budget 为 MiMo 提供可验证上下文；bounded changed-file context 只用于禁用/降级路径
 - **MiMo 双 AI agent** — AI-1 负责 task plan 与质量 gate，AI-2 负责执行审查，获批 JSON 由 IssueGenerator 生成 issues
 - **Static Finding 合并** — 手动 diff 与 GitHub PR 变更会生成 Semgrep-style finding；GitHub PR changed-file context 会补充 dependency hygiene finding
 - **Human-in-the-loop 评论发布** — 前端选择 comment preview，确认后调用 GitHub PR review comment API
@@ -35,8 +37,10 @@
 |---|---|
 | 后端 | Spring Boot 3、Java 17、Maven、Spring Data JPA |
 | 前端 | React 18、TypeScript、Vite |
-| 数据库 | H2（本地文件模式，重启后数据保留） |
+| 数据库 | H2（本地 demo）；PostgreSQL + pgvector（production RAG profile） |
 | AI Provider | 小米 MiMo OpenAI 兼容 API |
+
+启用 production RAG 还需要 PostgreSQL/pgvector 与 embedding/rerank 供应商；完整环境变量、限制和降级语义见运行手册。
 
 ---
 
@@ -64,6 +68,42 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 ```bash
 curl http://localhost:8080/api/health
 ```
+
+### Production-like RAG delivery stack
+
+The repository includes reproducible backend/frontend images and a pgvector
+compose stack. Configure `RAG_ENABLED=true`, `RAG_EMBEDDING_BASE_URL`,
+`RAG_EMBEDDING_API_KEY`, `RAG_RERANK_BASE_URL`, and `RAG_RERANK_API_KEY` in a
+local `.env` file, then run:
+
+```bash
+docker compose build
+docker compose up -d postgres backend frontend
+docker compose ps
+bash scripts/rag-smoke.sh
+```
+
+`/actuator/health/liveness` only reports process liveness. Readiness checks
+database, GitHub, embedding, and rerank independently; unavailable external
+models leave the app running but keep readiness DOWN and `/api/health` reports
+`ragReady=false`. The smoke script prints only opaque IDs and counts, never
+keys or source excerpts. Install `jq` before running the smoke script; set
+`RAG_SMOKE_REPO_URL`, `RAG_SMOKE_REF` (the PR head ref/SHA), and
+`RAG_SMOKE_PR_NUMBER` for a real GitHub PR fixture. Read-only GET requests use
+up to three shell-managed retries; index and review POST requests are never retried because
+they create records. The review POST timeout defaults to 180 seconds for the
+MiMo planner/executor path and can be overridden independently:
+
+| Smoke variable | Purpose | Default |
+|---|---|---|
+| `RAG_SMOKE_CONNECT_TIMEOUT_SECONDS` | Connection timeout for all requests (1-60) | `5` |
+| `RAG_SMOKE_GET_TIMEOUT_SECONDS` | GET and index-status request timeout (1-300) | `30` |
+| `RAG_SMOKE_POST_TIMEOUT_SECONDS` | Index and publish POST request timeout (1-300) | `30` |
+| `RAG_SMOKE_REVIEW_TIMEOUT_SECONDS` | Non-retried review POST timeout (1-1800) | `180` |
+| `RAG_SMOKE_REQUEST_TIMEOUT_SECONDS` | Legacy fallback for GET/POST timeouts (1-300) | `30` |
+
+Timeouts must be positive decimal integers. Leading zeroes are normalized before
+use; zero, negative, non-numeric, and over-limit values fail before any request.
 
 ### 2. 启动前端
 
@@ -126,7 +166,7 @@ curl -X POST http://localhost:8080/api/review-tasks \
   }'
 ```
 
-不传 `diffText` 时默认进入 `GITHUB_PR` 模式：后端会使用 `GITHUB_TOKEN` 拉取 PR metadata、files patch 和受限 changed-file 内容，保存 sanitized snapshot summary，并把受限 diff + repository context 输入 MiMo 双 AI agent。
+不传 `diffText` 时默认进入 `GITHUB_PR` 模式：后端会使用 `GITHUB_TOKEN` 拉取 PR metadata 和 files patch，并保存 sanitized snapshot summary。Production profile 按 PR head SHA 使用 full-repository hybrid RAG 生成 evidence bundle；RAG 禁用或显式降级时才使用受限 changed-file context。MiMo 双 AI agent 始终接收 bounded diff 与当前路径对应的受控上下文。
 
 **响应要点：**
 
@@ -145,13 +185,15 @@ curl -X POST http://localhost:8080/api/review-tasks \
 flowchart TD
     User["Developer / Interview demo"] --> Frontend["React Review Workspace"]
     Frontend --> Backend["Spring Boot REST API"]
-    Backend --> H2["H2 local database"]
+    Backend --> H2["H2 local demo"]
+    Backend --> PG["PostgreSQL + pgvector RAG"]
     Backend --> GitHub["GitHub REST API"]
     Backend --> MiMo["Xiaomi MiMo API"]
     GitHub --> Metadata["PR metadata + files patch"]
-    GitHub --> Context["Changed-file content at head SHA"]
+    GitHub --> Snapshot["Repository snapshot at head SHA"]
     Metadata --> Backend
-    Context --> Backend
+    Snapshot --> PG
+    PG --> Backend
     Backend --> Static["Semgrep-style + dependency findings"]
     Backend --> Preview["Local comment previews"]
     Preview --> Frontend
@@ -162,7 +204,7 @@ flowchart TD
 核心边界：
 
 - `MANUAL_DIFF`：只使用用户粘贴的 bounded unified diff，额外跑 Semgrep-style 启发式规则。
-- `GITHUB_PR`：读取 PR metadata、files patch，并按文件数/字节限制拉取 changed-file 内容；这是 lightweight lexical context index，不是 full clone，也不是 vector database RAG。
+- `GITHUB_PR`：H2/local 模式保留 bounded changed-file fallback；production profile 按 head SHA 建立不可变全仓库快照，使用 pgvector + PostgreSQL FTS 混合召回、重排和 evidence gate。
 - `MiMo`：AI-1 生成 plan 和 gate，AI-2 执行审查；只有 gate 通过的 JSON 会被 deterministic IssueGenerator 转为 issue。
 - `Static Analysis`：当前请求链路内置轻量规则，生成 `SEMGREP` / `DEPENDENCY` source 的 persisted issue；项目级 `.semgrep.yml` 仍由本地/CI 静态扫描脚本执行。
 
@@ -175,14 +217,14 @@ sequenceDiagram
     participant BE as Backend
     participant GH as GitHub
     participant MM as MiMo
-    participant DB as H2
+    participant DB as H2 / PostgreSQL
 
     U->>FE: Create review task
     FE->>BE: POST /api/review-tasks
     alt GITHUB_PR mode
         BE->>GH: github.pr.metadata.load
         BE->>GH: github.pr.diff.load
-        BE->>GH: repository.context.index
+        BE->>DB: rag.index.ensure / hybrid retrieval
     else MANUAL_DIFF mode
         BE->>BE: use pasted bounded diff
     end
@@ -201,7 +243,7 @@ sequenceDiagram
 ![CodeReviewX review workspace](docs/assets/codereviewx-review-workspace.jpg)
 
 - **Review Workspace**：左侧任务历史，右侧展示风险摘要、issue 列表、agent trace 和 comment preview。
-- **Trace Timeline**：`GITHUB_PR` 成功路径保留 `github.pr.metadata.load -> github.pr.diff.load -> repository.context.index -> static.analysis.findings -> mimo.ai1.plan -> mimo.ai2.execute -> mimo.ai1.gate -> issue.generate -> comment.preview.build`。
+- **Trace Timeline**：PostgreSQL RAG 成功路径记录 `github.pr.metadata.load -> github.pr.diff.load -> rag.index.ensure -> rag.query.build -> rag.retrieve.hybrid -> rag.rerank -> rag.context.assemble -> static.analysis.findings -> mimo.ai1.plan -> mimo.ai2.execute -> mimo.ai1.gate -> issue.generate -> evidence.validate -> comment.preview.build`；禁用或降级时会明确记录 bounded-context fallback。
 - **Comment Preview**：所有建议先作为本地 draft 保存，只有用户选择并确认后才发布到 GitHub。
 - **Source Provenance**：issue 来源可区分 `MIMO`、`SEMGREP` 和 `DEPENDENCY`，方便面试时解释 AI finding 与静态规则 finding 的边界。
 
@@ -211,6 +253,8 @@ sequenceDiagram
 
 ```bash
 node scripts/run-evals.mjs
+node scripts/run-rag-evals.mjs --self-test
+node scripts/run-rag-evals.mjs
 ```
 
 默认离线跑 `evals/cases/` 的 baseline findings，并输出：
@@ -221,6 +265,8 @@ evals/reports/latest.md
 ```
 
 当前评测覆盖 null pointer、secret-like config、SQL injection 三类小样本，指标包含 schema pass rate、expected finding hit rate、severity/category match、false positives 和 gate rejections。
+
+RAG 评测另外覆盖 vector + PostgreSQL FTS 等价双路召回、RRF、重排候选边界、commit 隔离、证据引用、上下文预算和降级 mutation gates。生产路径的数据库与容器验收必须再运行完整 Maven/Testcontainers、Compose build 和 `scripts/rag-smoke.sh`，离线报告不能替代真实 smoke。
 
 ---
 
@@ -248,14 +294,15 @@ REQUIRE_SEMGREP=1 node scripts/static-scan.mjs
 ```text
 用户提交 repoUrl + prNumber [+ diffText]
         ↓
-GITHUB_PR: metadata/diff load → repository.context.index
+GITHUB_PR production: metadata/diff → rag.index.ensure → hybrid retrieval → rerank → evidence
+GITHUB_PR disabled/degraded: metadata/diff → bounded repository.context.index fallback
 MANUAL_DIFF: 使用 pasted bounded diff
         ↓
 static.analysis.findings
         ↓
 MiMo dual-agent: AI-1 plan → AI-2 execute → AI-1 gate
         ↓
-IssueGenerator + static findings → 结构化 issues → comment preview → trace timeline → 返回 ReviewTaskResponse
+IssueGenerator + static findings → evidence.validate → 结构化 issues → comment preview → trace timeline → 返回 ReviewTaskResponse
 ```
 
 ---
@@ -267,9 +314,9 @@ IssueGenerator + static findings → 结构化 issues → comment preview → tr
 - **真实输入**：支持手动 diff，也支持通过 GitHub API 拉取 PR metadata 和 files patch。
 - **双 Agent 审查**：AI-1 做 task plan 和 gate，AI-2 执行审查，避免单次模型输出直接落库。
 - **结构化落库**：将获批 JSON 转换为 issue、summary、trace 和 comment preview。
-- **受限仓库上下文**：GitHub PR 模式会读取 changed-file 内容作为 lexical context index，提升 AI 对完整文件上下文的理解，但仍避免 full clone 的成本和隐私风险。
+- **可复现仓库证据**：production profile 在受控工作区 shallow fetch/checkout 精确 commit，持久化 immutable chunks，并以 pgvector + FTS + RRF + rerank 生成带 path/line/chunkId 的 evidence；禁用或故障时才回退 bounded changed-file context。
 - **多来源 finding**：MiMo finding 与 Semgrep-style/dependency finding 统一落库，保留 `source` 以解释来源。
-- **可观测性**：保留 `github.pr.metadata.load -> github.pr.diff.load -> repository.context.index -> static.analysis.findings -> mimo.ai1.plan -> mimo.ai2.execute -> mimo.ai1.gate -> issue.generate -> comment.preview.build` 的安全摘要。
+- **可观测性**：production 路径保留 `github.pr.metadata.load -> github.pr.diff.load -> rag.index.ensure -> rag.query.build -> rag.retrieve.hybrid -> rag.rerank -> rag.context.assemble -> static.analysis.findings -> mimo.ai1.plan -> mimo.ai2.execute -> mimo.ai1.gate -> issue.generate -> evidence.validate -> comment.preview.build` 的安全摘要；fallback 另行标记。
 - **Human-in-the-loop**：只发布用户选择并确认过的 comment preview。
 - **安全边界**：API 不返回 GitHub token、MiMo key、raw prompt、raw model output 或 raw full diff。
 
@@ -312,13 +359,12 @@ npm test -- --run
 以下能力**尚未实现**，请勿在产品中误称已支持：
 
 - OAuth / GitHub App
-- 仓库 clone 与全量代码分析
-- 向量数据库式 semantic RAG、全仓库索引、历史 review memory
+- 跨仓库知识图谱与历史 review memory
 - MCP、Function Calling
 - 生产级认证与团队协作
-- MySQL / PostgreSQL 生产数据库
+- 多租户生产认证、托管密钥与 GitHub App 安装
 
-GitHub PR 模式当前读取 PR metadata、files patch 和 changed-file 内容索引；它不 clone 仓库、不做全量 repository analysis。超大 PR 会按安全限制截断或失败。
+GitHub PR 的 production RAG profile 会安全 clone 指定 commit 并建立有界全仓库索引；它不会执行仓库代码。H2 profile 继续使用 changed-file fallback。超大仓库或 PR 会按文件、字节、chunk 和上下文预算截断或失败。
 
 ---
 

@@ -7,9 +7,21 @@ import {
   listReviewTasks,
   publishSelectedCommentPreviews,
   updateCommentPreviewSelection,
+  getRepositoryIndexStatus, requestRepositoryReindex,
 } from '../api/reviewTaskApi';
 
 describe('reviewTaskApi', () => {
+  it('uses commitSha for full hashes and ref otherwise; reindex uses query POST', async () => {
+    const sha = 'a'.repeat(40);
+    vi.mocked(fetch).mockResolvedValue({ json: async () => ({ success: true, message: 'OK', data: null }) } as Response);
+    await getRepositoryIndexStatus('o', 'r', sha);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toContain('commitSha=');
+    await getRepositoryIndexStatus('o', 'r', 'main');
+    expect(vi.mocked(fetch).mock.calls[1][0]).toContain('ref=main');
+    await requestRepositoryReindex('o', 'r', sha);
+    expect(vi.mocked(fetch).mock.calls[2][0]).toContain(`/reindex?ref=${encodeURIComponent(sha)}`);
+    expect(vi.mocked(fetch).mock.calls[2][1]).toMatchObject({ method: 'POST' });
+  });
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
   });
@@ -27,6 +39,20 @@ describe('reviewTaskApi', () => {
     const result = await getHealth();
     expect(result.success).toBe(true);
     expect(result.data?.status).toBe('UP');
+  });
+
+  it('maps a missing repository index status to NOT_INDEXED', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      json: async () => ({ success: false, message: 'Not found', data: null }),
+    } as Response);
+
+    const result = await getRepositoryIndexStatus('acme', 'missing', 'a'.repeat(40));
+
+    expect(result.success).toBe(true);
+    expect(result.data?.status).toBe('NOT_INDEXED');
   });
 
   it('handles success=false from API', async () => {

@@ -86,8 +86,11 @@ Mode resolution:
 3. Otherwise the backend uses `GITHUB_PR`.
 
 `MANUAL_DIFF` requires non-blank `diffText`. `GITHUB_PR` requires a configured
-`GITHUB_TOKEN` so the backend can load PR metadata, bounded file patches, and
-bounded changed-file repository context.
+`GITHUB_TOKEN` so the backend can load PR metadata and bounded file patches.
+With the PostgreSQL RAG profile enabled, the backend indexes and retrieves only
+the immutable PR head commit through full-repository hybrid RAG. The bounded
+changed-file repository context is used only when RAG is disabled or explicitly
+degraded with fallback enabled.
 
 Response:
 
@@ -183,14 +186,23 @@ Successful GitHub PR runs usually include:
 ```text
 github.pr.metadata.load
 github.pr.diff.load
-repository.context.index
+rag.index.ensure
+rag.query.build
+rag.retrieve.hybrid
+rag.rerank
+rag.context.assemble
 static.analysis.findings
 mimo.ai1.plan
 mimo.ai2.execute
 mimo.ai1.gate
 issue.generate
+evidence.validate
 comment.preview.build
 ```
+
+RAG-disabled or degraded runs replace the five `rag.*` entries with an explicit
+`repository.context.index` fallback trace; they must not present that path as a
+successful hybrid retrieval.
 
 Trace responses expose status, timing, summary, and error code. They do not
 expose secrets, raw prompts, raw model output, or raw full diff.
@@ -281,3 +293,25 @@ NOT_PUBLISHED -> PUBLISHING -> PUBLISHED | FAILED
 The old document described a planned Python FastAPI `ai-service` API. That
 service is not implemented and is not called by the current application. All
 active review orchestration lives in `backend-java`.
+# RAG API contract (implemented routes)
+
+RAG routes are available only when `RAG_ENABLED=true`; they return bounded
+metadata/evidence excerpts, never full chunks or secrets:
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/repositories/index` | JSON `{repoUrl,ref}`; enqueue index, HTTP 202 |
+| GET | `/api/repositories/{owner}/{repo}/index-status?ref=main` | status/count/error |
+| POST | `/api/repositories/{owner}/{repo}/reindex?ref=main` | force index, HTTP 202 |
+| GET | `/api/review-runs/{runId}/retrieval` | latest retrieval trace |
+| GET | `/api/review-tasks/{taskId}/issues/{issueKey}/evidence` | bounded issue evidence |
+| POST | `/api/review-tasks` | review; RAG selection is server-side by task id bucket |
+| GET | `/api/review-runs/{runId}/comment-previews` | preview/evidence-safe metadata |
+| POST | `/api/review-runs/{runId}/comment-previews/{previewId}/publish` | publish only with `confirmed:true` |
+
+Index job states are `QUEUED -> RUNNING -> READY|FAILED`; an absent repository
+returns `RAG_NOT_FOUND`; an existing repository with no matching job returns
+`NOT_INDEXED`. Implemented errors are `RAG_DISABLED`, `RAG_CONFLICT`,
+`RAG_NOT_FOUND`, `RAG_INVALID_REQUEST`, validation `400`, and the existing
+review errors listed above. Provider/index failures are represented by the
+ returned safe error code/message.
