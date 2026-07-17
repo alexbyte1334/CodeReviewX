@@ -12,7 +12,7 @@ class PrRetrievalQueryBuilderTest {
 
     @Test
     void usesOnlyBoundedPrSignalsAndRemovesPatchMarkersAndDuplicates() {
-        PrRetrievalQueryBuilder.PrQuery input = new PrRetrievalQueryBuilder.PrQuery(
+        RagRetrievalQuery input = new RagRetrievalQuery(
                 "Fix account authorization",
                 List.of("src/AuthService.java", "src/AuthService.java"),
                 List.of("@@ -10,2 +10,4 @@ public void authorize()"),
@@ -32,7 +32,7 @@ class PrRetrievalQueryBuilderTest {
     @Test
     void redactsHighEntropySecretsAndNeverExceedsEightThousandCharacters() {
         String secret = "gh" + "p_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
-        PrRetrievalQueryBuilder.PrQuery input = new PrRetrievalQueryBuilder.PrQuery(
+        RagRetrievalQuery input = new RagRetrievalQuery(
                 "Rotate " + secret,
                 List.of("src/Secrets.java"),
                 List.of("@@ -1 +1 @@"),
@@ -52,7 +52,7 @@ class PrRetrievalQueryBuilderTest {
         String alphabeticSecret = "AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEf";
         String ordinaryIdentifier = "repositoryContextConfigurationFactory";
 
-        String query = builder.build(new PrRetrievalQueryBuilder.PrQuery(
+        String query = builder.build(new RagRetrievalQuery(
                 "Rotate " + alphabeticSecret, List.of("src/" + ordinaryIdentifier + ".java"),
                 List.of(), List.of(ordinaryIdentifier), List.of()));
 
@@ -64,7 +64,7 @@ class PrRetrievalQueryBuilderTest {
         String alphabeticSecret = "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEF";
         String ordinaryConstant = "MAX_RETRY_COUNT_CONSTANT";
 
-        String query = builder.build(new PrRetrievalQueryBuilder.PrQuery(
+        String query = builder.build(new RagRetrievalQuery(
                 "Rotate " + alphabeticSecret, List.of("src/" + ordinaryConstant + ".java"),
                 List.of(), List.of(ordinaryConstant), List.of()));
 
@@ -74,9 +74,9 @@ class PrRetrievalQueryBuilderTest {
     @Test
     void failsClosedForNullAndPathologicalValues() {
         assertThat(builder.build(null)).isEmpty();
-        assertThat(builder.build(new PrRetrievalQueryBuilder.PrQuery(null, null, null, null, null))).isEmpty();
+        assertThat(builder.build(new RagRetrievalQuery("", List.of(), List.of(), List.of(), List.of()))).isEmpty();
 
-        String query = builder.build(new PrRetrievalQueryBuilder.PrQuery(
+        String query = builder.build(new RagRetrievalQuery(
                 "\u0000".repeat(20_000), List.of(), List.of(), List.of(), List.of()));
 
         assertThat(query.length()).isLessThanOrEqualTo(8_000);

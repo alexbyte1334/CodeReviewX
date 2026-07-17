@@ -11,7 +11,7 @@ class LexicalRetrieverTest {
 
     @Test
     void convertsSignalLinesToBoundedCompleteWebsearchAlternatives() {
-        PrRetrievalQueryBuilder.PrQuery input = new PrRetrievalQueryBuilder.PrQuery(
+        RagRetrievalQuery input = new RagRetrievalQuery(
                 "Review authorization behavior", List.of(), List.of(), List.of(),
                 IntStream.range(0, 400)
                         .mapToObj(index -> "unique changed signal " + index + " " + "x".repeat(40))

@@ -1,13 +1,20 @@
 package com.codereviewx.backend.rag.config;
 
+import com.codereviewx.backend.rag.controller.RepositoryIndexController;
 import com.codereviewx.backend.rag.embedding.EmbeddingClient;
+import com.codereviewx.backend.rag.indexing.RagIndexWorker;
+import com.codereviewx.backend.rag.retrieval.HybridRagRetrievalService;
 import com.codereviewx.backend.rag.retrieval.RerankClient;
+import com.codereviewx.backend.rag.service.DefaultRagIndexService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.codereviewx.backend.rag.service.RagMetricsService;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -42,6 +49,14 @@ class RagPropertiesTest {
         assertThat(properties.getShutdownGraceSeconds()).isEqualTo(30);
         assertThat(properties.toString())
                 .doesNotContain("embedding-secret", "rerank-secret", "embedding.private", "rerank.private");
+    }
+
+    @Test
+    void indexVersionHasSingleSourceOfTruth() {
+        assertThat(List.of(RepositoryIndexController.class, DefaultRagIndexService.class,
+                        RagIndexWorker.class, HybridRagRetrievalService.class))
+                .noneMatch(type -> Arrays.stream(type.getDeclaredFields())
+                        .anyMatch(field -> field.getName().equals("INDEX_VERSION")));
     }
 
     @Test

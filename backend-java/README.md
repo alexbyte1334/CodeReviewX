@@ -1,6 +1,8 @@
 # backend-java
 
-> Current Status: MiMo dual-AI review with manual diff, GitHub PR metadata/diff ingestion, bounded changed-file context indexing, request-time static findings, and selected comment preview publishing.
+> Current Status: MiMo dual-AI review with manual diff, GitHub PR ingestion,
+> commit-scoped full-repository hybrid RAG on PostgreSQL/pgvector, evidence
+> validation, request-time static findings, and confirmed comment publishing.
 
 ## Current State
 
@@ -26,8 +28,14 @@ This module contains the Spring Boot 3 + Java 17 + Maven backend service for Cod
 - GitHub PR context services:
   - `GithubPrMetadataLoader`
   - `GithubPrDiffLoader`
-  - `RepositoryContextIndexService`
+  - `RepositoryContextIndexService` (RAG-disabled/degraded fallback only)
   - `ReviewStaticAnalysisService`
+- Production RAG module (`rag/`):
+  - restart-safe asynchronous index jobs and immutable commit snapshots
+  - safe JGit checkout, bounded file discovery, chunking, and embeddings
+  - pgvector plus PostgreSQL FTS retrieval, RRF fusion, and reranking
+  - bounded evidence assembly, validation, persistence, and retrieval traces
+  - index/status/rebuild and issue-evidence APIs
 - `ApiResponse<T>` response wrapper
 - Spring Data JPA repositories:
   - `ReviewTaskRepository`
@@ -60,19 +68,24 @@ This module contains the Spring Boot 3 + Java 17 + Maven backend service for Cod
 
 ### Persistence
 
-Local runtime uses file-based H2:
+The default local demo profile uses file-based H2 with RAG disabled:
 
 ```text
 jdbc:h2:file:./data/codereviewx
 ```
 
-Tests use isolated in-memory H2:
+H2 tests use an isolated in-memory database:
 
 ```text
 jdbc:h2:mem:testdb
 ```
 
-`ReviewTask` and `ReviewIssue` records survive backend restarts in local runtime. `issueSummary` is not persisted as an independent entity or table; it is computed from persisted issue rows when responses are assembled.
+The production RAG profile uses PostgreSQL 16 with pgvector. Flyway migrations
+persist review state together with repositories, leased index jobs, immutable
+snapshots, documents, chunks, embeddings, retrieval traces, and issue evidence.
+PostgreSQL/pgvector is the only production retrieval store; H2 does not emulate
+vector behavior. `issueSummary` is computed from persisted issue rows rather
+than stored independently.
 
 ## Review Provider Configuration
 
@@ -100,6 +113,13 @@ Environment variables (optional overrides):
 | `GITHUB_PER_FILE_CONTEXT_MAX_BYTES` | Single context file truncation threshold (default `12000`) |
 | `GITHUB_MAX_CONTEXT_BYTES` | Total context index byte limit (default `48000`) |
 
+Production RAG additionally requires `RAG_ENABLED`, `RAG_REVIEW_PERCENTAGE`,
+`RAG_FALLBACK_ENABLED`, `RAG_REQUIRE_EVIDENCE`, PostgreSQL datasource settings,
+and OpenAI-compatible embedding/rerank endpoint credentials. Resource limits,
+model/version rules, retention settings, and rollout procedures are documented
+in [`../docs/RAG_OPERATIONS.md`](../docs/RAG_OPERATIONS.md). Keys are read from
+environment variables and are never stored in jobs, traces, or API responses.
+
 ### Xiaomi MiMo mode
 
 ```bash
@@ -120,8 +140,13 @@ When MiMo succeeds, findings use `source: MIMO`. Valid empty `[]` from MiMo mean
 ReviewTaskService.createTask
   -> normalize optional diffText
   -> persist ReviewTaskEntity (optional diffText)
-  -> GITHUB_PR mode: github.pr.metadata.load + github.pr.diff.load
-                    + repository.context.index
+  -> GITHUB_PR production: github.pr.metadata.load + github.pr.diff.load
+                         -> rag.index.ensure
+                         -> rag.query.build
+                         -> rag.retrieve.hybrid
+                         -> rag.rerank
+                         -> rag.context.assemble
+  -> GITHUB_PR disabled/degraded: repository.context.index (bounded fallback)
   -> static.analysis.findings
   -> ReviewPipelineService.run(ReviewContext with manual or GitHub-loaded diff)
   -> ConfigurableReviewProvider
@@ -129,7 +154,9 @@ ReviewTaskService.createTask
           -> ReviewPromptBuilder (diff-aware when diffText present)
           -> XiaomiMiMoClient (OpenAI-compatible /chat/completions)
           -> XiaomiMiMoFindingParser
-  -> map ReviewFinding -> ReviewIssueEntity and persist
+  -> MiMoIssueGenerator maps approved JSON to ReviewFinding
+  -> evidence.validate (required for RAG-backed MiMo findings)
+  -> merge and persist provider/static ReviewIssueEntity rows + evidence
   -> persist sanitized agent step trace and local comment previews
   -> compute issueSummary and riskLevel
 ```
@@ -140,11 +167,16 @@ Current review input behavior:
 - Blank or whitespace-only `diffText` is treated as absent.
 - Maximum `diffText` length is 20000 characters.
 - MiMo prompt uses pasted diff as primary review context when provided.
-- GITHUB_PR mode uses the auto-loaded bounded GitHub diff and changed-file context when `diffText` is absent.
+- GITHUB_PR production mode uses the bounded GitHub diff to build a query, then
+  retrieves a commit-scoped evidence bundle from the immutable RAG snapshot.
+- RAG-disabled or explicitly degraded runs use the bounded changed-file context
+  fallback and expose that degraded state in trace/API/UI rather than presenting
+  it as successful RAG.
 - MANUAL_DIFF mode can produce Semgrep-style static findings from changed
   diff lines.
 - GITHUB_PR mode can produce Semgrep-style findings from changed diff lines and
-  dependency hygiene findings from indexed changed files.
+  dependency hygiene findings from bounded full changed manifests read from the
+  immutable snapshot (or from changed-file context in fallback mode).
 - Public API responses do not expose raw `diffText`, prompts, or model output.
 - Public API responses do not expose GitHub token, Authorization header, raw full diff, or `snapshotJson`.
 - `GET /api/review-runs/{runId}/trace` exposes sanitized step status/timing only.

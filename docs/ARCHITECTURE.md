@@ -187,32 +187,43 @@ Future extraction option:
 | Mode | Trigger | Input |
 |---|---|---|
 | `MANUAL_DIFF` | explicit mode or non-blank `diffText` | user-pasted unified diff, max 20,000 characters |
-| `GITHUB_PR` | no `diffText` by default | GitHub PR metadata + bounded files patch + bounded changed-file context |
+| `GITHUB_PR` | no `diffText` by default | GitHub PR metadata + bounded files patch + commit-scoped RAG evidence; bounded changed-file context only when disabled/degraded |
 
 `GITHUB_PR` requires `GITHUB_TOKEN`. Missing token fails fast with
 `GITHUB_AUTH_MISSING`; the system does not pretend to review a PR without
 context.
 
-## 6. Repository Context and Static Findings
+## 6. Repository RAG, Fallback, and Static Findings
 
-`GITHUB_PR` mode performs a lightweight repository context pass after the PR
-diff is loaded:
+In the production PostgreSQL profile, `GITHUB_PR` mode binds retrieval to the
+resolved PR head SHA and executes the complete RAG path:
 
 ```text
 github.pr.metadata.load
   -> github.pr.diff.load
-  -> repository.context.index
+  -> rag.index.ensure
+  -> rag.query.build
+  -> rag.retrieve.hybrid
+  -> rag.rerank
+  -> rag.context.assemble
   -> static.analysis.findings
 ```
 
-The context index fetches selected changed files from GitHub Contents API at
-the PR head SHA. It is bounded by file count, per-file bytes, and total context
-bytes. Removed files and non-text-like files are skipped. The resulting context
-is appended to the MiMo executor prompt and is not exposed through public APIs.
+Index jobs safely resolve a requested branch/ref to a 40-character commit SHA,
+checkout only that immutable commit in a controlled JGit workspace, discover
+bounded text files, chunk and embed them, and atomically mark a compatible
+snapshot READY. Review retrieval filters by repository, commit, model,
+dimensions, and index version. Vector and PostgreSQL FTS candidates are fused
+with RRF, independently reranked, deduplicated, and assembled into at most 12
+labelled evidence chunks and 36,000 characters. Model findings return
+`evidenceChunkIds`; commit/path/line/hash validation runs before issue evidence
+and comment previews are persisted.
 
-This is intentionally a lexical changed-file context index. It is not a full
-repository clone, not full dependency graph analysis, and not semantic/vector
-RAG.
+When RAG is disabled by rollout configuration, or fails while
+`RAG_FALLBACK_ENABLED=true`, `RepositoryContextIndexService` fetches a bounded
+set of changed files through GitHub Contents API at the same head SHA. Trace,
+API, and UI identify this as degraded fallback. If fallback is disabled, the
+review fails closed. This legacy path is not full-repository or vector RAG.
 
 Static findings are persisted through the same `review_issue` table as MiMo
 findings:
@@ -221,7 +232,7 @@ findings:
 |---|---|
 | `MIMO` | MiMo dual-agent findings after gate approval |
 | `SEMGREP` | request-time Semgrep-style changed-line heuristics |
-| `DEPENDENCY` | request-time dependency hygiene checks from indexed files |
+| `DEPENDENCY` | request-time dependency hygiene checks from bounded full changed manifests in the immutable snapshot, or changed-file fallback context |
 
 The project also keeps `.semgrep.yml` and `scripts/static-scan.mjs` for local
 or CI static analysis. That offline toolchain is separate from the request-time
@@ -251,13 +262,14 @@ Failure behavior:
 
 ## 8. Persistence Model
 
-Runtime uses H2 file storage:
+The default RAG-disabled local demo uses H2 file storage:
 
 ```text
 jdbc:h2:file:./data/codereviewx
 ```
 
-Tests use in-memory H2.
+H2 tests use an in-memory database. Production RAG uses PostgreSQL 16 +
+pgvector, with Flyway-managed immutable snapshot and retrieval tables.
 
 Core tables:
 
@@ -270,6 +282,12 @@ Core tables:
 | `review_tool_trace` | ordered tool/agent step timeline |
 | `review_provider_trace` | provider selection and normalization summary |
 | `review_comment_preview` | local draft comments and publish status |
+| `rag_repository` | repository identity, active commit, model contract, and index status |
+| `rag_index_job` | persistent leased indexing job, attempts, progress, and safe errors |
+| `rag_index_snapshot` | immutable repository/commit/model/version snapshot identity |
+| `rag_document` / `rag_chunk` | snapshot-scoped files, chunks, FTS vectors, and embeddings |
+| `rag_retrieval_trace` | safe retrieval counts, timings, budget, and degraded status |
+| `review_issue_evidence` | validated bounded evidence retained with each issue |
 
 ## 9. Security and Privacy Rules
 
@@ -294,7 +312,7 @@ Core tables:
   still local/CI tooling, not a long-running analysis worker.
 - H2 is local-development only. Production RAG uses PostgreSQL 16 + pgvector
   and still requires managed secret storage and deployment access controls.
-# Production RAG boundary (V4)
+## 11. Production RAG Boundary
 
 The production profile is a staged pipeline, not a single “RAG call”:
 
@@ -310,4 +328,4 @@ when `RAG_FALLBACK_ENABLED=true`; otherwise the review fails closed.
 Rollout is evaluated per persisted `reviewTaskId`: `floorMod(reviewTaskId,100) <
 RAG_REVIEW_PERCENTAGE`. The supported observation gates are 10% (>=20 reviews,
 no P0/P1), 50% (>=50 reviews, no P0/P1), then 100%. `RAG_ENABLED=false` or
-percentage 0 selects the legacy path.
+percentage 0 selects the explicitly labelled legacy path.

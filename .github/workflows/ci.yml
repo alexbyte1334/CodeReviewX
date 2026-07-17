@@ -82,6 +82,11 @@ jobs:
       - name: Run RAG retrieval gates
         run: node scripts/run-rag-evals.mjs --self-test && node scripts/run-rag-evals.mjs
 
+      - name: Verify stable JavaScript RAG baseline
+        run: |
+          git diff --exit-code -- evals/rag/reports/latest.json evals/rag/reports/latest.md
+          test -z "$(git status --porcelain --untracked-files=all -- evals/rag/reports/latest.json evals/rag/reports/latest.md)"
+
   backend:
     name: Backend Tests
     runs-on: ubuntu-latest
@@ -102,8 +107,9 @@ jobs:
         run: mvn test
 
   postgres-integration:
-    name: PostgreSQL Migration Integration
+    name: PostgreSQL RAG Integration
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -122,9 +128,29 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - name: Run migration and PostgreSQL tests
+      - name: Run migration and Java production RAG quality gates
         working-directory: backend-java
-        run: mvn -B -Dtest=PostgresRagMigrationTest,PostgresJpaCompatibilityTest test
+        run: >-
+          mvn -B
+          -Drag.performance.enabled=true
+          -Dtest=PostgresRagMigrationTest,PostgresJpaCompatibilityTest,RagRetrievalQualityAcceptanceTest,RagFindingQualityAcceptanceTest,RagPerformanceAcceptanceTest
+          test
+
+      - name: Verify stable Java production RAG baseline
+        run: |
+          git diff --exit-code -- evals/rag/reports/java-production-latest.json evals/rag/reports/java-production-latest.md
+          test -z "$(git status --porcelain --untracked-files=all -- evals/rag/reports/java-production-latest.json evals/rag/reports/java-production-latest.md)"
+          git diff --exit-code -- evals/rag/reports/java-production-finding-latest.json evals/rag/reports/java-production-finding-latest.md
+          test -z "$(git status --porcelain --untracked-files=all -- evals/rag/reports/java-production-finding-latest.json evals/rag/reports/java-production-finding-latest.md)"
+
+      - name: Upload RAG performance runtime report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-performance-runtime-${{ github.run_id }}
+          path: backend-java/target/rag-reports/performance-runtime.*
+          if-no-files-found: warn
+          retention-days: 14
 
   frontend:
     name: Frontend Tests

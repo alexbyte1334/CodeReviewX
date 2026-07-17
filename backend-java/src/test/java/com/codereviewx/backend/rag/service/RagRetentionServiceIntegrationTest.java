@@ -36,9 +36,9 @@ class RagRetentionServiceIntegrationTest {
         long chunk = jdbc.queryForObject("INSERT INTO rag_chunk(repository_id,document_id,commit_sha,chunk_key,path,language,start_line,end_line,content,token_count,content_hash,embedding,created_at,snapshot_id) VALUES (?,?,'c1','k','src/X.java','JAVA',7,9,'secret-free excerpt',3,'chunk-hash',? ,CURRENT_TIMESTAMP,?) RETURNING id",Long.class,repo,doc,new com.pgvector.PGvector(new float[1024]),doomed);
         long evidence = evidence(chunk);
         int removed = new RagRetentionService(jdbc).cleanup();
-        assertThat(removed).isEqualTo(3);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot WHERE commit_sha IN ('c1','c2','c3')",Integer.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot WHERE commit_sha IN ('c4','c5','c6','c7','c8','recent','active','running','queued')",Integer.class)).isEqualTo(9);
+        assertThat(removed).isEqualTo(4);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot WHERE commit_sha IN ('c1','c2','c3','c4')",Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot WHERE commit_sha IN ('c5','c6','c7','c8','recent','active','running','queued')",Integer.class)).isEqualTo(8);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_document WHERE snapshot_id=?",Integer.class,doomed)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_chunk WHERE snapshot_id=?",Integer.class,doomed)).isZero();
         var preservedEvidence = jdbc.queryForMap("SELECT rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at FROM review_issue_evidence WHERE id=?",evidence);
@@ -57,7 +57,7 @@ class RagRetentionServiceIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM review_issue_evidence WHERE id=? AND rag_chunk_id IS NULL",Integer.class,evidence)).isOne();
     }
     private long repo(String active) { Timestamp now=Timestamp.valueOf(LocalDateTime.now()); return jdbc.queryForObject("INSERT INTO rag_repository(provider,owner_name,repository_name,clone_url,active_commit_sha,index_status,index_version,embedding_model,embedding_dimensions,created_at,updated_at) VALUES ('github','o','r','x',?,'READY',1,'m',1024,?,?) RETURNING id",Long.class,active,now,now); }
-    private void snapshot(long repo,String sha,String status,int ageDays,String ignored) { Timestamp now=Timestamp.valueOf(LocalDateTime.now().minusDays(ageDays)); long job=jdbc.queryForObject("INSERT INTO rag_index_job(repository_id,requested_ref,trigger_type,status,created_at,finished_at) VALUES (?, 'main','MANUAL',?,?,?) RETURNING id",Long.class,repo,status,now, status.equals("READY")?now:null); jdbc.update("INSERT INTO rag_index_snapshot(repository_id,job_id,commit_sha,embedding_model,embedding_dimensions,index_version,created_at) VALUES (?,? ,?,'m',1024,1,?)",repo,job,sha,now); }
+    private void snapshot(long repo,String sha,String status,int ageDays,String ignored) { Timestamp now=Timestamp.valueOf(LocalDateTime.now().minusDays(ageDays)); long job=jdbc.queryForObject("INSERT INTO rag_index_job(repository_id,requested_ref,trigger_type,status,embedding_model,embedding_dimensions,index_version,created_at,finished_at) VALUES (?,?,'MANUAL',?,'m',1024,1,?,?) RETURNING id",Long.class,repo,sha,status,now, status.equals("READY")?now:null); jdbc.update("INSERT INTO rag_index_snapshot(repository_id,job_id,commit_sha,embedding_model,embedding_dimensions,index_version,created_at) VALUES (?,? ,?,'m',1024,1,?)",repo,job,sha,now); }
 
     private long evidence(long chunk) {
         Timestamp now=Timestamp.valueOf(LocalDateTime.now());

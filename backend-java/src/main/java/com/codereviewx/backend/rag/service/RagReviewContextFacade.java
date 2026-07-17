@@ -1,11 +1,14 @@
 package com.codereviewx.backend.rag.service;
 
 import com.codereviewx.backend.rag.config.RagProperties;
-import com.codereviewx.backend.rag.retrieval.HybridRagRetrievalService;
 import com.codereviewx.backend.rag.retrieval.PrRetrievalQueryBuilder;
 import com.codereviewx.backend.rag.retrieval.RagContextAssembler;
 import com.codereviewx.backend.rag.retrieval.RagEvidenceBundle;
 import com.codereviewx.backend.rag.retrieval.RagRetrievalTraceStore;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalQuery;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalRequest;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalResult;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalService;
 import com.codereviewx.backend.review.enums.ToolTraceStatus;
 import com.codereviewx.backend.review.github.GithubPrDiff;
 import com.codereviewx.backend.review.github.GithubPrMetadata;
@@ -14,6 +17,7 @@ import com.codereviewx.backend.review.service.RepositoryContextIndexService;
 import com.codereviewx.backend.review.service.ReviewTraceRecorder;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -26,7 +30,7 @@ import java.util.List;
 public class RagReviewContextFacade {
     private final RagProperties properties;
     private final ObjectProvider<RagIndexService> indexServices;
-    private final ObjectProvider<HybridRagRetrievalService> retrievalServices;
+    private final ObjectProvider<RagRetrievalService> retrievalServices;
     private final ObjectProvider<RagContextAssembler> assemblers;
     private final RepositoryContextIndexService legacy;
     private final ReviewTraceRecorder traces;
@@ -35,32 +39,45 @@ public class RagReviewContextFacade {
     private final Duration timeout;
     private final Duration pollInterval;
     private final RagRetrievalTraceStore retrievalTraces;
+    private final ObjectProvider<RagManifestSnapshotReader> manifestReaders;
 
     @Autowired
     public RagReviewContextFacade(RagProperties properties, ObjectProvider<RagIndexService> indexServices,
-                                  ObjectProvider<HybridRagRetrievalService> retrievalServices,
+                                  ObjectProvider<RagRetrievalService> retrievalServices,
                                   ObjectProvider<RagContextAssembler> assemblers, RepositoryContextIndexService legacy,
-                                  ReviewTraceRecorder traces, RagRetrievalTraceStore retrievalTraces) {
+                                  ReviewTraceRecorder traces, RagRetrievalTraceStore retrievalTraces,
+                                  ObjectProvider<RagManifestSnapshotReader> manifestReaders) {
         this(properties, indexServices, retrievalServices, assemblers, legacy, traces, Clock.systemUTC(),
-                Thread::sleep, Duration.ofSeconds(20), Duration.ofMillis(250), retrievalTraces);
+                Thread::sleep, Duration.ofSeconds(20), Duration.ofMillis(250), retrievalTraces, manifestReaders);
     }
 
     RagReviewContextFacade(RagProperties properties, ObjectProvider<RagIndexService> indexServices,
-                           ObjectProvider<HybridRagRetrievalService> retrievalServices,
+                           ObjectProvider<RagRetrievalService> retrievalServices,
                            ObjectProvider<RagContextAssembler> assemblers, RepositoryContextIndexService legacy,
                            ReviewTraceRecorder traces, Clock clock, Sleeper sleeper, Duration timeout,
                            Duration pollInterval) {
-        this(properties, indexServices, retrievalServices, assemblers, legacy, traces, clock, sleeper, timeout, pollInterval, null);
+        this(properties, indexServices, retrievalServices, assemblers, legacy, traces, clock, sleeper, timeout,
+                pollInterval, null, null);
     }
     RagReviewContextFacade(RagProperties properties, ObjectProvider<RagIndexService> indexServices,
-                           ObjectProvider<HybridRagRetrievalService> retrievalServices,
+                           ObjectProvider<RagRetrievalService> retrievalServices,
                            ObjectProvider<RagContextAssembler> assemblers, RepositoryContextIndexService legacy,
                            ReviewTraceRecorder traces, Clock clock, Sleeper sleeper, Duration timeout,
                            Duration pollInterval, RagRetrievalTraceStore retrievalTraces) {
+        this(properties, indexServices, retrievalServices, assemblers, legacy, traces, clock, sleeper, timeout,
+                pollInterval, retrievalTraces, null);
+    }
+    RagReviewContextFacade(RagProperties properties, ObjectProvider<RagIndexService> indexServices,
+                           ObjectProvider<RagRetrievalService> retrievalServices,
+                           ObjectProvider<RagContextAssembler> assemblers, RepositoryContextIndexService legacy,
+                           ReviewTraceRecorder traces, Clock clock, Sleeper sleeper, Duration timeout,
+                           Duration pollInterval, RagRetrievalTraceStore retrievalTraces,
+                           ObjectProvider<RagManifestSnapshotReader> manifestReaders) {
         this.properties = properties; this.indexServices = indexServices; this.retrievalServices = retrievalServices;
         this.assemblers = assemblers; this.legacy = legacy; this.traces = traces; this.clock = clock;
         this.sleeper = sleeper; this.timeout = timeout; this.pollInterval = pollInterval;
         this.retrievalTraces = retrievalTraces;
+        this.manifestReaders = manifestReaders;
     }
 
     public PreparedContext prepare(GithubPrMetadata metadata, GithubPrDiff diff, Long runId) {
@@ -72,7 +89,7 @@ public class RagReviewContextFacade {
             return legacy(metadata, diff, runId, "RAG disabled or rollout bucket excluded");
         }
         RagIndexService index = indexServices.getIfAvailable();
-        HybridRagRetrievalService retrieval = retrievalServices.getIfAvailable();
+        RagRetrievalService retrieval = retrievalServices.getIfAvailable();
         RagContextAssembler assembler = assemblers.getIfAvailable();
         if (index == null || retrieval == null || assembler == null) return fallback(metadata, diff, runId, "RAG unavailable");
         LocalDateTime start = LocalDateTime.now(clock);
@@ -107,12 +124,12 @@ public class RagReviewContextFacade {
             }
         }
         if (resolution.status() != RagIndexResolution.Status.READY) return fallback(metadata, diff, runId, fallbackReason);
-        PrRetrievalQueryBuilder.PrQuery query = query(metadata, diff);
+        RagRetrievalQuery query = query(metadata, diff);
         record(runId, "rag.query.build", LocalDateTime.now(clock), "Built bounded PR retrieval query");
         long retrievalStarted = clock.millis();
-        HybridRagRetrievalService.Result retrieved = retrieval.retrieve(new HybridRagRetrievalService.Request(
+        RagRetrievalResult retrieved = retrieval.retrieve(new RagRetrievalRequest(
                 resolution.repositoryId(), metadata.headSha(), query));
-        if (retrieved.status() != HybridRagRetrievalService.Status.READY) {
+        if (retrieved.status() != RagRetrievalResult.Status.READY) {
             if (retrievalTraces != null) retrievalTraces.save(runId, resolution.repositoryId(), metadata.headSha(),
                     new PrRetrievalQueryBuilder().build(query), retrieved, 0, 0, clock.millis() - retrievalStarted);
             return fallback(metadata, diff, runId, "INDEX_NOT_READY");
@@ -137,9 +154,30 @@ public class RagReviewContextFacade {
                     "Legacy fallback; evidence assembly was not usable: " + bundle.reason(), ToolTraceStatus.FAILED);
             return fallback(metadata, diff, runId, "RETRIEVAL_FAILED");
         }
+        RepositoryContextIndexResult manifests;
+        try {
+            manifests = loadChangedManifests(resolution, metadata, diff);
+        } catch (DataAccessException manifestUnavailable) {
+            record(runId, "rag.context.assemble", LocalDateTime.now(clock),
+                    "Manifest snapshot unavailable; using bounded fallback", ToolTraceStatus.FAILED);
+            return fallback(metadata, diff, runId, "MANIFEST_SNAPSHOT_UNAVAILABLE");
+        }
         record(runId, "rag.context.assemble", LocalDateTime.now(clock),
                 "Assembled " + bundle.evidence().size() + " evidence block(s)");
-        return new PreparedContext(RepositoryContextIndexResult.empty(), bundle, false);
+        return new PreparedContext(manifests, bundle, false);
+    }
+
+    private RepositoryContextIndexResult loadChangedManifests(RagIndexResolution resolution,
+                                                               GithubPrMetadata metadata,
+                                                               GithubPrDiff diff) {
+        if (manifestReaders == null || resolution.jobId() == null) return RepositoryContextIndexResult.empty();
+        RagManifestSnapshotReader reader = manifestReaders.getIfAvailable();
+        if (reader == null) return RepositoryContextIndexResult.empty();
+        List<String> changedPaths = diff.files() == null ? List.of()
+                : diff.files().stream().map(file -> file.filename()).toList();
+        RepositoryContextIndexResult manifests = reader.read(
+                resolution.repositoryId(), resolution.jobId(), metadata.headSha(), changedPaths);
+        return manifests == null ? RepositoryContextIndexResult.empty() : manifests;
     }
 
     private PreparedContext legacy(GithubPrMetadata metadata, GithubPrDiff diff, Long runId, String reason) {
@@ -158,11 +196,11 @@ public class RagReviewContextFacade {
         return legacy(metadata, diff, runId, reason);
     }
 
-    private PrRetrievalQueryBuilder.PrQuery query(GithubPrMetadata metadata, GithubPrDiff diff) {
+    private RagRetrievalQuery query(GithubPrMetadata metadata, GithubPrDiff diff) {
         List<String> paths = diff.files() == null ? List.of() : diff.files().stream().map(file -> file.filename()).toList();
         List<String> lines = diff.diffText() == null ? List.of() : Arrays.asList(diff.diffText().split("\\R"));
         List<String> hunks = lines.stream().filter(line -> line.startsWith("@@")).toList();
-        return new PrRetrievalQueryBuilder.PrQuery(metadata.title(), paths, hunks, List.of(), lines);
+        return new RagRetrievalQuery(metadata.title(), paths, hunks, List.of(), lines);
     }
 
     private void record(Long runId, String tool, LocalDateTime started, String summary) {

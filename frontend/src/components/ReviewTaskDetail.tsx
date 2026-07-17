@@ -28,6 +28,9 @@ interface ReviewTaskDetailProps {
   onCommentPreviewSelectionChange?: (previewId: number, selected: boolean) => void;
   onPublishSelectedCommentPreviews?: () => void;
   repositoryIndexStatus?: RepositoryIndexStatusType | null;
+  retrievalDegraded?: boolean | null;
+  indexActionsDisabled?: boolean;
+  indexActionError?: string | null;
   onRequestRepositoryIndex?: () => void;
   onRequestRepositoryReindex?: () => void;
   evidenceByIssue?: Record<string, RetrievalEvidence[]>;
@@ -433,7 +436,7 @@ export function ReviewTaskDetail({
   toolTraceError = null,
   onCommentPreviewSelectionChange,
   onPublishSelectedCommentPreviews,
-  repositoryIndexStatus, onRequestRepositoryIndex, onRequestRepositoryReindex, evidenceByIssue, evidenceLoadingIssue, evidenceError, evidenceLoadingByIssue, evidenceErrorByIssue, onIssueEvidenceRequest,
+  repositoryIndexStatus, retrievalDegraded, indexActionsDisabled, indexActionError, onRequestRepositoryIndex, onRequestRepositoryReindex, evidenceByIssue, evidenceLoadingIssue, evidenceError, evidenceLoadingByIssue, evidenceErrorByIssue, onIssueEvidenceRequest,
 }: ReviewTaskDetailProps) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
@@ -483,8 +486,8 @@ export function ReviewTaskDetail({
 
       {!loading && !error && task && issueSummary && (
         <div className="detail-content">
-          <RepositoryIndexStatus status={repositoryIndexStatus} onIndex={onRequestRepositoryIndex} onReindex={onRequestRepositoryReindex} />
-          {task.retrievalDegraded && <span role="status" className="badge badge-warning">Degraded retrieval</span>}
+          <RepositoryIndexStatus status={repositoryIndexStatus} onIndex={onRequestRepositoryIndex} onReindex={onRequestRepositoryReindex} actionsDisabled={indexActionsDisabled} actionError={indexActionError} />
+          {retrievalDegraded && <span role="status" className="badge badge-warning">Degraded retrieval</span>}
           <CollapsiblePanel
             panelId="panel-findings-summary"
             title="Review Summary"

@@ -1,6 +1,7 @@
 package com.codereviewx.backend.rag.indexing;
 
 import com.codereviewx.backend.rag.config.RagProperties;
+import com.codereviewx.backend.rag.controller.RepositoryIndexController;
 import com.codereviewx.backend.rag.embedding.EmbeddingClient;
 import com.codereviewx.backend.rag.model.Language;
 import com.codereviewx.backend.rag.model.RepositoryFile;
@@ -17,6 +18,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.io.TempDir;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.revwalk.RevCommit;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,6 +32,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -40,6 +48,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -50,6 +59,7 @@ class RagIndexWorkerIntegrationTest {
 
     private static final String SHA_ONE = "1".repeat(40);
     private static final String SHA_TWO = "2".repeat(40);
+    @TempDir Path tempDir;
     private final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("pgvector/pgvector:pg16");
     private JdbcTemplate jdbc;
     private TransactionTemplate transactions;
@@ -123,6 +133,67 @@ class RagIndexWorkerIntegrationTest {
         assertThat(duplicate.jobId()).isEqualTo(first.jobId());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_job", Integer.class)).isEqualTo(2);
         assertThat(service.getJob(second.jobId()).status()).isEqualTo(RagIndexJob.Status.QUEUED);
+    }
+
+    @Test
+    void resolvesMainBeforeCheckoutAndPersistsRequestedAndResolvedRefs() throws Exception {
+        RepositoryFixture fixture = createRepository();
+        RagIndexWorker checkoutWorker = workerWithCheckout(fixture);
+        long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
+                "main", "test-model", 1024, RagProperties.INDEX_VERSION).id();
+        long jobId = jobs.createOrGetActive(repositoryId, "main", "API", "test-model", 1024,
+                RagProperties.INDEX_VERSION).jobId();
+
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        checkoutWorker.process(claimed);
+
+        RagIndexJob completed = jobs.get(jobId).orElseThrow();
+        assertThat(completed.status()).isEqualTo(RagIndexJob.Status.READY);
+        assertThat(completed.requestedRef()).isEqualTo("main");
+        assertThat(completed.resolvedCommitSha()).isEqualTo(fixture.commitSha()).matches("[0-9a-f]{40}");
+        assertThat(jdbc.queryForObject("SELECT active_commit_sha FROM rag_repository WHERE id=?", String.class,
+                repositoryId)).isEqualTo(fixture.commitSha());
+        assertThat(jdbc.queryForObject("SELECT commit_sha FROM rag_index_snapshot WHERE job_id=?", String.class,
+                jobId)).isEqualTo(fixture.commitSha());
+    }
+
+    @Test
+    void missingBranchFailsSafelyWithoutSnapshot() throws Exception {
+        RepositoryFixture fixture = createRepository();
+        RagIndexWorker checkoutWorker = workerWithCheckout(fixture);
+        long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
+                "main", "test-model", 1024, RagProperties.INDEX_VERSION).id();
+        long jobId = jobs.createOrGetActive(repositoryId, "missing", "API", "test-model", 1024,
+                RagProperties.INDEX_VERSION).jobId();
+
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        checkoutWorker.process(claimed);
+
+        RagIndexJob failed = jobs.get(jobId).orElseThrow();
+        assertThat(failed.status()).isEqualTo(RagIndexJob.Status.FAILED);
+        assertThat(failed.errorCode()).isEqualTo("CHECKOUT_FAILED");
+        assertThat(failed.errorMessage()).isEqualTo("Repository checkout failed");
+        assertThat(failed.resolvedCommitSha()).isNull();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_snapshot WHERE job_id=?", Integer.class,
+                jobId)).isZero();
+    }
+
+    @Test
+    void directCommitShaStillIndexesThroughShaOnlyCheckout() throws Exception {
+        RepositoryFixture fixture = createRepository();
+        RagIndexWorker checkoutWorker = workerWithCheckout(fixture);
+        long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
+                "main", "test-model", 1024, RagProperties.INDEX_VERSION).id();
+        long jobId = jobs.createOrGetActive(repositoryId, fixture.commitSha(), "API", "test-model", 1024,
+                RagProperties.INDEX_VERSION).jobId();
+
+        RagIndexJob claimed = transactions.execute(ignored -> jobs.claimNextQueued().orElseThrow());
+        checkoutWorker.process(claimed);
+
+        RagIndexJob completed = jobs.get(jobId).orElseThrow();
+        assertThat(completed.status()).isEqualTo(RagIndexJob.Status.READY);
+        assertThat(completed.requestedRef()).isEqualTo(fixture.commitSha());
+        assertThat(completed.resolvedCommitSha()).isEqualTo(fixture.commitSha());
     }
 
     @Test
@@ -330,6 +401,103 @@ class RagIndexWorkerIntegrationTest {
     }
 
     @Test
+    void concurrentStoreEnqueueReportsOneCreatedAndOneActive() throws Exception {
+        long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
+                "main", "test-model", 1024, 1).id();
+        CountDownLatch callersReady = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Callable<Object> enqueue = () -> {
+                callersReady.countDown();
+                start.await();
+                return jobs.createOrGetActive(repositoryId, SHA_ONE, "API", "test-model", 1024, 1);
+            };
+            Future<Object> firstFuture = callers.submit(enqueue);
+            Future<Object> secondFuture = callers.submit(enqueue);
+            callersReady.await();
+            start.countDown();
+
+            Object first = firstFuture.get();
+            Object second = secondFuture.get();
+            assertThat(first).hasFieldOrProperty("created").hasFieldOrProperty("jobId");
+            assertThat(second).hasFieldOrProperty("created").hasFieldOrProperty("jobId");
+            assertThat(List.of(created(first), created(second))).containsExactlyInAnyOrder(true, false);
+            assertThat(jobId(first)).isEqualTo(jobId(second));
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM rag_index_job", Integer.class)).isEqualTo(1);
+        } finally {
+            callers.shutdownNow();
+        }
+    }
+
+    @Test
+    void branchIndexReusesOlderReadyJobFromCurrentTupleWhenOldTupleFailedLater() {
+        TupleOrderingFixture fixture = tupleOrderingFixture();
+        RepositoryIndexController controller = new RepositoryIndexController(
+                repositories, jobs, service, properties, true);
+
+        var response = controller.index(new RepositoryIndexController.Request(
+                "https://github.com/owner/repo", "main"));
+
+        assertThat(response.getData().status()).isEqualTo("READY");
+        assertThat(response.getData().jobId()).isEqualTo(fixture.currentReadyJobId());
+    }
+
+    @Test
+    void branchStatusReturnsOlderReadyJobFromCurrentTupleWhenOldTupleFailedLater() {
+        TupleOrderingFixture fixture = tupleOrderingFixture();
+        RepositoryIndexController controller = new RepositoryIndexController(
+                repositories, jobs, service, properties, true);
+
+        var response = controller.status("owner", "repo", null, "main");
+
+        assertThat(response.getData().status()).isEqualTo("READY");
+        assertThat(response.getData().commitSha()).isEqualTo(SHA_ONE);
+        assertThat(response.getData().indexedChunks()).isEqualTo(7);
+        assertThat(fixture.oldFailedJobId()).isGreaterThan(fixture.currentReadyJobId());
+    }
+
+    @Test
+    void activeJobCompletingBetweenConflictAndLookupRetriesInsteadOfFailing() throws Exception {
+        long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
+                "main", "test-model", 1024, 1).id();
+        long activeJobId = jobs.createOrGetActive(repositoryId, SHA_ONE, "API", "test-model", 1024, 1).jobId();
+        CountDownLatch insertConflictObserved = new CountDownLatch(1);
+        CountDownLatch allowActiveLookup = new CountDownLatch(1);
+        AtomicBoolean interceptConflict = new AtomicBoolean(true);
+        JdbcTemplate racingJdbc = new JdbcTemplate(jdbc.getDataSource()) {
+            @Override
+            public <T> List<T> query(String sql, org.springframework.jdbc.core.RowMapper<T> rowMapper,
+                                     Object... args) {
+                List<T> result = super.query(sql, rowMapper, args);
+                if (sql.contains("INSERT INTO rag_index_job") && result.isEmpty()
+                        && interceptConflict.compareAndSet(true, false)) {
+                    insertConflictObserved.countDown();
+                    await(allowActiveLookup);
+                }
+                return result;
+            }
+        };
+        RagIndexJobStore racingJobs = new RagIndexJobStore(racingJdbc);
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        try {
+            Future<Object> result = caller.submit(() -> racingJobs.createOrGetActive(
+                    repositoryId, SHA_ONE, "API", "test-model", 1024, 1));
+            assertThat(await(insertConflictObserved)).isTrue();
+            jdbc.update("UPDATE rag_index_job SET status='FAILED', finished_at=CURRENT_TIMESTAMP WHERE id=?",
+                    activeJobId);
+            allowActiveLookup.countDown();
+
+            assertThatCode(result::get).doesNotThrowAnyException();
+            Object replacement = result.get();
+            assertThat(replacement).hasFieldOrPropertyWithValue("created", true);
+            assertThat(jobId(replacement)).isNotEqualTo(activeJobId);
+        } finally {
+            caller.shutdownNow();
+        }
+    }
+
+    @Test
     void staleAttemptCannotPersistOrCompleteAfterRecoveryAndReclaim() {
         files.set(file("fenced.java", "class Fenced {}"));
         RagIndexResolution queued = service.ensureIndexed(metadata(SHA_ONE));
@@ -387,6 +555,32 @@ class RagIndexWorkerIntegrationTest {
         };
         ReflectionTestUtils.setField(worker, "executor", rejectingPool);
         assertThatCode(worker::submitOne).doesNotThrowAnyException();
+    }
+
+    @Test
+    void commitsQueuedJobBeforeDispatchingWorkerInsideOuterTransaction() {
+        files.set(file("src/Visible.java", "class Visible {}"));
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        CountDownLatch workerFinished = new CountDownLatch(1);
+        TaskExecutor asynchronous = runnable -> executorService.execute(() -> {
+            try {
+                runnable.run();
+            } finally {
+                workerFinished.countDown();
+            }
+        });
+        DefaultRagIndexService transactionalService = new DefaultRagIndexService(
+                repositories, jobs, worker, asynchronous, transactions, properties, Clock.systemUTC());
+
+        try {
+            transactions.executeWithoutResult(outer -> {
+                RagIndexResolution queued = transactionalService.ensureIndexed(metadata(SHA_ONE));
+                assertThat(await(workerFinished)).isTrue();
+                assertThat(jobs.get(queued.jobId()).orElseThrow().status()).isEqualTo(RagIndexJob.Status.READY);
+            });
+        } finally {
+            executorService.shutdownNow();
+        }
     }
 
     @Test
@@ -451,6 +645,50 @@ class RagIndexWorkerIntegrationTest {
         throw new AssertionError("Timed out waiting for shutdown requeue; last job=" + lastObserved);
     }
 
+    private static boolean await(CountDownLatch latch) {
+        try {
+            return latch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting for index worker", exception);
+        }
+    }
+
+    private TupleOrderingFixture tupleOrderingFixture() {
+        long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
+                "main", properties.getEmbeddingModel(), properties.getEmbeddingDimensions(),
+                RagProperties.INDEX_VERSION).id();
+        long currentReadyJobId = jobs.createOrGetActive(repositoryId, "main", "API",
+                properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), RagProperties.INDEX_VERSION)
+                .jobId();
+        jobs.createSnapshot(currentReadyJobId, repositoryId, SHA_ONE, properties.getEmbeddingModel(),
+                properties.getEmbeddingDimensions(), RagProperties.INDEX_VERSION);
+        jdbc.update("""
+                UPDATE rag_index_job
+                SET status='READY', resolved_commit_sha=?, indexed_chunk_count=7, finished_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """, SHA_ONE, currentReadyJobId);
+        long oldFailedJobId = jobs.createOrGetActive(repositoryId, "main", "API", "old-model",
+                properties.getEmbeddingDimensions(), RagProperties.INDEX_VERSION).jobId();
+        jdbc.update("""
+                UPDATE rag_index_job
+                SET status='FAILED', error_code='EMBEDDING_UNAVAILABLE', finished_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """, oldFailedJobId);
+        return new TupleOrderingFixture(currentReadyJobId, oldFailedJobId);
+    }
+
+    private record TupleOrderingFixture(long currentReadyJobId, long oldFailedJobId) {
+    }
+
+    private static boolean created(Object result) {
+        return (boolean) ReflectionTestUtils.getField(result, "created");
+    }
+
+    private static long jobId(Object result) {
+        return (long) ReflectionTestUtils.getField(result, "jobId");
+    }
+
     @Test
     void failedWriteRollsBackSnapshotAndPreservesPreviousReadyCommit() {
         files.set(file("stable.java", "class Stable {}"));
@@ -484,9 +722,9 @@ class RagIndexWorkerIntegrationTest {
     void recoversStaleRunningJobsUntilThirdAttemptThenFails() {
         long repositoryId = repositories.ensure("github", "owner", "repo", "https://github.com/owner/repo.git",
                 "main", properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), 1).id();
-        long retryable = jobs.createOrGetActive(repositoryId, SHA_ONE, "PULL_REQUEST", "test-model", 1024, 1);
-        long exhausted = jobs.createOrGetActive(repositoryId, SHA_TWO, "PULL_REQUEST", "test-model", 1024, 1);
-        long legacy = jobs.createOrGetActive(repositoryId, "4".repeat(40), "PULL_REQUEST", "test-model", 1024, 1);
+        long retryable = jobs.createOrGetActive(repositoryId, SHA_ONE, "PULL_REQUEST", "test-model", 1024, 1).jobId();
+        long exhausted = jobs.createOrGetActive(repositoryId, SHA_TWO, "PULL_REQUEST", "test-model", 1024, 1).jobId();
+        long legacy = jobs.createOrGetActive(repositoryId, "4".repeat(40), "PULL_REQUEST", "test-model", 1024, 1).jobId();
         jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=2, started_at=? WHERE id=?",
                 LocalDateTime.now(ZoneOffset.UTC).minusMinutes(16), retryable);
         jdbc.update("UPDATE rag_index_job SET status='RUNNING', attempt_count=3, started_at=? WHERE id=?",
@@ -519,6 +757,42 @@ class RagIndexWorkerIntegrationTest {
 
     private void index(GithubPrMetadata metadata) {
         indexAndResolve(metadata);
+    }
+
+    private RagIndexWorker workerWithCheckout(RepositoryFixture fixture) throws Exception {
+        Path workRoot = tempDir.resolve("checkout-" + System.nanoTime()).toAbsolutePath().normalize();
+        Files.createDirectories(workRoot);
+        try (var stream = Files.newDirectoryStream(workRoot)) {
+            Assumptions.assumeTrue(stream instanceof SecureDirectoryStream<?>,
+                    "filesystem provider does not support SecureDirectoryStream");
+        }
+        JGitRepositoryCheckoutService checkout = JGitRepositoryCheckoutService.forLocalTesting(
+                workRoot, 1, fixture.bare().toUri().toString());
+        return new RagIndexWorker(repositories, jobs, documents, chunks, checkout,
+                new RepositoryFileDiscovery()::discover, new LineWindowCodeChunker(), embeddings, transactions,
+                Clock.systemUTC(), "test-model", 1024, null, null,
+                new RagIndexLifecycleCoordinator(jobs::releaseForShutdown), null);
+    }
+
+    private RepositoryFixture createRepository() throws Exception {
+        Path source = tempDir.resolve("source-" + System.nanoTime());
+        Files.createDirectories(source);
+        String commitSha;
+        try (Git git = Git.init().setInitialBranch("main").setDirectory(source.toFile()).call()) {
+            Files.writeString(source.resolve("Example.java"), "class Example {}\n");
+            git.add().addFilepattern("Example.java").call();
+            RevCommit commit = git.commit().setMessage("initial")
+                    .setAuthor("test", "test@example.com").call();
+            commitSha = commit.name();
+        }
+        Path bare = tempDir.resolve("bare-" + System.nanoTime() + ".git");
+        try (Git ignored = Git.cloneRepository().setURI(source.toUri().toString()).setBare(true)
+                .setDirectory(bare.toFile()).call()) {
+            return new RepositoryFixture(bare, commitSha);
+        }
+    }
+
+    private record RepositoryFixture(Path bare, String commitSha) {
     }
 
     private RagIndexResolution indexAndResolve(GithubPrMetadata metadata) {

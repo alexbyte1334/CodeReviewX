@@ -15,6 +15,22 @@ Set `RAG_ENABLED`, `RAG_REVIEW_PERCENTAGE` (`0|10|50|100` operational gates),
 local profile and is `/var/lib/codereviewx/rag-work` in Compose. Never put keys
 in URLs, traces, or database rows.
 
+Production smoke requests use separate timeout budgets. GET requests use
+`RAG_SMOKE_GET_TIMEOUT_SECONDS=30` and up to three shell-managed retries. Index/publish POST
+requests use `RAG_SMOKE_POST_TIMEOUT_SECONDS=30`, while the synchronous MiMo
+review POST uses `RAG_SMOKE_REVIEW_TIMEOUT_SECONDS=180`. Index and review POST
+requests are intentionally never retried because they are non-idempotent and a
+client timeout does not prove that the server rolled back task creation.
+`RAG_SMOKE_REQUEST_TIMEOUT_SECONDS` remains a legacy fallback for GET and normal
+POST timeouts; it does not shorten the independent review timeout.
+Timeout values must be positive decimal integers and are normalized before use.
+Connect timeout is capped at 60 seconds, GET/normal POST/legacy timeout at 300,
+and review timeout at 1800. Invalid values fail before any request.
+Index-status polling has a five-minute hard deadline. Before every shell-managed
+attempt, the script recomputes the remaining time and caps that curl transfer at
+the smaller of the configured GET timeout and the remaining window; it starts
+no retry after the deadline.
+
 The implementation accepts any integer 0–100 technically, but operators may
 advance only through these gates:
 

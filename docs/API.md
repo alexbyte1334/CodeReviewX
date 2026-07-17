@@ -86,8 +86,11 @@ Mode resolution:
 3. Otherwise the backend uses `GITHUB_PR`.
 
 `MANUAL_DIFF` requires non-blank `diffText`. `GITHUB_PR` requires a configured
-`GITHUB_TOKEN` so the backend can load PR metadata, bounded file patches, and
-bounded changed-file repository context.
+`GITHUB_TOKEN` so the backend can load PR metadata and bounded file patches.
+With the PostgreSQL RAG profile enabled, the backend indexes and retrieves only
+the immutable PR head commit through full-repository hybrid RAG. The bounded
+changed-file repository context is used only when RAG is disabled or explicitly
+degraded with fallback enabled.
 
 Response:
 
@@ -183,14 +186,23 @@ Successful GitHub PR runs usually include:
 ```text
 github.pr.metadata.load
 github.pr.diff.load
-repository.context.index
+rag.index.ensure
+rag.query.build
+rag.retrieve.hybrid
+rag.rerank
+rag.context.assemble
 static.analysis.findings
 mimo.ai1.plan
 mimo.ai2.execute
 mimo.ai1.gate
 issue.generate
+evidence.validate
 comment.preview.build
 ```
+
+RAG-disabled or degraded runs replace the five `rag.*` entries with an explicit
+`repository.context.index` fallback trace; they must not present that path as a
+successful hybrid retrieval.
 
 Trace responses expose status, timing, summary, and error code. They do not
 expose secrets, raw prompts, raw model output, or raw full diff.

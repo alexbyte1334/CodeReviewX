@@ -19,34 +19,46 @@ import java.util.Optional;
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
 public class RagIndexJobStore {
 
+    private static final int ACTIVE_JOB_RESOLUTION_ATTEMPTS = 3;
+
     private final JdbcTemplate jdbc;
 
     public RagIndexJobStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    public long createOrGetActive(long repositoryId, String requestedRef, String triggerType,
-                                  String embeddingModel, int embeddingDimensions, int indexVersion) {
-        List<Long> inserted = jdbc.query("""
-                INSERT INTO rag_index_job
-                  (repository_id, requested_ref, trigger_type, status, embedding_model,
-                   embedding_dimensions, index_version, created_at)
-                VALUES (?, ?, ?, 'QUEUED', ?, ?, ?, ?)
-                ON CONFLICT (repository_id, requested_ref, embedding_model, embedding_dimensions, index_version)
-                WHERE status IN ('QUEUED', 'RUNNING')
-                DO NOTHING
-                RETURNING id
-                """, (result, row) -> result.getLong("id"), repositoryId, requestedRef, triggerType,
-                embeddingModel, embeddingDimensions, indexVersion, now());
-        if (!inserted.isEmpty()) {
-            return inserted.get(0);
+    public ActiveJobResult createOrGetActive(long repositoryId, String requestedRef, String triggerType,
+                                             String embeddingModel, int embeddingDimensions, int indexVersion) {
+        for (int attempt = 0; attempt < ACTIVE_JOB_RESOLUTION_ATTEMPTS; attempt++) {
+            List<Long> inserted = jdbc.query("""
+                    INSERT INTO rag_index_job
+                      (repository_id, requested_ref, trigger_type, status, embedding_model,
+                       embedding_dimensions, index_version, created_at)
+                    VALUES (?, ?, ?, 'QUEUED', ?, ?, ?, ?)
+                    ON CONFLICT (repository_id, requested_ref, embedding_model, embedding_dimensions, index_version)
+                    WHERE status IN ('QUEUED', 'RUNNING')
+                    DO NOTHING
+                    RETURNING id
+                    """, (result, row) -> result.getLong("id"), repositoryId, requestedRef, triggerType,
+                    embeddingModel, embeddingDimensions, indexVersion, now());
+            if (!inserted.isEmpty()) {
+                return new ActiveJobResult(inserted.get(0), true);
+            }
+            List<Long> active = jdbc.query("""
+                    SELECT id FROM rag_index_job
+                    WHERE repository_id=? AND requested_ref=? AND embedding_model=?
+                      AND embedding_dimensions=? AND index_version=?
+                      AND status IN ('QUEUED', 'RUNNING')
+                    """, (result, row) -> result.getLong("id"), repositoryId, requestedRef, embeddingModel,
+                    embeddingDimensions, indexVersion);
+            if (!active.isEmpty()) {
+                return new ActiveJobResult(active.get(0), false);
+            }
         }
-        return jdbc.queryForObject("""
-                SELECT id FROM rag_index_job
-                WHERE repository_id=? AND requested_ref=? AND embedding_model=?
-                  AND embedding_dimensions=? AND index_version=?
-                  AND status IN ('QUEUED', 'RUNNING')
-                """, Long.class, repositoryId, requestedRef, embeddingModel, embeddingDimensions, indexVersion);
+        throw new IllegalStateException("Unable to resolve active index job");
+    }
+
+    public record ActiveJobResult(long jobId, boolean created) {
     }
 
     public Optional<RagIndexJob> get(long id) {
@@ -55,6 +67,29 @@ public class RagIndexJobStore {
 
     public Optional<RagIndexJob> findLatest(long repositoryId, String requestedRef) {
         return query("SELECT * FROM rag_index_job WHERE repository_id=? AND requested_ref=? ORDER BY id DESC LIMIT 1", repositoryId, requestedRef).stream().findFirst();
+    }
+
+    public Optional<RagIndexJob> findLatest(long repositoryId, String requestedRef, String embeddingModel,
+                                            int embeddingDimensions, int indexVersion) {
+        return query("""
+                SELECT * FROM rag_index_job
+                WHERE repository_id=? AND requested_ref=? AND embedding_model=?
+                  AND embedding_dimensions=? AND index_version=?
+                ORDER BY id DESC LIMIT 1
+                """, repositoryId, requestedRef, embeddingModel, embeddingDimensions, indexVersion)
+                .stream().findFirst();
+    }
+
+    public Optional<RagIndexJob> findActive(long repositoryId, String requestedRef, String embeddingModel,
+                                            int embeddingDimensions, int indexVersion) {
+        return query("""
+                SELECT * FROM rag_index_job
+                WHERE repository_id=? AND requested_ref=? AND embedding_model=?
+                  AND embedding_dimensions=? AND index_version=?
+                  AND status IN ('QUEUED', 'RUNNING')
+                ORDER BY id DESC LIMIT 1
+                """, repositoryId, requestedRef, embeddingModel, embeddingDimensions, indexVersion)
+                .stream().findFirst();
     }
 
     public Optional<RagIndexJob> findReadySnapshot(long repositoryId, String commitSha, String embeddingModel,

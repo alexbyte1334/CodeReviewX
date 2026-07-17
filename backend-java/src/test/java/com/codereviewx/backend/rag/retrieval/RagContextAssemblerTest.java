@@ -16,7 +16,7 @@ class RagContextAssemblerTest {
     @Test
     void capsRerankInputAtThirtyAndFinalEvidenceAtTwelve() {
         CapturingRerankClient reranker = new CapturingRerankClient();
-        List<HybridRagRetrievalService.Match> matches = new ArrayList<>();
+        List<RagRetrievedChunk> matches = new ArrayList<>();
         for (int index = 1; index <= 35; index++) {
             matches.add(match(index, "src/File" + index + ".java", index, index,
                     "unique content token " + index, 1.0));
@@ -38,7 +38,7 @@ class RagContextAssemblerTest {
                 new RerankedChunk(candidates.get(1), 0.9),
                 new RerankedChunk(candidates.get(0), 0.8),
                 new RerankedChunk(candidates.get(2), 0.7));
-        List<HybridRagRetrievalService.Match> matches = List.of(
+        List<RagRetrievedChunk> matches = List.of(
                 match(1, "src/A.java", 1, 10, words(100, "alpha"), 1.0),
                 match(2, "src/A.java", 11, 20, words(95, "alpha") + " beta gamma delta epsilon zeta", 1.0),
                 match(3, "src/B.java", 1, 10, "independent tokens stay here", 1.0));
@@ -51,7 +51,7 @@ class RagContextAssemblerTest {
 
     @Test
     void limitsEachFileToThreeChunksAndPreservesChangedFileEvidence() {
-        List<HybridRagRetrievalService.Match> matches = new ArrayList<>();
+        List<RagRetrievedChunk> matches = new ArrayList<>();
         for (int index = 1; index <= 15; index++) {
             matches.add(match(index, "src/Common.java", index, index, "common unique " + index, 1.0));
         }
@@ -67,7 +67,7 @@ class RagContextAssemblerTest {
     @Test
     void reservesChangedFileCandidateWhenItFallsOutsideFirstThirtyRrfItems() {
         CapturingRerankClient reranker = new CapturingRerankClient();
-        List<HybridRagRetrievalService.Match> matches = new ArrayList<>();
+        List<RagRetrievedChunk> matches = new ArrayList<>();
         for (int index = 1; index <= 31; index++) {
             matches.add(match(index, "src/File" + index + ".java", index, index, "content " + index, 1.0));
         }
@@ -84,7 +84,7 @@ class RagContextAssemblerTest {
     @Test
     void reservesExactChangedCandidateBeyondThirtyDespiteSiblingDirectoryBoost() {
         CapturingRerankClient reranker = new CapturingRerankClient();
-        List<HybridRagRetrievalService.Match> matches = new ArrayList<>();
+        List<RagRetrievedChunk> matches = new ArrayList<>();
         matches.add(match(1, "src/auth/Sibling.java", 1, 2, "sibling directory", 1.10));
         for (int index = 2; index <= 30; index++) {
             matches.add(match(index, "src/File" + index + ".java", index, index, "content " + index, 1.0));
@@ -103,7 +103,7 @@ class RagContextAssemblerTest {
         RerankClient reranker = (query, candidates) -> List.of(
                 new RerankedChunk(candidates.get(0), 0.9),
                 new RerankedChunk(candidates.get(1), 0.4));
-        List<HybridRagRetrievalService.Match> matches = List.of(
+        List<RagRetrievedChunk> matches = List.of(
                 match(1, "src/Plain.java", 1, 10, tokenRange("shared", 1, 100), 1.0),
                 match(2, "src/Changed.java", 20, 30,
                         tokenRange("shared", 1, 95) + " exact1 exact2 exact3 exact4 exact5", 1.25));
@@ -120,7 +120,7 @@ class RagContextAssemblerTest {
                 new RerankedChunk(candidates.get(0), 0.9),
                 new RerankedChunk(candidates.get(1), 0.8),
                 new RerankedChunk(candidates.get(2), 0.7));
-        List<HybridRagRetrievalService.Match> matches = List.of(
+        List<RagRetrievedChunk> matches = List.of(
                 match(1, "src/A.java", 1, 10, tokenRange("shared", 1, 100), 1.0),
                 match(2, "src/B.java", 1, 10,
                         tokenRange("shared", 1, 93) + " b1 b2 b3 b4 b5 b6 b7", 1.0),
@@ -139,7 +139,7 @@ class RagContextAssemblerTest {
         RerankClient reranker = (query, candidates) -> List.of(
                 new RerankedChunk(candidates.get(0), 0.8),
                 new RerankedChunk(candidates.get(1), 0.8));
-        List<HybridRagRetrievalService.Match> matches = List.of(
+        List<RagRetrievedChunk> matches = List.of(
                 match(1, "src/First.java", 1, 10, tokenRange("shared", 1, 100), 1.0),
                 match(2, "src/Second.java", 1, 10,
                         tokenRange("shared", 1, 95) + " new1 new2 new3 new4 new5", 1.0));
@@ -152,7 +152,7 @@ class RagContextAssemblerTest {
 
     @Test
     void retainsUnrelatedChineseOnlyChunks() {
-        List<HybridRagRetrievalService.Match> matches = List.of(
+        List<RagRetrievedChunk> matches = List.of(
                 match(1, "src/Auth.java", 1, 2, "用户认证授权", 1.0),
                 match(2, "src/Order.java", 3, 4, "订单支付退款", 1.0));
 
@@ -168,7 +168,7 @@ class RagContextAssemblerTest {
         RerankClient reranker = (query, candidates) -> List.of(
                 new RerankedChunk(candidates.get(0), 0.8),
                 new RerankedChunk(candidates.get(1), 0.8));
-        List<HybridRagRetrievalService.Match> matches = List.of(
+        List<RagRetrievedChunk> matches = List.of(
                 match(1, "src/First.java", 1, 2, "用户认证授权", 1.0),
                 match(2, "src/Second.java", 3, 4, "用户认证授权", 1.0));
 
@@ -179,8 +179,8 @@ class RagContextAssemblerTest {
     }
 
     @Test
-    void capsTotalContentAtThirtySixThousandCharactersDeterministically() {
-        List<HybridRagRetrievalService.Match> matches = List.of(
+    void fillsCompletePromptBudgetDeterministically() {
+        List<RagRetrievedChunk> matches = List.of(
                 match(1, "src/A.java", 1, 2, "a".repeat(20_000), 1.0),
                 match(2, "src/B.java", 3, 4, "b".repeat(20_000), 1.0),
                 match(3, "src/C.java", 5, 6, "c".repeat(20_000), 1.0));
@@ -189,13 +189,51 @@ class RagContextAssemblerTest {
         RagEvidenceBundle first = assembler.assemble("query", "head-sha", matches);
         RagEvidenceBundle second = assembler.assemble("query", "head-sha", matches);
 
-        assertThat(first.evidence().stream().mapToInt(item -> item.content().length()).sum()).isEqualTo(36_000);
+        assertThat(first.promptBlock()).hasSize(36_000);
+        assertThat(first.evidence().stream().mapToInt(item -> item.content().length()).sum())
+                .isLessThan(36_000);
         assertThat(first).isEqualTo(second);
     }
 
     @Test
+    void capsCompletePromptBlockIncludingEvidenceMetadataAtThirtySixThousandCharacters() {
+        List<RagRetrievedChunk> matches = new ArrayList<>();
+        for (int index = 1; index <= 12; index++) {
+            String path = "src/" + "long-directory/".repeat(8) + "File" + index + ".java";
+            matches.add(match(index, path, index * 100, index * 100 + 79,
+                    "unique" + index + " " + "x".repeat(3_990), 1.0));
+        }
+
+        RagEvidenceBundle result = new RagContextAssembler(new CapturingRerankClient())
+                .assemble("query", "a".repeat(40), matches);
+
+        assertThat(result.promptBlock().length()).isLessThanOrEqualTo(36_000);
+        assertThat(result.evidence()).isNotEmpty();
+    }
+
+    @Test
+    void finalPromptBudgetStillPreservesExactChangedCandidateAtRerankTail() {
+        List<RagRetrievedChunk> matches = new ArrayList<>();
+        for (int index = 1; index <= 11; index++) {
+            String path = "src/" + "metadata-heavy-directory/".repeat(10) + "File" + index + ".java";
+            matches.add(match(index, path, index, index + 79,
+                    "unique" + index + " " + "x".repeat(3_190), 1.0));
+        }
+        matches.add(match(12, "src/Changed.java", 900, 920, "exact changed evidence", 1.25));
+
+        RagEvidenceBundle result = new RagContextAssembler(new CapturingRerankClient())
+                .assemble("query", "a".repeat(40), matches);
+
+        assertThat(result.promptBlock().length()).isLessThanOrEqualTo(36_000);
+        assertThat(result.evidence()).extracting(RagEvidence::path).contains("src/Changed.java");
+        assertThat(result.evidence()).extracting(RagEvidence::label)
+                .containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1, result.evidence().size())
+                        .mapToObj(index -> "C" + index).toList());
+    }
+
+    @Test
     void changedFilePreservationStillHonorsTotalContentBudget() {
-        List<HybridRagRetrievalService.Match> matches = List.of(
+        List<RagRetrievedChunk> matches = List.of(
                 match(1, "src/A.java", 1, 2, "a".repeat(36_000), 1.0),
                 match(2, "src/Changed.java", 3, 4, "b".repeat(50_000), 1.25));
 
@@ -245,7 +283,7 @@ class RagContextAssemblerTest {
         RerankClient unavailable = (query, candidates) -> {
             throw new IllegalStateException("Rerank request failed");
         };
-        List<HybridRagRetrievalService.Match> matches = List.of(
+        List<RagRetrievedChunk> matches = List.of(
                 match(7, "src/Z.java", 1, 2, "first", 1.0),
                 match(8, "src/A.java", 3, 4, "second", 1.0));
 
@@ -264,13 +302,13 @@ class RagContextAssemblerTest {
         RagContextAssembler assembler = new RagContextAssembler(new CapturingRerankClient());
 
         RagEvidenceBundle embeddingFailure = assembler.assemble("query", "head-sha", List.of(),
-                RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED);
+                RagRetrievalHealth.EMBEDDING_FAILED);
         RagEvidenceBundle bothRoutesFailed = assembler.assemble("query", "head-sha", List.of(),
-                RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED);
+                RagRetrievalHealth.BOTH_ROUTES_FAILED);
         RagEvidenceBundle healthy = assembler.assemble("query", "head-sha", List.of(),
-                RagContextAssembler.RetrievalHealth.HEALTHY);
+                RagRetrievalHealth.HEALTHY);
         RagEvidenceBundle singleRouteFailure = assembler.assemble("query", "head-sha", List.of(),
-                RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+                RagRetrievalHealth.SINGLE_ROUTE_FAILED);
 
         assertThat(embeddingFailure.legacyFallbackRequired()).isTrue();
         assertThat(bothRoutesFailed.legacyFallbackRequired()).isTrue();
@@ -279,7 +317,7 @@ class RagContextAssemblerTest {
         assertThat(singleRouteFailure.degraded()).isTrue();
         assertThat(healthy.degraded()).isFalse();
         assertThat(singleRouteFailure.retrievalHealth())
-                .isEqualTo(RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+                .isEqualTo(RagRetrievalHealth.SINGLE_ROUTE_FAILED);
     }
 
     @Test
@@ -290,11 +328,11 @@ class RagContextAssemblerTest {
 
         RagEvidenceBundle result = new RagContextAssembler(unavailable).assemble("query", "head-sha",
                 List.of(match(1, "src/A.java", 1, 2, "content", 1.0)),
-                RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+                RagRetrievalHealth.SINGLE_ROUTE_FAILED);
 
         assertThat(result.degraded()).isTrue();
         assertThat(result.reason()).isEqualTo(RagEvidenceBundle.DegradedReason.RERANK_UNAVAILABLE);
-        assertThat(result.retrievalHealth()).isEqualTo(RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+        assertThat(result.retrievalHealth()).isEqualTo(RagRetrievalHealth.SINGLE_ROUTE_FAILED);
         assertThat(result.legacyFallbackRequired()).isFalse();
     }
 
@@ -307,7 +345,7 @@ class RagContextAssemblerTest {
 
         new RagContextAssembler(unavailable, metrics).assemble("query", "head-sha",
                 List.of(match(1, "src/A.java", 1, 2, "content", 1.0)),
-                RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED);
+                RagRetrievalHealth.SINGLE_ROUTE_FAILED);
 
         assertThat(registry.counter("rag_retrieval_degraded_total").count()).isEqualTo(1);
     }
@@ -315,7 +353,7 @@ class RagContextAssemblerTest {
     @Test
     void formatsExactPromptBlocksWithoutExposingDatabaseIds() {
         CapturingRerankClient reranker = new CapturingRerankClient();
-        HybridRagRetrievalService.Match match = match(918273645, "src/main/java/example/AuthService.java",
+        RagRetrievedChunk match = match(918273645, "src/main/java/example/AuthService.java",
                 42, 78, "bounded code", 1.25);
 
         RagEvidenceBundle result = new RagContextAssembler(reranker)
@@ -367,9 +405,9 @@ class RagContextAssemblerTest {
         assertThat(result.evidence().get(0).escaped()).isTrue();
     }
 
-    private static HybridRagRetrievalService.Match match(long id, String path, int startLine, int endLine,
+    private static RagRetrievedChunk match(long id, String path, int startLine, int endLine,
                                                            String content, double pathBoost) {
-        return new HybridRagRetrievalService.Match(id, path, "JAVA", "symbol", startLine, endLine,
+        return new RagRetrievedChunk(id, path, "JAVA", "symbol", startLine, endLine,
                 "hash-" + id, content, pathBoost, 1.0 / (60 + id));
     }
 

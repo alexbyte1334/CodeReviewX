@@ -17,11 +17,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class HybridRagRetrievalHealthTest {
-    @Test void reportsHealthyWhenBothRoutesSucceed() { assertHealth(vectorOk(), lexicalOk(), embeddings(), RagContextAssembler.RetrievalHealth.HEALTHY); }
-    @Test void survivesVectorFailure() { assertHealth(vectorFailing(), lexicalOk(), embeddings(), RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED); }
-    @Test void survivesLexicalFailure() { assertHealth(vectorOk(), lexicalFailing(), embeddings(), RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED); }
-    @Test void reportsBothRouteFailure() { assertHealth(vectorFailing(), lexicalFailing(), embeddings(), RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED); }
-    @Test void reportsEmbeddingFailure() { assertHealth(vectorOk(), lexicalOk(), inputs -> { throw new IllegalStateException("down"); }, RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED); }
+    @Test void reportsHealthyWhenBothRoutesSucceed() { assertHealth(vectorOk(), lexicalOk(), embeddings(), RagRetrievalHealth.HEALTHY); }
+    @Test void survivesVectorFailure() { assertHealth(vectorFailing(), lexicalOk(), embeddings(), RagRetrievalHealth.SINGLE_ROUTE_FAILED); }
+    @Test void survivesLexicalFailure() { assertHealth(vectorOk(), lexicalFailing(), embeddings(), RagRetrievalHealth.SINGLE_ROUTE_FAILED); }
+    @Test void reportsBothRouteFailure() { assertHealth(vectorFailing(), lexicalFailing(), embeddings(), RagRetrievalHealth.BOTH_ROUTES_FAILED); }
+    @Test void reportsEmbeddingFailure() { assertHealth(vectorOk(), lexicalOk(), inputs -> { throw new IllegalStateException("down"); }, RagRetrievalHealth.EMBEDDING_FAILED); }
 
     @Test void embeddingFailureIncrementsDegradedMetricExactlyOnce() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
@@ -34,17 +34,17 @@ class HybridRagRetrievalHealthTest {
                 inputs -> { throw new IllegalStateException("provider secret"); }, properties,
                 new RagMetricsService(registry));
 
-        HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(1L,
-                "a".repeat(40), new PrRetrievalQueryBuilder.PrQuery("query", List.of(), List.of(), List.of(), List.of())));
+        RagRetrievalResult result = service.retrieve(new RagRetrievalRequest(1L,
+                "a".repeat(40), new RagRetrievalQuery("query", List.of(), List.of(), List.of(), List.of())));
 
-        assertThat(result.retrievalHealth()).isEqualTo(RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED);
+        assertThat(result.retrievalHealth()).isEqualTo(RagRetrievalHealth.EMBEDDING_FAILED);
         assertThat(registry.counter("rag_retrieval_degraded_total").count()).isEqualTo(1);
     }
 
     private void assertHealth(HybridRagRetrievalService.VectorRoute vector,
                               HybridRagRetrievalService.LexicalRoute lexical,
                               EmbeddingClient embeddings,
-                              RagContextAssembler.RetrievalHealth expected) {
+                              RagRetrievalHealth expected) {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForList(anyString(), eq(Long.class), any(), any(), any(), any(), any()))
                 .thenReturn(List.of(7L));
@@ -52,12 +52,12 @@ class HybridRagRetrievalHealthTest {
         properties.setEmbeddingDimensions(1024);
         HybridRagRetrievalService service = new HybridRagRetrievalService(jdbc, embeddings, properties, vector, lexical);
 
-        HybridRagRetrievalService.Result result = service.retrieve(new HybridRagRetrievalService.Request(1L,
-                "a".repeat(40), new PrRetrievalQueryBuilder.PrQuery("query", List.of(), List.of(), List.of(), List.of())));
+        RagRetrievalResult result = service.retrieve(new RagRetrievalRequest(1L,
+                "a".repeat(40), new RagRetrievalQuery("query", List.of(), List.of(), List.of(), List.of())));
 
         assertThat(result.retrievalHealth()).isEqualTo(expected);
-        assertThat(result.legacyFallbackRequired()).isEqualTo(expected == RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED
-                || expected == RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED);
+        assertThat(result.legacyFallbackRequired()).isEqualTo(expected == RagRetrievalHealth.EMBEDDING_FAILED
+                || expected == RagRetrievalHealth.BOTH_ROUTES_FAILED);
     }
 
     private HybridRagRetrievalService.VectorRoute vectorOk() { return (snapshot, embedding, paths) -> List.of(candidate()); }

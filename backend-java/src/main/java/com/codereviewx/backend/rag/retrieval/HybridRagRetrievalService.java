@@ -17,9 +17,8 @@ import io.micrometer.core.instrument.Timer;
 
 @Service
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
-public class HybridRagRetrievalService {
+public class HybridRagRetrievalService implements RagRetrievalService {
 
-    private static final int INDEX_VERSION = 1;
     private static final int MAX_CHANGED_PATHS = 200;
     private final JdbcTemplate jdbc;
     private final EmbeddingClient embeddingClient;
@@ -60,7 +59,8 @@ public class HybridRagRetrievalService {
         this.metrics = null;
     }
 
-    public Result retrieve(Request request) {
+    @Override
+    public RagRetrievalResult retrieve(RagRetrievalRequest request) {
         Timer.Sample sample = metrics == null ? null : Timer.start();
         boolean degraded = false;
         try {
@@ -68,19 +68,19 @@ public class HybridRagRetrievalService {
         validateConfiguration();
         SnapshotIdentity snapshot = exactReadySnapshot(request.repositoryId(), request.commitSha());
         if (snapshot == null) {
-            return new Result(Status.INDEX_NOT_READY, null, 0, 0, List.of(), RagContextAssembler.RetrievalHealth.HEALTHY);
+            return new RagRetrievalResult(RagRetrievalResult.Status.INDEX_NOT_READY, null, 0, 0, List.of(), RagRetrievalHealth.HEALTHY);
         }
-        String query = queryBuilder.build(request.prQuery());
+        String query = queryBuilder.build(request.query());
         if (query.isEmpty()) {
-            return new Result(Status.READY, snapshot.snapshotId(), 0, 0, List.of(), RagContextAssembler.RetrievalHealth.HEALTHY);
+            return new RagRetrievalResult(RagRetrievalResult.Status.READY, snapshot.snapshotId(), 0, 0, List.of(), RagRetrievalHealth.HEALTHY);
         }
-        List<String> changedPaths = safeChangedPaths(request.prQuery() == null ? null : request.prQuery().changedPaths());
+        List<String> changedPaths = safeChangedPaths(request.query().changedPaths());
         float[] queryEmbedding;
         try { queryEmbedding = embedQuery(query); }
         catch (RuntimeException embeddingFailure) {
             degraded = true;
-            return new Result(Status.READY, snapshot.snapshotId(), 0, 0, List.of(),
-                    RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED);
+            return new RagRetrievalResult(RagRetrievalResult.Status.READY, snapshot.snapshotId(), 0, 0, List.of(),
+                    RagRetrievalHealth.EMBEDDING_FAILED);
         }
         List<ReciprocalRankFusion.Candidate> vector = List.of();
         List<ReciprocalRankFusion.Candidate> lexical = List.of();
@@ -90,13 +90,14 @@ public class HybridRagRetrievalService {
         catch (RouteUnavailableException | DataAccessException unavailable) { vectorFailed = true; }
         try { lexical = lexicalRetriever.retrieve(snapshot, query, changedPaths); }
         catch (RouteUnavailableException | DataAccessException unavailable) { lexicalFailed = true; }
-        RagContextAssembler.RetrievalHealth health = vectorFailed && lexicalFailed
-                ? RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED
-                : vectorFailed || lexicalFailed ? RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED
-                : RagContextAssembler.RetrievalHealth.HEALTHY;
-        List<Match> matches = fusion.fuse(vector, lexical).stream().map(this::toMatch).toList();
-        Result result = new Result(Status.READY, snapshot.snapshotId(), vector.size(), lexical.size(), matches, health);
-        degraded = health != RagContextAssembler.RetrievalHealth.HEALTHY;
+        RagRetrievalHealth health = vectorFailed && lexicalFailed
+                ? RagRetrievalHealth.BOTH_ROUTES_FAILED
+                : vectorFailed || lexicalFailed ? RagRetrievalHealth.SINGLE_ROUTE_FAILED
+                : RagRetrievalHealth.HEALTHY;
+        List<RagRetrievedChunk> matches = fusion.fuse(vector, lexical).stream().map(this::toMatch).toList();
+        RagRetrievalResult result = new RagRetrievalResult(RagRetrievalResult.Status.READY, snapshot.snapshotId(),
+                vector.size(), lexical.size(), matches, health);
+        degraded = health != RagRetrievalHealth.HEALTHY;
         return result;
         } catch (RuntimeException exception) {
             degraded = true;
@@ -121,9 +122,9 @@ public class HybridRagRetrievalService {
                 ORDER BY snapshot.id
                 LIMIT 1
                 """, Long.class, repositoryId, commitSha, properties.getEmbeddingModel(),
-                properties.getEmbeddingDimensions(), INDEX_VERSION);
+                properties.getEmbeddingDimensions(), RagProperties.INDEX_VERSION);
         return snapshots.isEmpty() ? null : new SnapshotIdentity(snapshots.get(0), repositoryId, commitSha,
-                properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), INDEX_VERSION);
+                properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), RagProperties.INDEX_VERSION);
     }
 
     private float[] embedQuery(String query) {
@@ -157,31 +158,11 @@ public class HybridRagRetrievalService {
                 .distinct().limit(MAX_CHANGED_PATHS).toList();
     }
 
-    private Match toMatch(ReciprocalRankFusion.FusedCandidate item) {
+    private RagRetrievedChunk toMatch(ReciprocalRankFusion.FusedCandidate item) {
         ReciprocalRankFusion.Candidate candidate = item.candidate();
-        return new Match(candidate.chunkId(), candidate.path(), candidate.language(), candidate.symbolName(),
+        return new RagRetrievedChunk(candidate.chunkId(), candidate.path(), candidate.language(), candidate.symbolName(),
                 candidate.startLine(), candidate.endLine(), candidate.contentHash(), candidate.content(),
                 candidate.pathBoost(), item.score());
-    }
-
-    public enum Status {
-        READY,
-        INDEX_NOT_READY
-    }
-
-    public record Request(long repositoryId, String commitSha, PrRetrievalQueryBuilder.PrQuery prQuery) {
-    }
-
-    public record Result(Status status, Long snapshotId, int vectorCandidateCount, int lexicalCandidateCount,
-                         List<Match> matches, RagContextAssembler.RetrievalHealth retrievalHealth) {
-        public boolean legacyFallbackRequired() {
-            return retrievalHealth == RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED
-                    || retrievalHealth == RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED;
-        }
-    }
-
-    public record Match(long chunkId, String path, String language, String symbolName, int startLine, int endLine,
-                        String contentHash, String content, double pathBoost, double fusedScore) {
     }
 
     public record SnapshotIdentity(long snapshotId, long repositoryId, String commitSha, String embeddingModel,

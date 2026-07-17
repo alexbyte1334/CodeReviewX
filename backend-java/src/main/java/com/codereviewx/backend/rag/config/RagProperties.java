@@ -8,6 +8,7 @@ import java.nio.file.Path;
 public class RagProperties {
 
     public static final int V1_EMBEDDING_DIMENSIONS = 1024;
+    public static final int INDEX_VERSION = 1;
 
     private boolean enabled;
     private int reviewPercentage;

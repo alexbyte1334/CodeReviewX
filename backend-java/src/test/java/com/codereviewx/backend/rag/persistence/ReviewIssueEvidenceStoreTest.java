@@ -29,7 +29,7 @@ class ReviewIssueEvidenceStoreTest {
         RagEvidence evidence = new RagEvidence("C1", "src/A.java", 1, 2, "sha", "x".repeat(2500), 0.9,
                 false, false, new RagEvidenceSourceIdentity(987L, "original-hash"));
         RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(evidence), "prompt",
-                RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+                RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
 
         store.save(issue, finding, bundle);
 
@@ -48,7 +48,7 @@ class ReviewIssueEvidenceStoreTest {
                 IssueStatus.OPEN, "src/A.java", 1, 1, "t", "d", "r", List.of("C1"));
         RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(new RagEvidence("C1", "src/A.java", 1, 2,
                 "sha", "super-secret-source", 0.9)), "prompt", RagEvidenceBundle.DegradedReason.NONE,
-                RagContextAssembler.RetrievalHealth.HEALTHY);
+                RagRetrievalHealth.HEALTHY);
         assertThatThrownBy(() -> store.save(issue, finding, bundle)).isInstanceOf(IllegalStateException.class)
                 .hasMessage("Verified evidence source identity is incomplete")
                 .hasMessageNotContaining("secret").hasMessageNotContaining("C1").hasMessageNotContaining("44");

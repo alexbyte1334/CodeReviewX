@@ -4,6 +4,7 @@ import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.pipeline.ReviewContext;
 import com.codereviewx.backend.rag.retrieval.RagEvidence;
 import com.codereviewx.backend.rag.retrieval.RagEvidenceBundle;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalHealth;
 import com.codereviewx.backend.rag.retrieval.RagContextAssembler;
 import org.junit.jupiter.api.Test;
 
@@ -90,7 +91,7 @@ class ReviewPromptBuilderTest {
                 "export const value = 1;", 0.91);
         RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(evidence),
                 "[EVIDENCE C2]\npath: src/App.ts\nlines: 10-20\ncontent:\nexport const value = 1;\n[/EVIDENCE C2]",
-                RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+                RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
         ReviewContext context = new ReviewContext(1L, "https://github.com/example/repo", 10,
                 LocalDateTime.now(), "diff --git a/src/App.ts b/src/App.ts\n@@ -10 +10 @@\n+export const value = 1;",
                 "mimo", ReviewMode.GITHUB_PR, bundle);
@@ -129,7 +130,7 @@ class ReviewPromptBuilderTest {
     void buildGatekeeperPrompt_withRagContextIncludesAllowedLabelsAndBoundedMetadata() {
         RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(
                 new RagEvidence("C1", "src/A.java", 2, 4, "head", "secret source", 0.9)),
-                "prompt", RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+                "prompt", RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
         ReviewContext context = new ReviewContext(1L, "https://github.com/example/repo", 10, LocalDateTime.now(),
                 "diff", "mimo", ReviewMode.GITHUB_PR, bundle);
         String prompt = promptBuilder.buildGatekeeperPrompt("{}", "{}", context);

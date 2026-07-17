@@ -9,8 +9,10 @@ import com.codereviewx.backend.review.pipeline.ReviewFinding;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,13 +22,24 @@ public class ReviewStaticAnalysisService {
     public static final String TOOL_NAME = "static.analysis.findings";
 
     private static final Pattern HUNK_PATTERN = Pattern.compile("^@@ -\\d+(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@.*");
+    private static final Pattern UNPINNED_NPM_PATTERN = Pattern.compile(
+            "\\\"[^\\\"]+\\\"\\s*:\\s*\\\"(?:latest|\\*)\\\"");
 
     public List<ReviewFinding> analyze(GithubPrDiff diff, RepositoryContextIndexResult repositoryContext) {
         List<ReviewFinding> findings = new ArrayList<>();
         List<ChangedLine> changedLines = parseChangedLines(diff == null ? null : diff.diffText());
         addSemgrepStyleFindings(findings, changedLines);
-        addDependencyFindings(findings, repositoryContext);
+        Set<String> contextPaths = addDependencyFindings(findings, repositoryContext);
+        addChangedDependencyFindings(findings, changedLines, contextPaths);
         return findings;
+    }
+
+    private static int lineNumberAt(String content, int offset) {
+        int line = 1;
+        for (int index = 0; index < offset; index++) {
+            if (content.charAt(index) == '\n') line++;
+        }
+        return line;
     }
 
     private void addSemgrepStyleFindings(List<ReviewFinding> findings, List<ChangedLine> changedLines) {
@@ -75,33 +88,37 @@ public class ReviewStaticAnalysisService {
         }
     }
 
-    private void addDependencyFindings(List<ReviewFinding> findings, RepositoryContextIndexResult repositoryContext) {
+    private Set<String> addDependencyFindings(List<ReviewFinding> findings,
+                                               RepositoryContextIndexResult repositoryContext) {
+        Set<String> contextPaths = new HashSet<>();
         if (repositoryContext == null || repositoryContext.files() == null) {
-            return;
+            return contextPaths;
         }
         int sequence = 1;
         for (RepositoryContextFile file : repositoryContext.files()) {
             String path = file.path() == null ? "" : file.path();
             String content = file.content() == null ? "" : file.content();
+            contextPaths.add(path);
             if (path.endsWith("package.json")) {
-                for (String line : content.split("\\R")) {
-                    if (line.contains("\": \"latest\"") || line.contains("\": \"*\"")) {
-                        findings.add(finding(
-                                "DEPENDENCY-" + sequence++,
-                                IssueSeverity.MEDIUM,
-                                IssueCategory.SECURITY,
-                                IssueSource.DEPENDENCY,
-                                path,
-                                lineNumber(content, line),
-                                "Unpinned npm dependency range",
-                                "A package dependency uses latest or wildcard versioning. Builds can become non-reproducible and may pull unsafe updates.",
-                                "Pin the dependency to a specific compatible range and keep package-lock.json committed."
-                        ));
-                    }
+                Matcher matcher = UNPINNED_NPM_PATTERN.matcher(content);
+                while (matcher.find()) {
+                    findings.add(finding(
+                            "DEPENDENCY-" + sequence++,
+                            IssueSeverity.MEDIUM,
+                            IssueCategory.SECURITY,
+                            IssueSource.DEPENDENCY,
+                            path,
+                            lineNumberAt(content, matcher.start()),
+                            "Unpinned npm dependency range",
+                            "A package dependency uses latest or wildcard versioning. Builds can become non-reproducible and may pull unsafe updates.",
+                            "Pin the dependency to a specific compatible range and keep package-lock.json committed."
+                    ));
                 }
             }
             if (path.endsWith("pom.xml")) {
-                for (String line : content.split("\\R")) {
+                String[] lines = content.split("\\R", -1);
+                for (int index = 0; index < lines.length; index++) {
+                    String line = lines[index];
                     String lower = line.toLowerCase(Locale.ROOT);
                     if (lower.contains("snapshot</version>")) {
                         findings.add(finding(
@@ -110,13 +127,51 @@ public class ReviewStaticAnalysisService {
                                 IssueCategory.MAINTAINABILITY,
                                 IssueSource.DEPENDENCY,
                                 path,
-                                lineNumber(content, line),
+                                index + 1,
                                 "Snapshot Maven dependency introduced",
                                 "A Maven dependency uses a SNAPSHOT version. This makes review results and builds less reproducible.",
                                 "Use a released dependency version before merging or isolate snapshot dependencies behind a local-only profile."
                         ));
                     }
                 }
+            }
+        }
+        return contextPaths;
+    }
+
+    private void addChangedDependencyFindings(List<ReviewFinding> findings, List<ChangedLine> changedLines,
+                                              Set<String> contextPaths) {
+        int sequence = (int) findings.stream().filter(finding -> finding.getSource() == IssueSource.DEPENDENCY)
+                .count() + 1;
+        for (ChangedLine line : changedLines) {
+            if (contextPaths.contains(line.filePath())) continue;
+            if (line.filePath().endsWith("package.json")
+                    && UNPINNED_NPM_PATTERN.matcher(line.text()).find()) {
+                findings.add(finding(
+                        "DEPENDENCY-" + sequence++,
+                        IssueSeverity.MEDIUM,
+                        IssueCategory.SECURITY,
+                        IssueSource.DEPENDENCY,
+                        line.filePath(),
+                        line.lineNumber(),
+                        "Unpinned npm dependency range",
+                        "A changed package dependency uses latest or wildcard versioning. Builds can become non-reproducible and may pull unsafe updates.",
+                        "Pin the dependency to a specific compatible range and keep package-lock.json committed."
+                ));
+            }
+            if (line.filePath().endsWith("pom.xml")
+                    && line.text().toLowerCase(Locale.ROOT).contains("snapshot</version>")) {
+                findings.add(finding(
+                        "DEPENDENCY-" + sequence++,
+                        IssueSeverity.MEDIUM,
+                        IssueCategory.MAINTAINABILITY,
+                        IssueSource.DEPENDENCY,
+                        line.filePath(),
+                        line.lineNumber(),
+                        "Snapshot Maven dependency introduced",
+                        "A changed Maven dependency uses a SNAPSHOT version. This makes review results and builds less reproducible.",
+                        "Use a released dependency version before merging or isolate snapshot dependencies behind a local-only profile."
+                ));
             }
         }
     }
@@ -206,13 +261,4 @@ public class ReviewStaticAnalysisService {
         );
     }
 
-    private static int lineNumber(String content, String needle) {
-        String[] lines = content.split("\\R");
-        for (int i = 0; i < lines.length; i++) {
-            if (lines[i].equals(needle)) {
-                return i + 1;
-            }
-        }
-        return 1;
-    }
 }

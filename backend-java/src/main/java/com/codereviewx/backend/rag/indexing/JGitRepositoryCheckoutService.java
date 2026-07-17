@@ -7,6 +7,7 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.RefUpdate;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.RefSpec;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
@@ -38,6 +39,7 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
 
     private static final Pattern REPOSITORY_PART = Pattern.compile("[A-Za-z0-9_.-]+");
     private static final Pattern COMMIT_SHA = Pattern.compile("[0-9a-f]{40}");
+    private static final Pattern REQUESTED_REF = Pattern.compile("[A-Za-z0-9_.-]{1,255}");
     private static final Set<PosixFilePermission> OWNER_ONLY = Set.of(
             PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE);
     private static final WorkspaceBoundaryHook NOOP_HOOK = (root, operation) -> { };
@@ -74,6 +76,37 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
     static JGitRepositoryCheckoutService forLocalTesting(Path workRoot, int depth, String uri,
                                                           WorkspaceBoundaryHook boundaryHook) {
         return new JGitRepositoryCheckoutService(workRoot, depth, "", uri, boundaryHook);
+    }
+
+    @Override
+    public String resolveCommit(GithubPrMetadata metadata, String requestedRef) {
+        validateRepository(metadata);
+        if (requestedRef == null || !REQUESTED_REF.matcher(requestedRef).matches()) {
+            throw new IllegalArgumentException("Repository ref is invalid");
+        }
+        if (COMMIT_SHA.matcher(requestedRef).matches()) {
+            return requestedRef;
+        }
+        try {
+            String uri = localTestUri == null
+                    ? canonicalGithubUri(metadata.owner(), metadata.repo())
+                    : localTestUri;
+            var command = Git.lsRemoteRepository().setRemote(uri).setHeads(true).setTags(false);
+            CredentialsProvider credentials = credentials();
+            if (credentials != null) {
+                command.setCredentialsProvider(credentials);
+            }
+            String expectedName = Constants.R_HEADS + requestedRef;
+            for (Ref ref : command.call()) {
+                if (expectedName.equals(ref.getName()) && ref.getObjectId() != null
+                        && COMMIT_SHA.matcher(ref.getObjectId().name()).matches()) {
+                    return ref.getObjectId().name();
+                }
+            }
+        } catch (Exception exception) {
+            throw new IllegalStateException("Repository ref could not be resolved");
+        }
+        throw new IllegalStateException("Repository ref could not be resolved");
     }
 
     @Override
@@ -179,6 +212,13 @@ public final class JGitRepositoryCheckoutService implements RepositoryCheckoutSe
 
     private static void validateMetadata(GithubPrMetadata metadata) {
         if (metadata == null || !COMMIT_SHA.matcher(metadata.headSha() == null ? "" : metadata.headSha()).matches()) {
+            throw new IllegalArgumentException("Repository metadata is invalid");
+        }
+        validateRepository(metadata);
+    }
+
+    private static void validateRepository(GithubPrMetadata metadata) {
+        if (metadata == null) {
             throw new IllegalArgumentException("Repository metadata is invalid");
         }
         canonicalGithubUri(metadata.owner(), metadata.repo());

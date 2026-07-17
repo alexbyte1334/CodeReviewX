@@ -14,7 +14,7 @@ class MiMoAgentJsonParserEvidenceTest {
     private final RagEvidenceBundle bundle = new RagEvidenceBundle(List.of(
             new RagEvidence("C1", "src/A", 1, 2, "sha", "sensitive source evidence with multiple tokens", 1.0),
             new RagEvidence("C2", "src/A", 3, 4, "sha", "other text", 0.9)), "prompt",
-            RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+            RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
 
     @Test void rejectsMissingUnknownAndVerbatimLabels() {
         for (String pair : List.of("[]|safe", "[\"C9\"]|safe")) {
@@ -40,7 +40,7 @@ class MiMoAgentJsonParserEvidenceTest {
     @Test void doesNotRejectOrdinaryShortCoincidentalEvidenceText() {
         RagEvidenceBundle shortEvidence = new RagEvidenceBundle(List.of(
                 new RagEvidence("C1", "src/A", 1, 2, "sha", "null check", 1.0)), "prompt",
-                RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+                RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
         assertThat(parser.parseCandidateReview(jsonSurface("description", "Add a null check before access."), shortEvidence)
                 .getFindings()).hasSize(1);
     }

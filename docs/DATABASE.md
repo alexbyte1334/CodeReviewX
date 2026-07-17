@@ -1,25 +1,30 @@
 # CodeReviewX Database
 
-> Current persistence model for the local Spring Boot implementation.
+> Current persistence model for the H2 demo and PostgreSQL/pgvector production
+> RAG profiles.
 
 ## 1. Runtime Database
 
-Local runtime uses H2 file storage:
+The default RAG-disabled local demo uses H2 file storage:
 
 ```text
 jdbc:h2:file:./data/codereviewx;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
 ```
 
-Tests use an isolated in-memory H2 database:
+H2 tests use an isolated in-memory database:
 
 ```text
 jdbc:h2:mem:testdb
 ```
 
+The production RAG profile uses PostgreSQL 16 + pgvector. PostgreSQL is the only
+real RAG retrieval database; H2 does not emulate vector or FTS behavior.
+
 Flyway migrations live in:
 
 ```text
 backend-java/src/main/resources/db/migration/
+backend-java/src/main/resources/db/rag/postgresql/
 ```
 
 `spring.jpa.hibernate.ddl-auto=validate` keeps entity mappings checked against
@@ -36,6 +41,13 @@ the Flyway schema.
 | `review_tool_trace` | ordered GitHub/tool/agent step timeline |
 | `review_provider_trace` | provider request/used/hit summary |
 | `review_comment_preview` | local draft comments and publish state |
+| `rag_repository` | repository identity and active index state |
+| `rag_index_job` | persistent leased indexing work and progress |
+| `rag_index_snapshot` | immutable commit/model/index-version snapshot |
+| `rag_document` | snapshot-scoped indexed source file |
+| `rag_chunk` | bounded source chunk, FTS vector, and embedding |
+| `rag_retrieval_trace` | sanitized retrieval metrics and degraded status |
+| `review_issue_evidence` | validated bounded evidence attached to an issue |
 
 ## 3. `review_task`
 
@@ -120,16 +132,23 @@ Stores ordered execution events such as:
 ```text
 github.pr.metadata.load
 github.pr.diff.load
-repository.context.index
+rag.index.ensure
+rag.query.build
+rag.retrieve.hybrid
+rag.rerank
+rag.context.assemble
 static.analysis.findings
 mimo.ai1.plan
 mimo.ai2.execute
 mimo.ai1.gate
 issue.generate
+evidence.validate
 comment.preview.build
 ```
 
-Each row stores safe input/output summaries, status, error code, and timing.
+RAG-disabled/degraded reviews record `repository.context.index` instead of the
+five `rag.*` steps. Each row stores safe input/output summaries, status, error
+code, and timing, never raw prompts, full source, or credentials.
 
 ## 8. `review_provider_trace`
 
@@ -166,27 +185,46 @@ Important fields:
 Publishing requires a stored input snapshot with GitHub owner, repo, PR number,
 and head SHA.
 
-## 10. Production Database Note
+## 10. Production RAG Tables and Retention
 
-H2 is intentionally used for local demonstration with RAG disabled. The
-production RAG profile uses PostgreSQL 16 + pgvector and the V4-V7 migrations
-below; a deployed service must additionally provide managed secrets, backups,
-retention monitoring, and migration controls.
-# Production RAG tables and retention
+V4 creates repository, job, document, chunk, retrieval-trace, and issue-evidence
+tables. V5 adds `rag_index_snapshot` and backfills only a provable active READY
+snapshot. V6 scopes documents/chunks and their foreign keys and uniqueness to a
+snapshot. V7 adds worker heartbeat/lease fields and prevents multiple active
+jobs for the same repository. A deployed service must also provide managed
+secrets, backups, retention monitoring, and migration controls.
 
-PostgreSQL/pgvector is the only RAG retrieval store. V4 creates the repository,
-job, document, chunk, retrieval-trace and issue-evidence tables. V5 adds
-`rag_index_snapshot` and backfills only a provable active READY snapshot. V6
-adds `snapshot_id` to documents/chunks, snapshot-scoped foreign keys and
-uniqueness. V7 adds job heartbeat/lease fields and an active-job uniqueness
-index. Snapshot identity includes repository, commit, model, dimensions and
-index version, preventing cross-commit retrieval. Chunks use `vector(1024)`
-HNSW plus generated `TSVECTOR` GIN lexical search; evidence excerpts cap at
-2,000 characters and are deleted with their issue.
+Snapshot identity includes repository, commit SHA, embedding model, dimensions,
+and index version, preventing cross-commit or mixed-model retrieval. A repository
+is READY only when the current contract points to an existing compatible READY
+snapshot; an orphaned retained job is not reusable. `rag_chunk` uses
+`vector(1024)` HNSW plus generated `TSVECTOR` GIN lexical search. Retrieval
+always filters the immutable snapshot before fusion/rerank.
 
-Model/dimension upgrades create a new immutable snapshot; V1 remains 1024 and
-there is no down migration. Retention runs on `RAG_RETENTION_CLEANUP_CRON`
-(default `0 15 2 * * *`) and hardcodes READY snapshots newer than 30 days plus
-the latest five per repository. It does not delete retrieval traces. Back up
-PostgreSQL before cleanup and never delete the active snapshot before a
-replacement is READY.
+`rag_retrieval_trace` contains safe counts, timings, budget and degraded/error
+metadata, not query text, raw source, prompts, tokens, or credentials.
+`review_issue_evidence` stores the validated chunk identity, commit, path, line
+range, hash, and an excerpt capped at 2,000 characters. Its chunk foreign key
+uses `ON DELETE SET NULL` so evidence provenance survives snapshot cleanup;
+evidence rows are deleted with their owning issue.
+
+Model/dimension upgrades create a new immutable snapshot; index version 1
+requires 1024 dimensions and there is no destructive down migration. Retention
+runs on `RAG_RETENTION_CLEANUP_CRON` (default `0 15 2 * * *`) and preserves READY
+snapshots newer than 30 days plus the latest five per repository. It does not
+delete retrieval traces. Back up PostgreSQL before cleanup and never delete the
+active snapshot before a replacement is READY.
+
+## 11. Index Job and Snapshot Lifecycle
+
+```text
+QUEUED -> RUNNING -> READY
+                  -> FAILED
+```
+
+Workers claim jobs with database locking, heartbeat the lease, and recover stale
+RUNNING jobs up to the configured attempt limit. `requested_ref` is retained for
+audit; branch/default refs are resolved to a 40-character SHA before the
+SHA-only checkout boundary, and the resolved SHA is persisted on the job,
+snapshot, and repository state. Repeating the same repository/commit/model/
+dimension/version tuple reuses the existing READY snapshot without re-embedding.

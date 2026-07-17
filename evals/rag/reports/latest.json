@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 6,
   "mode": "offline-deterministic",
   "metrics": {
     "recallAt5": 0.6666666666666666,
@@ -7,13 +7,15 @@
     "mrrAt10": 0.7222222222222223,
     "ndcgAt10": 0.7586426587520698,
     "forbiddenHitRate": 0,
-    "averageSelectedChunks": 10,
-    "averageSelectedChars": 603.25,
+    "averageSelectedChunks": 12,
+    "averageSelectedChars": 709,
     "p95SelectedChars": 763,
-    "p95LatencyMs": 9.496875,
+    "p95LatencyMs": 0,
     "contextBudgetViolations": 0,
     "rerankCandidateViolations": 0,
     "crossCommitContamination": 0,
+    "evidenceValidationPassRate": 1,
+    "groundedFindingPrecision": 1,
     "expectedFindingPass": 1
   },
   "thresholds": {
@@ -23,6 +25,8 @@
     "forbiddenHitRate": 0,
     "contextBudgetViolations": 0,
     "crossCommitContamination": 0,
+    "evidenceValidationPassRate": 0.95,
+    "groundedFindingPrecision": 1,
     "expectedFindingPass": 1,
     "p95LatencyMs": 3000
   },
@@ -37,10 +41,13 @@
       "forbiddenHits": 0,
       "selectedChunks": 12,
       "selectedChars": 755,
-      "latencyMs": 9.496875,
+      "latencyMs": 0,
       "budgetViolation": false,
       "crossCommitContamination": false,
       "expectedFindingPass": true,
+      "evidenceValidationPass": true,
+      "groundedFinding": true,
+      "expectsFinding": true,
       "routeCounts": {
         "lexical": 18,
         "vector": 18
@@ -57,10 +64,13 @@
       "forbiddenHits": 0,
       "selectedChunks": 12,
       "selectedChars": 744,
-      "latencyMs": 0.384959,
+      "latencyMs": 0,
       "budgetViolation": false,
       "crossCommitContamination": false,
       "expectedFindingPass": true,
+      "evidenceValidationPass": true,
+      "groundedFinding": true,
+      "expectsFinding": true,
       "routeCounts": {
         "lexical": 18,
         "vector": 18
@@ -77,10 +87,13 @@
       "forbiddenHits": 0,
       "selectedChunks": 12,
       "selectedChars": 763,
-      "latencyMs": 0.148458,
+      "latencyMs": 0,
       "budgetViolation": false,
       "crossCommitContamination": false,
       "expectedFindingPass": true,
+      "evidenceValidationPass": true,
+      "groundedFinding": true,
+      "expectsFinding": true,
       "routeCounts": {
         "lexical": 18,
         "vector": 18
@@ -95,17 +108,20 @@
       "mrrAt10": 0,
       "ndcgAt10": 0,
       "forbiddenHits": 0,
-      "selectedChunks": 4,
-      "selectedChars": 151,
-      "latencyMs": 0.042834,
+      "selectedChunks": 12,
+      "selectedChars": 574,
+      "latencyMs": 0,
       "budgetViolation": false,
       "crossCommitContamination": false,
       "expectedFindingPass": true,
+      "evidenceValidationPass": true,
+      "groundedFinding": null,
+      "expectsFinding": false,
       "routeCounts": {
-        "lexical": 4,
-        "vector": 4
+        "lexical": 16,
+        "vector": 16
       },
-      "candidateCount": 4,
+      "candidateCount": 16,
       "rerankCandidateViolation": false
     }
   ]

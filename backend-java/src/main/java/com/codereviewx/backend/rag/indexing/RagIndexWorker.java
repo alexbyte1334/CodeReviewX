@@ -47,8 +47,6 @@ import io.micrometer.core.instrument.Timer;
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
 public class RagIndexWorker {
 
-    private static final int INDEX_VERSION = 1;
-
     private final RagRepositoryStore repositories;
     private final RagIndexJobStore jobs;
     private final RagDocumentStore documents;
@@ -171,13 +169,17 @@ public class RagIndexWorker {
             } else {
                 CheckedOutRepository checkout;
                 try {
-                    checkout = checkoutService.checkout(metadata(repository, job.requestedRef()));
+                    resolvedSha = checkoutService.resolveCommit(metadata(repository, job.requestedRef()),
+                            job.requestedRef());
+                    if (resolvedSha == null || !resolvedSha.matches("[0-9a-f]{40}")) {
+                        throw new IllegalStateException("Repository ref did not resolve to a commit SHA");
+                    }
+                    checkout = checkoutService.checkout(metadata(repository, resolvedSha));
                 } catch (RuntimeException checkoutFailure) {
                     throw new CheckoutFailureException(checkoutFailure);
                 }
                 try (CheckedOutRepository checkedOut = checkout) {
-                    resolvedSha = checkedOut.commitSha();
-                    if (!job.requestedRef().equals(resolvedSha)) {
+                    if (!resolvedSha.equals(checkedOut.commitSha())) {
                         throw new IllegalStateException("Repository checkout returned a different commit");
                     }
                     discovered = fileSource.apply(checkedOut);
@@ -309,7 +311,7 @@ public class RagIndexWorker {
     private void validateCapability(RagIndexJob job) {
         if (!embeddingModel.equals(job.embeddingModel())
                 || embeddingDimensions != job.embeddingDimensions()
-                || INDEX_VERSION != job.indexVersion()) {
+                || RagProperties.INDEX_VERSION != job.indexVersion()) {
             throw new ConfigurationMismatchException();
         }
     }

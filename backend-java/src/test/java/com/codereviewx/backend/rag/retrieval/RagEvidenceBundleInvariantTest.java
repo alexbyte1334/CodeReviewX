@@ -15,5 +15,5 @@ class RagEvidenceBundleInvariantTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("Evidence label must be non-blank");
     }
     private RagEvidence evidence(String label) { return new RagEvidence(label, "p", 1, 1, "s", "content", 1); }
-    private RagEvidenceBundle bundle(List<RagEvidence> evidence) { return new RagEvidenceBundle(evidence, "", RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY); }
+    private RagEvidenceBundle bundle(List<RagEvidence> evidence) { return new RagEvidenceBundle(evidence, "", RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY); }
 }

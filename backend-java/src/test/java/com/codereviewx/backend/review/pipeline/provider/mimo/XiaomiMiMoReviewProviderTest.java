@@ -180,7 +180,7 @@ class XiaomiMiMoReviewProviderTest {
                 new RagEvidence("C1", "src/A.java", 1, 2, "head",
                         "bounded evidence content with enough unique source tokens", 0.9),
                 new RagEvidence("C2", "src/A.java", 3, 4, "head", "other evidence", 0.8)),
-                "prompt", RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+                "prompt", RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
         return new ReviewContext(1L, "https://github.com/example/repo", 9, LocalDateTime.now(),
                 "diff --git a/src/A.java b/src/A.java\n@@ -1 +1,4 @@\n context\n+added", "mimo",
                 com.codereviewx.backend.review.enums.ReviewMode.GITHUB_PR, bundle);

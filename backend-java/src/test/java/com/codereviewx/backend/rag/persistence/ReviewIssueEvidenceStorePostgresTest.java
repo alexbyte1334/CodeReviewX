@@ -66,7 +66,7 @@ class ReviewIssueEvidenceStorePostgresTest {
         RagEvidence evidence = new RagEvidence("C1", "src/A.java", 1, 2, "sha", "x".repeat(2500), 0.9,
                 false, false, new RagEvidenceSourceIdentity(chunkId, "original-content-hash"));
         store.save(issue, finding, new RagEvidenceBundle(List.of(evidence), "prompt",
-                RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY));
+                RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY));
     }
 
     private long issue() {

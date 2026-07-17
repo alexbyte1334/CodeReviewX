@@ -16,7 +16,7 @@ public final class PrRetrievalQueryBuilder {
     private static final Pattern KNOWN_SECRET = Pattern.compile(
             "(?i)(?:gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16}|sk-[A-Za-z0-9_-]{20,})");
 
-    public String build(PrQuery input) {
+    public String build(RagRetrievalQuery input) {
         if (input == null) {
             return "";
         }
@@ -150,9 +150,5 @@ public final class PrRetrievalQueryBuilder {
         boolean singleCaseRandom = (uppercase == 0 || uppercase == letters)
                 && entropy >= 4.2 && diversity >= 0.65;
         return entropy >= 3.5 && (hasDigit || mixedCaseRandom || singleCaseRandom);
-    }
-
-    public record PrQuery(String title, List<String> changedPaths, List<String> diffHunkHeaders,
-                          List<String> changedSymbols, List<String> changedLines) {
     }
 }

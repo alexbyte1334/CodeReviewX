@@ -37,5 +37,5 @@ class ReviewIssueEvidencePersisterTest {
     private RagEvidenceBundle bundle() { return new RagEvidenceBundle(List.of(
             new RagEvidence("C1", "p", 1, 1, "s", "content one", 1),
             new RagEvidence("C2", "p", 1, 1, "s", "content two", 1)), "",
-            RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY); }
+            RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY); }
 }

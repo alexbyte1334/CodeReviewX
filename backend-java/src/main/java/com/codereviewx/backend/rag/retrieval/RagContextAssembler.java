@@ -38,13 +38,13 @@ public final class RagContextAssembler {
     }
 
     public RagEvidenceBundle assemble(String query, String commitSha,
-                                      List<HybridRagRetrievalService.Match> candidates) {
-        return assemble(query, commitSha, candidates, RetrievalHealth.HEALTHY);
+                                      List<RagRetrievedChunk> candidates) {
+        return assemble(query, commitSha, candidates, RagRetrievalHealth.HEALTHY);
     }
 
     public RagEvidenceBundle assemble(String query, String commitSha,
-                                      List<HybridRagRetrievalService.Match> candidates,
-                                      RetrievalHealth retrievalHealth) {
+                                      List<RagRetrievedChunk> candidates,
+                                      RagRetrievalHealth retrievalHealth) {
         Objects.requireNonNull(query, "query");
         Objects.requireNonNull(commitSha, "commitSha");
         Objects.requireNonNull(candidates, "candidates");
@@ -52,7 +52,7 @@ public final class RagContextAssembler {
         if (retrievalHealth.requiresLegacyFallback()) {
             return new RagEvidenceBundle(List.of(), "", RagEvidenceBundle.DegradedReason.NONE, retrievalHealth);
         }
-        List<HybridRagRetrievalService.Match> input = boundedInput(candidates);
+        List<RagRetrievedChunk> input = boundedInput(candidates);
         List<ScoredMatch> ranked;
         boolean rerankUnavailable = false;
         try {
@@ -69,7 +69,7 @@ public final class RagContextAssembler {
             metrics.recordContextChars(prompt.length());
             // Hybrid retrieval owns embedding and route degradation. The assembler only records a
             // rerank-only degradation, so one retrieval outcome cannot increment the counter twice.
-            metrics.recordRetrieval(rerankUnavailable && retrievalHealth == RetrievalHealth.HEALTHY);
+            metrics.recordRetrieval(rerankUnavailable && retrievalHealth == RagRetrievalHealth.HEALTHY);
         }
         return new RagEvidenceBundle(evidence, prompt,
                 rerankUnavailable ? RagEvidenceBundle.DegradedReason.RERANK_UNAVAILABLE
@@ -77,8 +77,8 @@ public final class RagContextAssembler {
                 retrievalHealth);
     }
 
-    private List<HybridRagRetrievalService.Match> boundedInput(List<HybridRagRetrievalService.Match> candidates) {
-        List<HybridRagRetrievalService.Match> input = new ArrayList<>(candidates.subList(0,
+    private List<RagRetrievedChunk> boundedInput(List<RagRetrievedChunk> candidates) {
+        List<RagRetrievedChunk> input = new ArrayList<>(candidates.subList(0,
                 Math.min(MAX_RERANK_INPUT, candidates.size())));
         if (candidates.size() > input.size() && input.stream().noneMatch(this::isExactChanged)) {
             candidates.stream().skip(input.size()).filter(this::isExactChanged).findFirst().ifPresent(changed -> {
@@ -89,9 +89,9 @@ public final class RagContextAssembler {
         return List.copyOf(input);
     }
 
-    private List<ScoredMatch> rerank(List<HybridRagRetrievalService.Match> input, String query) {
+    private List<ScoredMatch> rerank(List<RagRetrievedChunk> input, String query) {
         List<RerankCandidate> request = new ArrayList<>(input.size());
-        Map<String, HybridRagRetrievalService.Match> byId = new HashMap<>();
+        Map<String, RagRetrievedChunk> byId = new HashMap<>();
         for (int index = 0; index < input.size(); index++) {
             String requestId = "R" + (index + 1);
             request.add(new RerankCandidate(requestId, input.get(index).content()));
@@ -105,7 +105,7 @@ public final class RagContextAssembler {
         List<ScoredMatch> result = new ArrayList<>(response.size());
         for (RerankedChunk item : response) {
             String id = item.candidate().chunkId();
-            HybridRagRetrievalService.Match match = byId.get(id);
+            RagRetrievedChunk match = byId.get(id);
             if (match == null || !seen.add(id)) {
                 throw new IllegalStateException("Rerank response is invalid");
             }
@@ -204,18 +204,63 @@ public final class RagContextAssembler {
 
     private List<RagEvidence> labelAndBound(List<ScoredMatch> selected, String commitSha) {
         List<RagEvidence> result = new ArrayList<>(selected.size());
+        int protectedChangedIndex = -1;
+        int protectedChangedCharacters = 0;
         for (int index = 0; index < selected.size(); index++) {
-            HybridRagRetrievalService.Match match = selected.get(index).match;
-            String path = canonicalizeField(match.path());
-            String canonicalCommit = canonicalizeField(commitSha);
-            String content = escapeEvidenceMarkers(match.content());
-            boolean escaped = !path.equals(match.path()) || !canonicalCommit.equals(commitSha)
-                    || !content.equals(match.content());
-            result.add(new RagEvidence("C" + (index + 1), path, match.startLine(), match.endLine(),
-                    canonicalCommit, content, selected.get(index).score, selected.get(index).truncated, escaped,
-                    new RagEvidenceSourceIdentity(match.chunkId(), match.contentHash())));
+            if (isExactChanged(selected.get(index).match)) {
+                protectedChangedIndex = index;
+                RagEvidence protectedEvidence = fitEvidenceBlock(
+                        selected.get(index), "C" + MAX_EVIDENCE, commitSha, MAX_CONTENT_CHARACTERS);
+                if (protectedEvidence != null) {
+                    protectedChangedCharacters = format(protectedEvidence).length();
+                }
+                break;
+            }
+        }
+        int promptCharacters = 0;
+        for (int index = 0; index < selected.size(); index++) {
+            int separatorCharacters = result.isEmpty() ? 0 : 1;
+            boolean changedStillPending = index < protectedChangedIndex && protectedChangedCharacters > 0;
+            int reservedCharacters = changedStillPending ? protectedChangedCharacters + 1 : 0;
+            int remaining = MAX_CONTENT_CHARACTERS - promptCharacters - separatorCharacters - reservedCharacters;
+            RagEvidence evidence = fitEvidenceBlock(
+                    selected.get(index), "C" + (result.size() + 1), commitSha, remaining);
+            if (evidence == null) {
+                if (changedStillPending) {
+                    continue;
+                }
+                break;
+            }
+            result.add(evidence);
+            promptCharacters += separatorCharacters + format(evidence).length();
         }
         return List.copyOf(result);
+    }
+
+    private RagEvidence fitEvidenceBlock(ScoredMatch item, String label, String commitSha, int maxBlockCharacters) {
+        int maxContentCharacters = item.match.content().length();
+        while (maxContentCharacters > 0) {
+            ScoredMatch bounded = bound(item, maxContentCharacters);
+            RagEvidence evidence = toEvidence(bounded, label, commitSha);
+            int overflow = format(evidence).length() - maxBlockCharacters;
+            if (overflow <= 0) {
+                return evidence;
+            }
+            maxContentCharacters -= Math.max(1, overflow);
+        }
+        return null;
+    }
+
+    private RagEvidence toEvidence(ScoredMatch item, String label, String commitSha) {
+        RagRetrievedChunk match = item.match;
+        String path = canonicalizeField(match.path());
+        String canonicalCommit = canonicalizeField(commitSha);
+        String content = escapeEvidenceMarkers(match.content());
+        boolean escaped = !path.equals(match.path()) || !canonicalCommit.equals(commitSha)
+                || !content.equals(match.content());
+        return new RagEvidence(label, path, match.startLine(), match.endLine(), canonicalCommit, content,
+                item.score, item.truncated, escaped,
+                new RagEvidenceSourceIdentity(match.chunkId(), match.contentHash()));
     }
 
     private String format(RagEvidence evidence) {
@@ -227,7 +272,7 @@ public final class RagContextAssembler {
                 + "[/EVIDENCE " + evidence.label() + "]";
     }
 
-    private boolean isExactChanged(HybridRagRetrievalService.Match match) {
+    private boolean isExactChanged(RagRetrievedChunk match) {
         return Double.compare(match.pathBoost(), EXACT_CHANGED_PATH_BOOST) == 0;
     }
 
@@ -305,7 +350,7 @@ public final class RagContextAssembler {
         String bounded = content.substring(0, cut);
         int retainedLines = (int) bounded.lines().count();
         int endLine = bounded.isEmpty() ? item.match.startLine() : item.match.startLine() + retainedLines - 1;
-        HybridRagRetrievalService.Match match = new HybridRagRetrievalService.Match(
+        RagRetrievedChunk match = new RagRetrievedChunk(
                 item.match.chunkId(), item.match.path(), item.match.language(), item.match.symbolName(),
                 item.match.startLine(), endLine, item.match.contentHash(), bounded,
                 item.match.pathBoost(), item.match.fusedScore());
@@ -322,20 +367,10 @@ public final class RagContextAssembler {
         return cut;
     }
 
-    private record ScoredMatch(HybridRagRetrievalService.Match match, double score, boolean truncated) {
-        private ScoredMatch(HybridRagRetrievalService.Match match, double score) {
+    private record ScoredMatch(RagRetrievedChunk match, double score, boolean truncated) {
+        private ScoredMatch(RagRetrievedChunk match, double score) {
             this(match, score, false);
         }
     }
 
-    public enum RetrievalHealth {
-        HEALTHY,
-        SINGLE_ROUTE_FAILED,
-        EMBEDDING_FAILED,
-        BOTH_ROUTES_FAILED;
-
-        boolean requiresLegacyFallback() {
-            return this == EMBEDDING_FAILED || this == BOTH_ROUTES_FAILED;
-        }
-    }
 }

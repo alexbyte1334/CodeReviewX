@@ -90,6 +90,48 @@ class JGitRepositoryCheckoutServiceTest {
     }
 
     @Test
+    void resolvesBranchToExactCommitBeforeCheckout() throws Exception {
+        RepositoryFixture fixture = createRepository();
+        Path root = workRoot("resolve-branch");
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                root, 1, fixture.bare().toUri().toString());
+
+        String resolved = service.resolveCommit(metadata("main"), "main");
+
+        assertThat(resolved).isEqualTo(fixture.secondSha());
+        assumeSecureDirectoryStream(root);
+        try (CheckedOutRepository checkedOut = service.checkout(metadata(resolved))) {
+            assertThat(checkedOut.commitSha()).isEqualTo(fixture.secondSha());
+        }
+    }
+
+    @Test
+    void rejectsMissingAndUnsafeRefsWithoutCreatingWorkspace() throws Exception {
+        RepositoryFixture fixture = createRepository();
+        Path root = workRoot("resolve-missing");
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                root, 1, fixture.bare().toUri().toString());
+
+        assertThatThrownBy(() -> service.resolveCommit(metadata("missing"), "missing"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Repository ref could not be resolved");
+        assertThatThrownBy(() -> service.resolveCommit(metadata("../main"), "../main"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Repository ref is invalid");
+        assertThat(root).doesNotExist();
+    }
+
+    @Test
+    void acceptsExactShaWithoutRefLookup() throws Exception {
+        RepositoryFixture fixture = createRepository();
+        JGitRepositoryCheckoutService service = JGitRepositoryCheckoutService.forLocalTesting(
+                workRoot("resolve-sha"), 1, tempDir.resolve("missing.git").toUri().toString());
+
+        assertThat(service.resolveCommit(metadata(fixture.firstSha()), fixture.firstSha()))
+                .isEqualTo(fixture.firstSha());
+    }
+
+    @Test
     void failuresCleanTemporaryCheckoutAndNeverLeakToken() throws Exception {
         Path root = workRoot("failure-work");
         assumeSecureDirectoryStream(root);
@@ -296,7 +338,7 @@ class JGitRepositoryCheckoutServiceTest {
         Files.createDirectories(source);
         String first;
         String second;
-        try (Git git = Git.init().setDirectory(source.toFile()).call()) {
+        try (Git git = Git.init().setInitialBranch("main").setDirectory(source.toFile()).call()) {
             Files.writeString(source.resolve("file.txt"), "first\n");
             git.add().addFilepattern("file.txt").call();
             RevCommit firstCommit = git.commit().setMessage("first").setAuthor("test", "test@example.com").call();

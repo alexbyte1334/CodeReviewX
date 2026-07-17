@@ -4,14 +4,14 @@ import java.util.List;
 import java.util.Objects;
 
 public record RagEvidenceBundle(List<RagEvidence> evidence, String promptBlock, DegradedReason reason,
-                                RagContextAssembler.RetrievalHealth retrievalHealth) {
+                                RagRetrievalHealth retrievalHealth) {
     public RagEvidenceBundle(List<RagEvidence> evidence, String promptBlock, boolean degraded,
                              DegradedReason reason, boolean legacyFallbackRequired) {
         this(evidence, promptBlock, reason,
-                legacyFallbackRequired ? RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED
+                legacyFallbackRequired ? RagRetrievalHealth.EMBEDDING_FAILED
                         : degraded && reason == DegradedReason.NONE
-                        ? RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED
-                        : RagContextAssembler.RetrievalHealth.HEALTHY);
+                        ? RagRetrievalHealth.SINGLE_ROUTE_FAILED
+                        : RagRetrievalHealth.HEALTHY);
     }
 
     public RagEvidenceBundle {
@@ -28,12 +28,12 @@ public record RagEvidenceBundle(List<RagEvidence> evidence, String promptBlock, 
 
     public boolean degraded() {
         return reason != DegradedReason.NONE
-                || retrievalHealth == RagContextAssembler.RetrievalHealth.SINGLE_ROUTE_FAILED;
+                || retrievalHealth == RagRetrievalHealth.SINGLE_ROUTE_FAILED;
     }
 
     public boolean legacyFallbackRequired() {
-        return retrievalHealth == RagContextAssembler.RetrievalHealth.EMBEDDING_FAILED
-                || retrievalHealth == RagContextAssembler.RetrievalHealth.BOTH_ROUTES_FAILED;
+        return retrievalHealth == RagRetrievalHealth.EMBEDDING_FAILED
+                || retrievalHealth == RagRetrievalHealth.BOTH_ROUTES_FAILED;
     }
 
     public enum DegradedReason {

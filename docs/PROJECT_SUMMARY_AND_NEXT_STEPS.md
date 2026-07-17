@@ -10,15 +10,18 @@ CodeReviewX is a locally runnable AI code review agent MVP for pull request
 review workflows. It demonstrates a complete engineering loop:
 
 1. Create a review task from a GitHub PR or pasted unified diff.
-2. Load bounded GitHub PR metadata, files patch, and changed-file context when
-   needed.
-3. Run request-time Semgrep-style and dependency hygiene finding checks.
-4. Run a Xiaomi MiMo dual-agent review workflow.
-5. Normalize approved model output and static findings into structured issues.
-6. Generate local comment previews.
-7. Let the user select and explicitly confirm comments before publishing them
+2. Load bounded GitHub PR metadata and the files patch at the PR head SHA.
+3. Ensure an immutable full-repository snapshot is indexed in PostgreSQL with
+   pgvector, then retrieve commit-scoped evidence through vector search,
+   PostgreSQL FTS, RRF fusion, reranking, and context-budget assembly.
+4. Run request-time Semgrep-style and dependency hygiene finding checks.
+5. Run a Xiaomi MiMo dual-agent review workflow against the evidence bundle.
+6. Validate every model evidence reference before persisting issues or previews.
+7. Generate local comment previews.
+8. Let the user select and explicitly confirm comments before publishing them
    back to GitHub.
-8. Preserve safe trace, snapshot, and provider summaries for observability.
+9. Preserve safe trace, snapshot, retrieval, and provider summaries for
+   observability.
 
 The project is not positioned as a production SaaS: multi-user authentication
 and GitHub App installation remain out of scope. The production profile now
@@ -30,17 +33,20 @@ PostgreSQL/pgvector; the default H2 demo profile intentionally does not.
 ```text
 React frontend
   -> Spring Boot backend-java
-  -> H2 file database
-  -> GitHub REST API
-  -> Xiaomi MiMo OpenAI-compatible API
+     -> PostgreSQL 16 + pgvector (production RAG profile)
+     -> H2 (RAG-disabled local demo profile)
+     -> GitHub REST API
+     -> OpenAI-compatible embedding and rerank APIs
+     -> Xiaomi MiMo planner / executor / gatekeeper APIs
 ```
 
 There is no active Python `ai-service` process in the current runtime.
 `ai-service/` remains only as a historical placeholder; the active runtime is
-fully implemented in `backend-java`. The production profile includes PostgreSQL/pgvector indexing, hybrid retrieval,
-rerank, evidence persistence, rollout switches, and an explicit legacy fallback;
-it is not claimed as production-ready until the Docker smoke and CI gates below
-are observed.
+fully implemented in `backend-java`. The production profile includes
+restart-safe indexing, PostgreSQL/pgvector hybrid retrieval, reranking, evidence
+persistence, rollout switches, and an explicit legacy fallback. Local Docker,
+production-path quality, performance, and smoke gates have passed; remote
+GitHub Actions remains the merge gate.
 
 ## 3. Implemented Capabilities
 
@@ -48,7 +54,9 @@ are observed.
 
 - Spring Boot 3 + Java 17 + Maven.
 - H2 file database for local runtime persistence.
-- Flyway-managed schema.
+- PostgreSQL 16 + pgvector for production RAG snapshots, jobs, chunks,
+  embeddings, FTS, evidence, and retrieval traces.
+- Flyway-managed H2 and PostgreSQL schemas.
 - ReviewTask create/list/detail APIs.
 - ReviewRun, ReviewIssue, ReviewInputSnapshot, ReviewToolTrace,
   ReviewProviderTrace, and ReviewCommentPreview persistence.
@@ -60,7 +68,8 @@ are observed.
 - `GITHUB_PR` mode when no manual `diffText` is provided.
 - GitHub PR metadata loader.
 - GitHub PR files patch loader.
-- Bounded changed-file repository context index at PR head SHA.
+- Full-repository commit-scoped index at PR head SHA, with the bounded
+  changed-file context retained only as an explicit fallback.
 - Bounded ingestion:
   - changed files: 50 by default
   - total diff bytes: 512000 by default
@@ -76,12 +85,17 @@ are observed.
 ```text
 github.pr.metadata.load
   -> github.pr.diff.load
-  -> repository.context.index
+  -> rag.index.ensure
+  -> rag.query.build
+  -> rag.retrieve.hybrid
+  -> rag.rerank
+  -> rag.context.assemble
   -> static.analysis.findings
   -> mimo.ai1.plan
   -> mimo.ai2.execute
   -> mimo.ai1.gate
   -> issue.generate
+  -> evidence.validate
   -> comment.preview.build
 ```
 
@@ -111,6 +125,9 @@ github.pr.metadata.load
   preview publishing states.
 - MiMo readiness feedback to prevent starting reviews when the backend is not
   configured.
+- Repository index status, safe reindex actions, polling, and duplicate-job
+  conflict handling.
+- Retrieval health/degraded state and per-issue evidence inspection.
 
 ### Quality and Security Tooling
 
@@ -163,38 +180,63 @@ node scripts/run-evals.mjs
 node scripts/static-scan.mjs
 node scripts/secret-scan.mjs
 node scripts/dependency-scan.mjs
+node scripts/run-rag-evals.mjs --self-test
 node scripts/run-rag-evals.mjs
+bash scripts/tests/rag-smoke-contract-test.sh
+bash scripts/tests/rag-smoke-deadline-test.sh
 git diff --check
 ```
 
-## 6. Task 12 delivery evidence (2026-07-16)
+## 6. Task 12 delivery evidence (2026-07-17)
 
-- Verified implementation includes commits through `3cfdc15796e006d0d061e5c4cf555d189c8551d0`;
-  this evidence refresh and subsequent fact-document corrections are documentation-only.
-- `node scripts/run-rag-evals.mjs`: passed offline deterministic mode. Recall@10
-  1.00, MRR@10 0.7222, nDCG@10 0.7586, forbidden-hit 0, cross-commit
-  contamination 0, expected-finding pass 1.00, p95 latency 9.50 ms.
-- `node scripts/run-evals.mjs`: passed (schema pass 100%, expected finding hit
-  100%). `git diff --check`: passed.
-- Frontend verification passed: 71 tests, typecheck, and production build.
-- All non-Docker backend tests passed with the six PostgreSQL/Testcontainers
-  classes excluded. Local HTTP client tests passed with socket permission.
-  Checkout fails closed on this filesystem because it does not provide
-  `SecureDirectoryStream`; the capable-provider security tests remain enabled
-  for Linux CI.
-- Static scan passed with 0 findings; secret scan and dependency scan passed
-  with 0 blocking issues. The dependency report records the expected H2
-  local-demo warning.
-- The complete unfiltered Maven command is not green only because Docker is
-  unavailable, so the six PostgreSQL/Testcontainers classes cannot start.
-- `docker compose build` and `bash scripts/rag-smoke.sh`: not run/passed because
-  Docker is unavailable. No smoke `jobId`/`runId` exists. CI run: not run/unknown.
+- Implementation branch: `codex/production-rag-delivery`. The final
+  implementation commit and GitHub Actions run are recorded after the local
+  evidence commit is created and pushed.
+- Tasks 1-12 have independent primary commits: `e1bfdc0`, `d1e4c8b`,
+  `eca328a`, `0e65384`, `39c1824`, `07b312c`, `c1f69a0`, `9c73ead`,
+  `1f47d5b`, `8c1a369`, `c4a058b`, and `a85493e`, followed by focused review
+  fixes and evidence refreshes.
+- Backend: `393` tests, `0` failures, `0` errors, `11` intentional skips. The
+  unfiltered suite used Docker Desktop and real PostgreSQL 16/pgvector
+  Testcontainers; Flyway migrations v1-v7 passed. The opt-in performance gate
+  was executed separately, while platform-specific secure-directory tests stay
+  skipped on macOS providers that cannot expose `SecureDirectoryStream`.
+- Frontend: `85/85` Vitest tests passed, followed by TypeScript typecheck and a
+  production Vite build.
+- Java production retrieval quality: Recall@10 `1.000`, MRR@10 `0.833`,
+  nDCG@10 `0.871`; forbidden hits, cross-commit contamination, and context
+  budget violations were all `0`. This gate executes the production Java
+  hybrid retriever and context assembler against PostgreSQL/pgvector. It uses
+  deterministic in-process embedding/rerank fixtures, not external model
+  network calls.
+- JS deterministic reference eval: Recall@10 `1.000`, MRR@10 `0.722`, nDCG@10
+  `0.759`, forbidden-hit rate `0`, cross-commit contamination `0`, evidence
+  validation `1.000`, and grounded finding precision `1.000`. Mutation
+  self-tests passed.
+- Original review eval: schema pass `100%`, expected finding hit `100%`, and no
+  false positives in the three-case fixture.
+- Performance acceptance on two 10,000-chunk snapshots / 1,000 files:
+  20-file incremental index `23.83s`, `20` chunks embedded and `9,980` reused;
+  hybrid retrieval + rerank p95 `150.98ms`; maximum context `35,999` chars,
+  rerank candidates `30`, and evidence chunks `7`.
+- Docker Compose build passed. PostgreSQL, backend, and frontend were rebuilt
+  and healthy; `/api/health` reported `ragReady=true` and database, GitHub,
+  embedding, and rerank dependencies `UP`.
+- Real GitHub PR smoke passed for `alexbyte1334/CodeReviewX` PR `#4` at
+  `b3a5e235bb7335e9e0f9617fb0ff78c8d89b7352`:
+  `jobId=7`, `runId=11`, `selectedChunkCount=12`, `degraded=false`. The smoke
+  asserted the complete RAG trace, non-empty evidence and preview, and rejected
+  unconfirmed publishing with HTTP 400 without changing preview state.
+- The local embedding and rerank endpoints used deterministic fixture services
+  at `host.docker.internal:18081`. Xiaomi MiMo remained the live planner,
+  executor, and gatekeeper. One separate run failed closed with
+  `MIMO_REVIEW_INVALID` when the executor returned non-JSON; a later run passed.
+- Semgrep scanned 216 targets with 0 findings. Secret and dependency scans had
+  0 blocking issues; the expected H2 local-demo warning remains informational.
+- Local Definition of Done gates are complete. Remote GitHub Actions/PR status
+  is pending until the final commits are pushed.
 
-The project handoff is `DONE_WITH_CONCERNS`: operations/evaluation docs and
-rollout switches are delivered, but Definition of Done remains open until a
-Docker-enabled environment runs PostgreSQL migration, compose smoke, and CI.
-
-## 6. Recommended Interview Narrative
+## 7. Recommended Interview Narrative
 
 Use this project to explain:
 
@@ -208,15 +250,15 @@ Use this project to explain:
 - how human confirmation reduces risk before external side effects;
 - how bounded GitHub diff loading controls cost, latency, and privacy.
 
-## 7. Next Engineering Steps
+## 8. Next Engineering Steps
 
-### Production Integration Gate
+### Controlled Rollout
 
-Run the PostgreSQL/pgvector migration, Compose smoke, and CI in a Docker-enabled
-environment; record the real job/run IDs and keep the release at 0% until all
-quality, security, evidence, and latency gates pass.
+Keep `RAG_REVIEW_PERCENTAGE=0` until remote CI is green, then follow the
+documented 10% / 50% / 100% rollout gates. Track MiMo invalid-output rate and
+retrieval degraded rate separately; do not hide either behind fallback.
 
-### Live Eval Capture
+### Live Model Eval Capture
 
 Capture sanitized real backend/MiMo outputs into an ignored or reviewed eval
 artifact folder, then compare prompt/model changes over time.

@@ -52,6 +52,9 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       MIMO_PLANNER_API_KEY: ${MIMO_PLANNER_API_KEY:-}
       MIMO_EXECUTOR_API_KEY: ${MIMO_EXECUTOR_API_KEY:-}
+      MIMO_BASE_URL: ${MIMO_BASE_URL:-https://api.xiaomimimo.com/v1}
+      MIMO_MODEL: ${MIMO_MODEL:-mimo-v2.5-pro}
+      MIMO_TIMEOUT_SECONDS: ${MIMO_TIMEOUT_SECONDS:-60}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -77,7 +80,7 @@ services:
       backend:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ >/dev/null"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 10

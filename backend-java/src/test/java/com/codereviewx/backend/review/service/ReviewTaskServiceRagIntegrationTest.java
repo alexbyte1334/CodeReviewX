@@ -29,7 +29,10 @@ import com.codereviewx.backend.review.pipeline.provider.mimo.*;
 import com.codereviewx.backend.rag.service.RagReviewContextFacade;
 import com.codereviewx.backend.rag.service.RagIndexService;
 import com.codereviewx.backend.rag.service.RagIndexResolution;
-import com.codereviewx.backend.rag.retrieval.HybridRagRetrievalService;
+import com.codereviewx.backend.rag.retrieval.RagRetrievedChunk;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalHealth;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalResult;
+import com.codereviewx.backend.rag.retrieval.RagRetrievalService;
 import com.codereviewx.backend.rag.retrieval.RerankClient;
 import com.codereviewx.backend.rag.retrieval.RerankedChunk;
 import com.codereviewx.backend.rag.persistence.ReviewIssueEvidenceStore;
@@ -64,7 +67,7 @@ class ReviewTaskServiceRagIntegrationTest {
     @MockBean private GithubPrDiffLoader diffLoader;
     @MockBean private XiaomiMiMoClient mimoClient;
     @MockBean private RagIndexService ragIndexService;
-    @MockBean private HybridRagRetrievalService retrievalService;
+    @MockBean private RagRetrievalService retrievalService;
     @MockBean private RerankClient rerankClient;
     @MockBean private ReviewIssueEvidenceStore evidenceStore;
     @MockBean private RagIndexWorker ragIndexWorker;
@@ -73,7 +76,7 @@ class ReviewTaskServiceRagIntegrationTest {
             1, 80, false, List.of(new GithubPrDiffFile("src/App.ts", "modified", 1, 0, 1, 40, false)));
     private final RagEvidenceBundle bundle = new RagEvidenceBundle(
             List.of(new RagEvidence("C2", "src/App.ts", 8, 22, "head-sha", "const value = risky();", 0.9)),
-            "evidence", RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+            "evidence", RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
 
     @BeforeEach
     void clean() {
@@ -110,11 +113,11 @@ class ReviewTaskServiceRagIntegrationTest {
         when(diffLoader.load(metadata)).thenReturn(GithubPrDiffLoadResult.success(reviewDiff));
         when(ragIndexService.ensureIndexed(metadata)).thenReturn(new RagIndexResolution(
                 1L, 2L, metadata.headSha(), RagIndexResolution.Status.READY));
-        HybridRagRetrievalService.Match match = new HybridRagRetrievalService.Match(77L, "src/App.ts", "TS",
+        RagRetrievedChunk match = new RagRetrievedChunk(77L, "src/App.ts", "TS",
                 "password", 1, 2, "source-hash", "supporting source", 1.25, 0.9);
-        when(retrievalService.retrieve(any())).thenReturn(new HybridRagRetrievalService.Result(
-                HybridRagRetrievalService.Status.READY, 3L, 1, 1, List.of(match),
-                RagContextAssembler.RetrievalHealth.HEALTHY));
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(
+                RagRetrievalResult.Status.READY, 3L, 1, 1, List.of(match),
+                RagRetrievalHealth.HEALTHY));
         when(rerankClient.rerank(anyString(), anyList())).thenAnswer(invocation -> {
             List<com.codereviewx.backend.rag.retrieval.RerankCandidate> candidates = invocation.getArgument(1);
             return candidates.stream().map(candidate -> new RerankedChunk(candidate, 0.95)).toList();
@@ -222,6 +225,6 @@ class ReviewTaskServiceRagIntegrationTest {
 
     private RagEvidenceBundle bundle(String label, String path, int start, int end) {
         return new RagEvidenceBundle(List.of(new RagEvidence(label, path, start, end, "head", "content", 0.9)),
-                "evidence", RagEvidenceBundle.DegradedReason.NONE, RagContextAssembler.RetrievalHealth.HEALTHY);
+                "evidence", RagEvidenceBundle.DegradedReason.NONE, RagRetrievalHealth.HEALTHY);
     }
 }

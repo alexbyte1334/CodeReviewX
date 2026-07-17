@@ -12,6 +12,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
@@ -22,7 +23,6 @@ import java.util.regex.Pattern;
 @ConditionalOnProperty(prefix = "codereviewx.rag", name = "enabled", havingValue = "true")
 public class DefaultRagIndexService implements RagIndexService {
 
-    private static final int INDEX_VERSION = 1;
     private static final Pattern REPOSITORY_PART = Pattern.compile("[A-Za-z0-9_.-]+");
     private static final Pattern COMMIT_SHA = Pattern.compile("[0-9a-f]{40}");
 
@@ -47,7 +47,9 @@ public class DefaultRagIndexService implements RagIndexService {
         this.jobs = jobs;
         this.worker = worker;
         this.executor = executor;
-        this.transactions = transactions;
+        this.transactions = new TransactionTemplate(Objects.requireNonNull(
+                transactions.getTransactionManager(), "transactionManager"));
+        this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.properties = properties;
         Objects.requireNonNull(clock, "clock");
     }
@@ -59,15 +61,16 @@ public class DefaultRagIndexService implements RagIndexService {
             RepositoryRecord repository = repositories.ensure("github", metadata.owner(), metadata.repo(),
                     "https://github.com/" + metadata.owner() + "/" + metadata.repo() + ".git",
                     metadata.baseRef(), properties.getEmbeddingModel(), properties.getEmbeddingDimensions(),
-                    INDEX_VERSION);
+                    RagProperties.INDEX_VERSION);
             RagIndexJob ready = jobs.findReadySnapshot(repository.id(), metadata.headSha(),
-                    properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), INDEX_VERSION).orElse(null);
+                    properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), RagProperties.INDEX_VERSION).orElse(null);
             if (ready != null) {
                 return new ResolutionTransaction(new RagIndexResolution(repository.id(), ready.id(),
                         metadata.headSha(), RagIndexResolution.Status.READY), false);
             }
             long jobId = jobs.createOrGetActive(repository.id(), metadata.headSha(), "PULL_REQUEST",
-                    properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), INDEX_VERSION);
+                    properties.getEmbeddingModel(), properties.getEmbeddingDimensions(), RagProperties.INDEX_VERSION)
+                    .jobId();
             return new ResolutionTransaction(new RagIndexResolution(repository.id(), jobId,
                     metadata.headSha(), RagIndexResolution.Status.QUEUED), true);
         });

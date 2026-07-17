@@ -16,8 +16,8 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<ApiResp
   const response = await fetch(url, options);
   let json: ApiResponse<T>;
   try { json = await response.json(); } catch { json = { success: response.ok, message: response.statusText, data: null }; }
-  if (response.ok === false && json.success) return { ...json, success: false, message: json.message || response.statusText };
-  return json;
+  if (response.ok === false && json.success) return { ...json, success: false, message: json.message || response.statusText, httpStatus: response.status };
+  return { ...json, httpStatus: response.status };
 }
 
 export async function getHealth(): Promise<ApiResponse<HealthData>> {
@@ -99,8 +99,20 @@ export async function publishCommentPreview(
   );
 }
 
-export async function getRepositoryIndexStatus(owner: string, repo: string, ref: string): Promise<ApiResponse<RepositoryIndexStatus>> { const query = /^[0-9a-f]{40}$/i.test(ref) ? `commitSha=${encodeURIComponent(ref)}` : `ref=${encodeURIComponent(ref)}`; return fetchJson(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/index-status?${query}`); }
+export async function getRepositoryIndexStatus(owner: string, repo: string, ref: string): Promise<ApiResponse<RepositoryIndexStatus>> {
+  const query = /^[0-9a-f]{40}$/.test(ref) ? `commitSha=${encodeURIComponent(ref)}` : `ref=${encodeURIComponent(ref)}`;
+  const response = await fetchJson<RepositoryIndexStatus>(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/index-status?${query}`);
+  if (response.httpStatus === 404) {
+    return {
+      success: true,
+      message: 'OK',
+      data: { status: 'NOT_INDEXED' },
+      httpStatus: 404,
+    };
+  }
+  return response;
+}
 export async function requestRepositoryIndex(repoUrl: string, ref: string): Promise<ApiResponse<RepositoryIndexResponse>> { return fetchJson(`${BASE_URL}/api/repositories/index`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repoUrl,ref})}); }
-export async function requestRepositoryReindex(owner: string, repo: string, ref?: string): Promise<ApiResponse<RepositoryIndexResponse>> { const query = ref ? `?ref=${encodeURIComponent(ref)}` : ''; return fetchJson(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/reindex${query}`, {method:'POST'}); }
+export async function requestRepositoryReindex(owner: string, repo: string, ref: string): Promise<ApiResponse<RepositoryIndexResponse>> { return fetchJson(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/reindex?ref=${encodeURIComponent(ref)}`, {method:'POST'}); }
 export async function getRetrievalEvidence(taskId:number, issueKey:string): Promise<ApiResponse<RetrievalEvidence[]>> { return fetchJson(`${BASE_URL}/api/review-tasks/${taskId}/issues/${encodeURIComponent(issueKey)}/evidence`); }
 export async function getRetrievalTrace(runId:number): Promise<ApiResponse<RetrievalTrace>> { return fetchJson(`${BASE_URL}/api/review-runs/${runId}/retrieval`); }

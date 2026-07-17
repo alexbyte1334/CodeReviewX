@@ -57,18 +57,22 @@ CodeReviewX addresses these problems:
   publishing.
 - Human-in-the-loop GitHub comment publishing.
 - Local evals, secret scan, dependency scan, and Semgrep static-analysis script.
+- PostgreSQL 16 + pgvector production profile with immutable commit snapshots.
+- Asynchronous repository checkout, chunking, embedding, and retryable index jobs.
+- Commit-scoped vector + PostgreSQL FTS retrieval, RRF fusion, rerank, bounded evidence, and evidence-gated previews.
+- Docker Compose delivery stack and explicit RAG rollout/fallback switches.
 
 ### Out of Scope
 
 - GitHub App or OAuth installation flow.
 - Multi-user accounts, teams, or permissions.
 - Production secret management.
-- Full repository clone and cross-file semantic analysis.
-- Queue workers, retries, cancellation, and progress streaming.
-- Semantic/vector RAG, durable memory, MCP, or function-calling tool
-  orchestration.
+- Cross-repository knowledge graphs, general repository chat, durable agent memory,
+  MCP, or function-calling tool orchestration.
+- Distributed queue infrastructure, user-driven cancellation, and streaming index
+  progress beyond the persisted in-process job worker.
 - External Semgrep execution as a long-running review worker.
-- Production database deployment.
+- Managed cloud database provisioning, multi-region deployment, and autoscaling.
 
 ## 5. User Stories
 

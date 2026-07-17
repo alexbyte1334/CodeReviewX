@@ -185,7 +185,7 @@ describe('ReviewTaskDetail', () => {
   it('requests repository indexing and evidence when activated', async () => {
     const user = userEvent.setup();
     const onIndex = vi.fn();
-    render(<ReviewTaskDetail {...baseProps} task={{ ...mockTask, repositoryIndex: { status: 'NOT_INDEXED' } }} onRequestRepositoryIndex={onIndex} />);
+    render(<ReviewTaskDetail {...baseProps} task={mockTask} repositoryIndexStatus={{ status: 'NOT_INDEXED' }} onRequestRepositoryIndex={onIndex} />);
     await user.click(screen.getByRole('button', { name: 'Index' }));
     expect(onIndex).toHaveBeenCalledTimes(1);
     await expandIssuesPanel(user);

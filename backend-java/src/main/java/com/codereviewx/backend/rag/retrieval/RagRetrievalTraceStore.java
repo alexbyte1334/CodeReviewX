@@ -24,7 +24,7 @@ public class RagRetrievalTraceStore {
 
     @Transactional
     public void save(long reviewRunId, long repositoryId, String commitSha, String query,
-                     HybridRagRetrievalService.Result result, int selectedCount, int contextChars,
+                     RagRetrievalResult result, int selectedCount, int contextChars,
                      long latencyMs) {
         try {
             String summary = mapper.writeValueAsString(result.matches().stream().map(match -> Map.of(
@@ -39,8 +39,8 @@ public class RagRetrievalTraceStore {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, reviewRunId, repositoryId, commitSha, sha256(query),
                     result.vectorCandidateCount(), result.lexicalCandidateCount(), result.matches().size(),
-                    selectedCount, contextChars, result.status() != HybridRagRetrievalService.Status.READY
-                            || result.retrievalHealth() != RagContextAssembler.RetrievalHealth.HEALTHY,
+                    selectedCount, contextChars, result.status() != RagRetrievalResult.Status.READY
+                            || result.retrievalHealth() != RagRetrievalHealth.HEALTHY,
                     Math.max(0, latencyMs), summary, LocalDateTime.now());
         } catch (Exception exception) {
             throw new IllegalStateException("Unable to persist RAG retrieval trace", exception);
