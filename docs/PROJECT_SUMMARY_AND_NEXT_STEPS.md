@@ -45,8 +45,8 @@ There is no active Python `ai-service` process in the current runtime.
 fully implemented in `backend-java`. The production profile includes
 restart-safe indexing, PostgreSQL/pgvector hybrid retrieval, reranking, evidence
 persistence, rollout switches, and an explicit legacy fallback. Local Docker,
-production-path quality, performance, and smoke gates have passed; remote
-GitHub Actions remains the merge gate.
+production-path quality, performance, and smoke gates passed, and the complete
+delivery was merged into `main` after GitHub Actions passed.
 
 ## 3. Implemented Capabilities
 
@@ -193,7 +193,8 @@ git diff --check
   acceptance implementation commit:
   `95d83f52d78efb7f98c9b0bccb2226c251446a83`; cross-platform quality-report
   stabilization commit: `1f7cdcf5c9f8a9eacb89cd9f8d713c2888600560`.
-- Delivery is published as [Draft PR #7](https://github.com/alexbyte1334/CodeReviewX/pull/7).
+- Delivery was merged into `main` through [PR #7](https://github.com/alexbyte1334/CodeReviewX/pull/7)
+  on 2026-07-18.
   [GitHub Actions run 29588905155](https://github.com/alexbyte1334/CodeReviewX/actions/runs/29588905155)
   passed all seven jobs, including
   [PostgreSQL RAG Integration job 87912754835](https://github.com/alexbyte1334/CodeReviewX/actions/runs/29588905155/job/87912754835).
@@ -238,9 +239,9 @@ git diff --check
   `MIMO_REVIEW_INVALID` when the executor returned non-JSON; a later run passed.
 - Semgrep scanned 216 targets with 0 findings. Secret and dependency scans had
   0 blocking issues; the expected H2 local-demo warning remains informational.
-- Local Definition of Done gates are complete, and the published Draft PR has
-  a fully green GitHub Actions run. The PR remains Draft for human review and
-  controlled rollout approval.
+- Local Definition of Done gates are complete, the delivery PR's GitHub Actions
+  run is fully green, and PR #7 is merged. Runtime RAG rollout remains a
+  separate operator-controlled 0% / 10% / 50% / 100% decision.
 
 ## 7. Recommended Interview Narrative
 
