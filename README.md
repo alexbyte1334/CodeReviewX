@@ -341,11 +341,11 @@ CodeReviewX/
 ## 运行测试
 
 ```bash
-# 后端（132 tests）
+# 后端（完整测试包含 PostgreSQL/pgvector Testcontainers，需要 Docker）
 cd backend-java
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn test
 
-# 前端（63 tests）
+# 前端（当前 85 tests）
 cd frontend
 npm run typecheck
 npm run build
