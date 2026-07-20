@@ -9,6 +9,21 @@
 
 > 当前版本为可本地运行的 MVP：支持手动 diff、GitHub PR metadata/diff 自动拉取、commit-scoped full-repository hybrid RAG、小米 MiMo 双 AI agent、证据校验、Semgrep-style/dependency finding 合并、本地 comment preview 与人工确认后发布 GitHub PR 评论。
 
+## 项目概览
+
+| 维度 | 当前状态 |
+|---|---|
+| 本地体验 | H2 持久化的 React + Spring Boot 可运行 demo |
+| AI 审查 | MiMo planner → executor → gatekeeper；gate 拒绝会 fail fast，不静默回退 |
+| 生产 RAG | PostgreSQL/pgvector 混合检索、RRF、rerank、证据预算与 commit 隔离 |
+| GitHub 集成 | PR metadata/diff 拉取、comment preview、人工确认后发布 |
+| 工程门禁 | 后端/前端测试、离线 eval、Semgrep、secret/dependency scan、Docker build |
+| 项目阶段 | 工程化 MVP；生产部署仍需外部 embedding/rerank、认证与托管密钥能力 |
+
+**核心差异**：审查结论不是一次 LLM 调用直接落库，而是经过双 Agent 质量门禁、确定性 issue 转换、证据校验和人工发布确认；每一步都保留安全的 trace 摘要。
+
+[快速开始](#快速开始) · [架构与工作逻辑](#架构与工作逻辑) · [运行测试](#运行测试) · [当前限制](#当前限制) · [完整文档](#文档)
+
 ![CodeReviewX review workspace](docs/assets/codereviewx-review-workspace.jpg)
 
 生产 RAG 的索引、检索、rerank、证据门禁、灰度与回滚见 [`docs/RAG_OPERATIONS.md`](docs/RAG_OPERATIONS.md)；离线质量门禁见 [`docs/RAG_EVALUATION.md`](docs/RAG_EVALUATION.md)。
