@@ -17,6 +17,7 @@ import { StatusWidget } from './components/StatusWidget';
 import { ThemeToggle } from './components/ThemeToggle';
 import { WorkspaceToolbar } from './components/WorkspaceToolbar';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
+import { LiveReviewStory } from './components/LiveReviewStory';
 import { useColorTheme } from './hooks/useColorTheme';
 import type { BackendStatus, PanelId } from './types/ui';
 import type { RepositoryIndexStatus, RetrievalEvidence } from './types/reviewTask';
@@ -38,6 +39,7 @@ export default function App() {
   const [activeNav, setActiveNav] = useState<NavSection>('workspace');
   const [expandedPanels, setExpandedPanels] = useState<Set<PanelId>>(() => new Set());
   const [showLimits, setShowLimits] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
 
   const [tasks, setTasks] = useState<ReviewTask[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -412,7 +414,7 @@ export default function App() {
       : `${tasks.length} review${tasks.length === 1 ? '' : 's'}`;
 
   return (
-    <div className="app-root">
+    <div className={`app-root${demoMode ? ' app-root--demo' : ''}`}>
       <div className="app-vibrancy-bg" aria-hidden="true">
         <div className="vibrancy-mesh" />
         <div className="vibrancy-noise" />
@@ -462,6 +464,7 @@ export default function App() {
               backendStatus={backendStatus}
               tasks={tasks}
               mimoConfigured={mimoConfigured}
+              demoMode={demoMode}
             />
 
             <CollapsiblePanel
@@ -491,18 +494,29 @@ export default function App() {
               </div>
             </div>
             <div className="window-chrome-trailing">
+              {!demoMode && (
+                <button type="button" className="demo-launch-button" onClick={() => setDemoMode(true)}>
+                  <span className="demo-launch-dot" aria-hidden="true" />
+                  Start live demo
+                </button>
+              )}
               <ThemeToggle theme={theme} onToggle={toggleTheme} />
             </div>
           </header>
 
-          <main className="workspace" ref={workspaceRef}>
-            <WorkspaceToolbar
-              backendStatus={backendStatus}
-              tasksCount={tasks.length}
-              findingsLabel={findingsSummary}
-              expandedPanels={expandedPanels}
-              onNavigatePanel={scrollToPanel}
-            />
+          {demoMode ? (
+            <main className="workspace workspace--story">
+              <LiveReviewStory onExit={() => setDemoMode(false)} />
+            </main>
+          ) : (
+            <main className="workspace" ref={workspaceRef}>
+              <WorkspaceToolbar
+                backendStatus={backendStatus}
+                tasksCount={tasks.length}
+                findingsLabel={findingsSummary}
+                expandedPanels={expandedPanels}
+                onNavigatePanel={scrollToPanel}
+              />
 
             {backendStatus === 'down' && (
               <div className="global-warning" role="alert">
@@ -575,7 +589,8 @@ export default function App() {
                 />
               </section>
             </div>
-          </main>
+            </main>
+          )}
         </div>
       </div>
     </div>

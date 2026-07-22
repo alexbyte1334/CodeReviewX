@@ -110,4 +110,20 @@ describe('App shell', () => {
     expect(reviewPanel).toBeTruthy();
     expect(within(reviewPanel!).getByRole('button', { name: /^run review$/i })).toBeDisabled();
   });
+
+  it('opens the offline-safe interview story and human review step', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /start live demo/i }));
+
+    expect(screen.getByRole('heading', { name: /live review story/i })).toBeInTheDocument();
+    expect(screen.getByText(/offline-safe interview story/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /evidence gate/i })).toHaveAttribute('aria-current', 'step');
+
+    await user.click(screen.getByRole('button', { name: /review comments/i }));
+
+    expect(screen.getByRole('dialog', { name: /human review/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /approve 2 comments for github/i })).toBeInTheDocument();
+  });
 });

@@ -5,6 +5,7 @@ interface StatusWidgetProps {
   backendStatus: BackendStatus;
   tasks: ReviewTask[];
   mimoConfigured?: boolean;
+  demoMode?: boolean;
 }
 
 interface ArcGaugeProps {
@@ -109,18 +110,24 @@ export function StatusWidget({
   backendStatus,
   tasks,
   mimoConfigured = false,
+  demoMode = false,
 }: StatusWidgetProps) {
-  const backend = backendGaugeProps(backendStatus);
-  const reviews = reviewGaugeProps(tasks);
+  const visibleBackendStatus = demoMode ? 'up' : backendStatus;
+  const backend = backendGaugeProps(visibleBackendStatus);
+  const reviews = demoMode ? { value: 1, display: '1' } : reviewGaugeProps(tasks);
 
   const statusLabel =
-    backendStatus === 'up'
+    demoMode
+      ? 'Story ready'
+      : backendStatus === 'up'
       ? 'Connected'
       : backendStatus === 'down'
         ? 'Unavailable'
         : 'Checking…';
 
-  const providerCaption = mimoConfigured
+  const providerCaption = demoMode
+    ? 'Offline-safe interview story'
+    : mimoConfigured
     ? 'MiMo dual-agent review'
     : 'MiMo keys required';
 
@@ -130,7 +137,7 @@ export function StatusWidget({
         <span className="status-widget-title">Provider Status</span>
         <span className="status-widget-live">
           <span
-            className={`status-dot status-dot--breathing status-dot--${backendStatus}`}
+            className={`status-dot status-dot--breathing status-dot--${visibleBackendStatus}`}
             aria-hidden="true"
           />
           <span className="status-widget-status-text">{statusLabel}</span>

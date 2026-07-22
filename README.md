@@ -5,6 +5,10 @@
 [![Java 17](https://img.shields.io/badge/Java-17-blue.svg)](backend-java)
 [![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](frontend)
 
+## [▶ Open the Live Interview Demo](https://alexbyte1334.github.io/CodeReviewX/)
+
+The interactive Story Mode is offline-safe: click **Start live demo** to walk through PR ingestion, hybrid RAG, dual-agent review, evidence gating, and human-approved GitHub comments without backend credentials.
+
 面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。Production profile 提供 PostgreSQL/pgvector full-repository hybrid RAG；默认 H2 demo profile 禁用 RAG，legacy bounded context 仅作为显式 fallback。
 
 > 当前版本为可本地运行的 MVP：支持手动 diff、GitHub PR metadata/diff 自动拉取、commit-scoped full-repository hybrid RAG、小米 MiMo 双 AI agent、证据校验、Semgrep-style/dependency finding 合并、本地 comment preview 与人工确认后发布 GitHub PR 评论。
