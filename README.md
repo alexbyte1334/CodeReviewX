@@ -7,7 +7,7 @@
 
 ## [▶ Open the Live Interview Demo](https://alexbyte1334.github.io/CodeReviewX/)
 
-The interactive Story Mode is offline-safe: click **Start live demo** to walk through PR ingestion, hybrid RAG, dual-agent review, evidence gating, and human-approved GitHub comments without backend credentials.
+The GitHub Pages link opens directly in the offline-safe Story Mode. It walks through PR ingestion, hybrid RAG, dual-agent review, evidence gating, and human-approved GitHub comments without backend credentials; use **Exit demo** to inspect the full workspace.
 
 面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。Production profile 提供 PostgreSQL/pgvector full-repository hybrid RAG；默认 H2 demo profile 禁用 RAG，legacy bounded context 仅作为显式 fallback。
 

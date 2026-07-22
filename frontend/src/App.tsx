@@ -39,7 +39,7 @@ export default function App() {
   const [activeNav, setActiveNav] = useState<NavSection>('workspace');
   const [expandedPanels, setExpandedPanels] = useState<Set<PanelId>>(() => new Set());
   const [showLimits, setShowLimits] = useState(false);
-  const [demoMode, setDemoMode] = useState(false);
+  const [demoMode, setDemoMode] = useState(() => import.meta.env.MODE === 'pages');
 
   const [tasks, setTasks] = useState<ReviewTask[]>([]);
   const [listLoading, setListLoading] = useState(false);
