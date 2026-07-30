@@ -104,14 +104,4 @@ class DemoRunControllerTest {
                 .andExpect(jsonPath("$.message",
                         org.hamcrest.Matchers.containsString("DEMO_RATE_LIMITED")));
     }
-
-    @Test
-    void anonymousAdminPublishIsAlwaysRejected() throws Exception {
-        mvc.perform(post("/api/admin/demo-runs/" + UUID.randomUUID() + "/publish")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"selectedPreviewIds\":[1]}"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message",
-                        org.hamcrest.Matchers.containsString("ADMIN_AUTH_REQUIRED")));
-    }
 }

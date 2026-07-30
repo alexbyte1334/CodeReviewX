@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS demo_run (
     status                  VARCHAR(32)   NOT NULL,
     decision                VARCHAR(32),
     replay_reason           VARCHAR(1000),
-    safe_diff_text          CLOB,
+    safe_diff_text          TEXT,
     published_comment_url   VARCHAR(1000),
     created_at              TIMESTAMP     NOT NULL,
     updated_at              TIMESTAMP     NOT NULL,
