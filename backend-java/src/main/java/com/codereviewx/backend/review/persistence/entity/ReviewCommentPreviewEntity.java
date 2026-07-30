@@ -60,6 +60,9 @@ public class ReviewCommentPreviewEntity {
     @Column(name = "github_comment_id")
     private Long githubCommentId;
 
+    @Column(name = "github_comment_url", length = 1000)
+    private String githubCommentUrl;
+
     @Column(name = "publish_error_message", length = 1000)
     private String publishErrorMessage;
 
@@ -182,6 +185,14 @@ public class ReviewCommentPreviewEntity {
 
     public void setGithubCommentId(Long githubCommentId) {
         this.githubCommentId = githubCommentId;
+    }
+
+    public String getGithubCommentUrl() {
+        return githubCommentUrl;
+    }
+
+    public void setGithubCommentUrl(String githubCommentUrl) {
+        this.githubCommentUrl = githubCommentUrl;
     }
 
     public String getPublishErrorMessage() {
