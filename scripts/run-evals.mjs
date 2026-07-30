@@ -205,8 +205,6 @@ function renderMarkdown(report) {
   return [
     '# CodeReviewX Eval Report',
     '',
-    `Generated at: ${report.generatedAt}`,
-    '',
     '## Summary',
     '',
     `- Cases: ${report.summary.caseCount}`,
@@ -232,7 +230,6 @@ function main() {
   const cases = listCaseFiles().map(readJson);
   const caseResults = cases.map(evaluateCase);
   const report = {
-    generatedAt: new Date().toISOString(),
     summary: summarize(caseResults),
     cases: caseResults,
   };

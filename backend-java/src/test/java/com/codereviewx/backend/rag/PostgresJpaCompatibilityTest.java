@@ -10,6 +10,7 @@ import com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshot
 import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
+@Tag("postgres")
 @ActiveProfiles("postgres")
 @SpringBootTest
 class PostgresJpaCompatibilityTest {

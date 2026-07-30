@@ -27,7 +27,6 @@ jobs:
           test -f docs/SECURITY_CHECKLIST.md
           test -f docs/PROJECT_SUMMARY_AND_NEXT_STEPS.md
           test -f backend-java/README.md
-          test -f ai-service/README.md
           test -f frontend/README.md
           test -f .env.example
           test -f .gitignore
@@ -131,10 +130,10 @@ jobs:
       - name: Run migration and Java production RAG quality gates
         working-directory: backend-java
         run: >-
-          mvn -B
+          mvn -B -Ppostgres-integration
           -Drag.performance.enabled=true
           -Dtest=PostgresRagMigrationTest,PostgresJpaCompatibilityTest,RagRetrievalQualityAcceptanceTest,RagFindingQualityAcceptanceTest,RagPerformanceAcceptanceTest
-          test
+          verify
 
       - name: Verify stable Java production RAG baseline
         run: |

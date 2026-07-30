@@ -2,6 +2,7 @@ package com.codereviewx.backend.rag;
 
 import org.flywaydb.core.Flyway;
 import org.assertj.core.api.SoftAssertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -15,6 +16,7 @@ import java.util.TreeSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Tag("postgres")
 class PostgresRagMigrationTest {
 
     private static final Set<String> EXPECTED_RAG_TABLES = Set.of(
