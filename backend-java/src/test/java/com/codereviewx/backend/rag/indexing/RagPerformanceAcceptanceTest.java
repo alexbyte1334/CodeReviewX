@@ -23,6 +23,7 @@ import com.codereviewx.backend.rag.service.RagIndexResolution;
 import com.codereviewx.backend.review.github.GithubPrMetadata;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.core.task.TaskExecutor;
@@ -47,6 +48,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @EnabledIfSystemProperty(named = "rag.performance.enabled", matches = "true")
+@Tag("postgres")
 class RagPerformanceAcceptanceTest {
 
     private static final String IMAGE = "pgvector/pgvector:pg16";

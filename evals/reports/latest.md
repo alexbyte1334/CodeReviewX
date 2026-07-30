@@ -1,7 +1,5 @@
 # CodeReviewX Eval Report
 
-Generated at: 2026-07-17T13:51:46.750Z
-
 ## Summary
 
 - Cases: 3

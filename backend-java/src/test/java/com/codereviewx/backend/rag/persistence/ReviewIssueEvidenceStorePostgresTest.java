@@ -21,6 +21,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("postgres")
 class ReviewIssueEvidenceStorePostgresTest {
     private final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("pgvector/pgvector:pg16");
     private JdbcTemplate jdbc;

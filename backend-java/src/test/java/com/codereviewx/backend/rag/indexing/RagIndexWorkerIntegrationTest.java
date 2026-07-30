@@ -16,6 +16,7 @@ import com.codereviewx.backend.review.github.GithubPrMetadata;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.Assumptions;
@@ -55,6 +56,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("postgres")
 class RagIndexWorkerIntegrationTest {
 
     private static final String SHA_ONE = "1".repeat(40);

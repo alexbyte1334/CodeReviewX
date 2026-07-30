@@ -106,7 +106,6 @@ function main() {
   ];
   const blockingIssues = issues.filter((issue) => issue.severity !== 'INFO');
   const report = {
-    generatedAt: new Date().toISOString(),
     summary: {
       npmDirectDependencyCount: npmDependencies.length,
       mavenDirectDependencyCount: mavenDependencies.length,
