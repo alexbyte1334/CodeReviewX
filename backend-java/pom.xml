@@ -104,13 +104,13 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                    <configuration>
-                        <groups>${test.groups}</groups>
-                        <excludedGroups>${test.excluded-groups}</excludedGroups>
-                        <systemPropertyVariables>
-                            <codereviewx.demo.enabled>${demo.enabled}</codereviewx.demo.enabled>
-                        </systemPropertyVariables>
-                    </configuration>
+                <configuration>
+                    <groups>${test.groups}</groups>
+                    <excludedGroups>${test.excluded-groups}</excludedGroups>
+                    <systemPropertyVariables>
+                        <codereviewx.demo.enabled>${demo.enabled}</codereviewx.demo.enabled>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -122,11 +122,11 @@
     <profiles>
         <profile>
             <id>postgres-integration</id>
-                <properties>
-                    <test.groups>postgres</test.groups>
-                    <test.excluded-groups></test.excluded-groups>
-                    <demo.enabled>false</demo.enabled>
-                </properties>
+            <properties>
+                <test.groups>postgres</test.groups>
+                <test.excluded-groups></test.excluded-groups>
+                <demo.enabled>false</demo.enabled>
+            </properties>
         </profile>
     </profiles>
 
