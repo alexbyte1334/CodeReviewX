@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class DemoAdminPublishService {
@@ -22,17 +23,20 @@ public class DemoAdminPublishService {
     private final ReviewInputSnapshotRepository snapshots;
     private final ReviewCommentPreviewRepository previews;
     private final CommentPreviewPublishService publisher;
+    private final DemoPublishGate publishGate;
 
     public DemoAdminPublishService(DemoProperties properties, DemoRunService runs, DemoStore store,
                                    ReviewInputSnapshotRepository snapshots,
                                    ReviewCommentPreviewRepository previews,
-                                   CommentPreviewPublishService publisher) {
+                                   CommentPreviewPublishService publisher,
+                                   DemoPublishGate publishGate) {
         this.properties = properties;
         this.runs = runs;
         this.store = store;
         this.snapshots = snapshots;
         this.previews = previews;
         this.publisher = publisher;
+        this.publishGate = publishGate;
     }
 
     public PublishResponse publish(String publicId, String authorization, List<Long> selectedIds) {
@@ -49,18 +53,21 @@ public class DemoAdminPublishService {
         ReviewInputSnapshotEntity snapshot = snapshots.findByReviewRunId(demo.reviewRunId())
                 .orElseThrow(() -> new DemoApiException(HttpStatus.CONFLICT, "SNAPSHOT_MISSING",
                         "The immutable GitHub snapshot is missing."));
-        if (!properties.getExpectedHeadSha().equalsIgnoreCase(snapshot.getHeadSha())) {
-            throw new DemoApiException(HttpStatus.CONFLICT, "DEMO_TARGET_DRIFT",
-                    "The run head SHA does not match the pinned demo target.");
-        }
+        publishGate.validateTarget(demo, snapshot);
 
         List<ReviewCommentPreviewEntity> all = previews.findByReviewRunIdOrderByIdAsc(demo.reviewRunId());
+        List<ReviewCommentPreviewEntity> selected = selectedIds.stream().distinct()
+                .map(selectedId -> all.stream()
+                        .filter(item -> Objects.equals(item.getId(), selectedId))
+                        .findFirst()
+                        .orElseThrow(() -> new DemoApiException(
+                                HttpStatus.BAD_REQUEST, "PREVIEW_OWNERSHIP_MISMATCH",
+                                "A preview does not belong to this run.")))
+                .toList();
+        selected.forEach(preview -> publishGate.validatePreview(demo, preview));
+
         all.forEach(preview -> preview.setSelectedForPublish(false));
-        for (Long selectedId : selectedIds) {
-            ReviewCommentPreviewEntity preview = all.stream()
-                    .filter(item -> item.getId().equals(selectedId)).findFirst()
-                    .orElseThrow(() -> new DemoApiException(HttpStatus.BAD_REQUEST,
-                            "PREVIEW_OWNERSHIP_MISMATCH", "A preview does not belong to this run."));
+        for (ReviewCommentPreviewEntity preview : selected) {
             preview.setSelectedForPublish(true);
             String marker = "<!-- codereviewx-demo:" + demo.scenarioId() + ":" + preview.getIssueKey() + " -->";
             if (!preview.getDraftBody().contains(marker)) {

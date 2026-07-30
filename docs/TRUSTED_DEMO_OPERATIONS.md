@@ -12,8 +12,10 @@ service backed by one PostgreSQL/pgvector service. No Python Worker is deployed.
    open and pinned to base `0726356f24df82e9827bb9182d0e5f006070ce76`
    and head `d5aa95a3f43f23ca438e53e94c4d3bed4868904a`.
 3. Pre-index that exact 1024-dimensional head SHA.
-4. Deploy `backend-java/Dockerfile` through `railway.json` with the
-   `postgres` Spring profile.
+4. Deploy `backend-java/Dockerfile.railway` through the root `railway.json`
+   with the `postgres` Spring profile. The Railway image intentionally builds
+   from the repository root; Compose continues to use `backend-java/Dockerfile`
+   with `backend-java` as its build context.
 5. Configure `DATABASE_URL`, RAG embedding/rerank variables, MiMo role keys,
    and the Demo variables from `.env.example`.
 6. Use a fine-grained GitHub token limited to DemoTarget: Contents read and

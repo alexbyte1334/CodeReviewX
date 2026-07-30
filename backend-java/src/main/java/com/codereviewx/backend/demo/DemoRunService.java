@@ -11,6 +11,7 @@ import com.codereviewx.backend.demo.DemoDtos.ToolTrace;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -51,6 +52,7 @@ public class DemoRunService {
         this.lifecycle = lifecycle;
     }
 
+    @Transactional
     public CreateResponse create(String scenarioId, String idempotencyKey, String remoteIp) {
         validateIdempotencyKey(idempotencyKey);
         DemoStore.DemoRow existing = store.findByIdempotencyKey(idempotencyKey).orElse(null);
@@ -113,7 +115,8 @@ public class DemoRunService {
                 SELECT sequence_number,tool_name,status,input_summary,output_summary,error_code,duration_ms
                 FROM review_tool_trace WHERE review_run_id=? ORDER BY sequence_number
                 """, (rs, row) -> new ToolTrace(rs.getLong(1), rs.getString(2), rs.getString(3),
-                redact(rs.getString(4)), redact(rs.getString(5)), rs.getString(6),
+                DemoRedactor.sanitize(rs.getString(4), 1900),
+                DemoRedactor.sanitize(rs.getString(5), 1900), rs.getString(6),
                 (Long) rs.getObject(7)), demo.reviewRunId());
         List<Preview> previews = jdbc.query("""
                 SELECT id,issue_key,file_path,line_number,severity,category,draft_body,
@@ -131,6 +134,7 @@ public class DemoRunService {
         );
     }
 
+    @Transactional
     public Snapshot decide(String publicId, DecisionRequest request) {
         DemoStore.DemoRow demo = requireRun(publicId);
         String decision = request == null || request.decision() == null
@@ -144,8 +148,6 @@ public class DemoRunService {
                     "A decision can only be recorded after the run reaches review.");
         }
         var jdbc = store.jdbc();
-        jdbc.update("UPDATE review_comment_preview SET selected_for_publish=FALSE,updated_at=? WHERE review_run_id=?",
-                LocalDateTime.now(), demo.reviewRunId());
         if ("APPROVE_PREVIEW".equals(decision)) {
             List<Long> selected = request.selectedPreviewIds() == null ? List.of() : request.selectedPreviewIds();
             if (selected.isEmpty()) {
@@ -153,14 +155,23 @@ public class DemoRunService {
                         "Select at least one preview.");
             }
             for (Long id : selected) {
-                int changed = jdbc.update("""
-                        UPDATE review_comment_preview SET selected_for_publish=TRUE,updated_at=?
-                        WHERE id=? AND review_run_id=?
-                        """, LocalDateTime.now(), id, demo.reviewRunId());
-                if (changed != 1) {
+                Integer owned = jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM review_comment_preview WHERE id=? AND review_run_id=?
+                        """, Integer.class, id, demo.reviewRunId());
+                if (owned == null || owned != 1) {
                     throw new DemoApiException(HttpStatus.BAD_REQUEST, "PREVIEW_OWNERSHIP_MISMATCH",
                             "A selected preview does not belong to this demo run.");
                 }
+            }
+        }
+        jdbc.update("UPDATE review_comment_preview SET selected_for_publish=FALSE,updated_at=? WHERE review_run_id=?",
+                LocalDateTime.now(), demo.reviewRunId());
+        if ("APPROVE_PREVIEW".equals(decision)) {
+            for (Long id : request.selectedPreviewIds().stream().distinct().toList()) {
+                jdbc.update("""
+                        UPDATE review_comment_preview SET selected_for_publish=TRUE,updated_at=?
+                        WHERE id=? AND review_run_id=?
+                        """, LocalDateTime.now(), id, demo.reviewRunId());
             }
         }
         store.setDecision(demo.id(), decision);
@@ -219,8 +230,4 @@ public class DemoRunService {
         }
     }
 
-    private String redact(String value) {
-        if (value == null) return null;
-        return value.replaceAll("(?i)(token|key|authorization)=[^,\\s]+", "$1=[redacted]");
-    }
 }

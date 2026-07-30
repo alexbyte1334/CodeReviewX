@@ -187,7 +187,7 @@ public class DemoStore {
         DemoRow demo = findByReviewRunId(trace.getReviewRunId()).orElse(null);
         if (demo == null) return null;
         return appendEvent(demo.id(), "TOOL_COMPLETED", mapStep(trace.getToolName()),
-                trace.getStatus().name(), sanitize(trace.getOutputSummary()),
+                trace.getStatus().name(), DemoRedactor.sanitize(trace.getOutputSummary(), 1900),
                 trace.getErrorCode(), trace.getDurationMs());
     }
 
@@ -272,10 +272,6 @@ public class DemoStore {
         return "AI_REVIEW";
     }
 
-    private String sanitize(String value) {
-        if (value == null) return null;
-        return truncate(value.replaceAll("(?i)(token|key|authorization)=[^,\\s]+", "$1=[redacted]"), 1900);
-    }
     private String truncate(String value, int max) {
         if (value == null || value.length() <= max) return value;
         return value.substring(0, max) + "…";

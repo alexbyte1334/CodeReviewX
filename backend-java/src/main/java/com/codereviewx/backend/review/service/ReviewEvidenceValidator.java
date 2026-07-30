@@ -36,6 +36,11 @@ public class ReviewEvidenceValidator {
         return true;
     }
 
+    public boolean isChangedLine(String diffText, String path, int line) {
+        return path != null && !path.isBlank() && line > 0
+                && parseNewSideLines(diffText).getOrDefault(path, Set.of()).contains(line);
+    }
+
     private boolean diffExplains(String diffText, String path, int start, int end) {
         Set<Integer> lines = parseNewSideLines(diffText).getOrDefault(path, Set.of());
         for (int line = start; line <= end; line++) if (!lines.contains(line)) return false;

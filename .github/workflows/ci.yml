@@ -201,3 +201,5 @@ jobs:
         run: node scripts/dependency-scan.mjs
       - name: Build delivery images
         run: docker compose build
+      - name: Build Railway image from repository root
+        run: docker build -f backend-java/Dockerfile.railway .

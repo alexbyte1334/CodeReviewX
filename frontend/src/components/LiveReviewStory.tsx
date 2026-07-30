@@ -170,6 +170,24 @@ export function LiveReviewStory() {
     setShowComments(false);
   };
 
+  const reject = async () => {
+    if (!snapshot) return;
+    if (snapshot.mode === 'LIVE') {
+      try {
+        const updated = await decideDemoRun(snapshot.runId, 'REJECT', []);
+        setSnapshot(updated);
+        setNotice('Preview rejected. No GitHub write was performed.');
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'Could not save the decision.');
+        return;
+      }
+    } else {
+      setSnapshot({ ...snapshot, decision: 'REJECT' });
+      setNotice('Replay decision recorded locally. No GitHub write was performed.');
+    }
+    setShowComments(false);
+  };
+
   if (!snapshot) {
     return <section className="story"><div className="story-note">Loading trusted demo snapshot…</div></section>;
   }
@@ -271,7 +289,15 @@ export function LiveReviewStory() {
             <details className="story-trace">
               <summary>Safe tool trace · {snapshot.toolTrace.length} events</summary>
               {snapshot.toolTrace.map((trace) => (
-                <div key={trace.sequence}><strong>{trace.toolName}</strong><span>{trace.outputSummary || trace.errorCode || trace.status}</span><small>{formatDuration(trace.durationMs)}</small></div>
+                <div key={trace.sequence}>
+                  <strong>{trace.toolName}</strong>
+                  <span>
+                    {trace.inputSummary && <>Input: {trace.inputSummary}<br /></>}
+                    {trace.outputSummary && <>Output: {trace.outputSummary}<br /></>}
+                    {trace.errorCode ? `Error: ${trace.errorCode}` : `Status: ${trace.status}`}
+                  </span>
+                  <small>{formatDuration(trace.durationMs)}</small>
+                </div>
               ))}
             </details>
           </div>
@@ -301,9 +327,12 @@ export function LiveReviewStory() {
                 <span><strong>{preview.filePath}:{preview.line}</strong><small>{preview.severity} · {preview.category}</small><p>{preview.body}</p></span>
               </label>
             ))}
-            <button type="button" className="story-primary story-primary--publish" onClick={approve} disabled={selected.size === 0}>
-              Approve {selected.size} preview{selected.size === 1 ? '' : 's'}
-            </button>
+            <div className="story-decision-actions">
+              <button type="button" className="story-secondary" onClick={reject}>Reject previews</button>
+              <button type="button" className="story-primary story-primary--publish" onClick={approve} disabled={selected.size === 0}>
+                Approve {selected.size} preview{selected.size === 1 ? '' : 's'}
+              </button>
+            </div>
           </div>
         </div>
       )}
