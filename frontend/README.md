@@ -32,7 +32,9 @@ The backend base URL is read from:
 VITE_API_BASE_URL=http://localhost:8080
 ```
 
-When unset, the frontend defaults to `http://localhost:8080`.
+When unset, the frontend uses same-origin relative `/api` routes. Set the variable
+to `http://localhost:8080` only for a local frontend that is not using the Vite
+development proxy.
 
 Do not set `VITE_API_BASE_URL` to `/api`; requests already include `/api/...`.
 
