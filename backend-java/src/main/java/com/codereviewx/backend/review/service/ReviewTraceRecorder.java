@@ -14,10 +14,12 @@ import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepo
 import com.codereviewx.backend.review.pipeline.ReviewAgentStep;
 import com.codereviewx.backend.review.pipeline.ReviewProviderResult;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Collections;
 
 @Service
 public class ReviewTraceRecorder {
@@ -25,6 +27,7 @@ public class ReviewTraceRecorder {
     private final ReviewToolTraceRepository toolTraceRepository;
     private final ReviewProviderTraceRepository providerTraceRepository;
     private final GithubProperties githubProperties;
+    private List<ReviewTraceObserver> observers = Collections.emptyList();
 
     public ReviewTraceRecorder(ReviewToolTraceRepository toolTraceRepository,
                                ReviewProviderTraceRepository providerTraceRepository,
@@ -32,6 +35,11 @@ public class ReviewTraceRecorder {
         this.toolTraceRepository = toolTraceRepository;
         this.providerTraceRepository = providerTraceRepository;
         this.githubProperties = githubProperties;
+    }
+
+    @Autowired(required = false)
+    void setObservers(List<ReviewTraceObserver> observers) {
+        this.observers = observers == null ? Collections.emptyList() : List.copyOf(observers);
     }
 
     public int countToolTraces(Long runId) {
@@ -60,7 +68,7 @@ public class ReviewTraceRecorder {
         trace.setFinishedAt(finishedAt);
         trace.setDurationMs(ChronoUnit.MILLIS.between(startedAt, finishedAt));
         trace.setCreatedAt(startedAt);
-        toolTraceRepository.save(trace);
+        saveToolTrace(trace);
     }
 
     public void recordDiffLoad(Long runId,
@@ -90,7 +98,7 @@ public class ReviewTraceRecorder {
         trace.setFinishedAt(finishedAt);
         trace.setDurationMs(ChronoUnit.MILLIS.between(startedAt, finishedAt));
         trace.setCreatedAt(startedAt);
-        toolTraceRepository.save(trace);
+        saveToolTrace(trace);
     }
 
     public void recordAgentSteps(Long runId, List<ReviewAgentStep> steps, int startSequenceNumber) {
@@ -130,7 +138,7 @@ public class ReviewTraceRecorder {
         trace.setFinishedAt(finishedAt);
         trace.setDurationMs(finishedAt == null ? null : ChronoUnit.MILLIS.between(startedAt, finishedAt));
         trace.setCreatedAt(startedAt);
-        toolTraceRepository.save(trace);
+        saveToolTrace(trace);
     }
 
     public void recordProviderTrace(Long runId,
@@ -166,5 +174,10 @@ public class ReviewTraceRecorder {
             return "Requested provider was not fulfilled; provider used is unknown.";
         }
         return "Requested provider fell back to " + providerUsed + " provider.";
+    }
+
+    private void saveToolTrace(ReviewToolTraceEntity trace) {
+        ReviewToolTraceEntity saved = toolTraceRepository.save(trace);
+        observers.forEach(observer -> observer.onTraceRecorded(saved));
     }
 }

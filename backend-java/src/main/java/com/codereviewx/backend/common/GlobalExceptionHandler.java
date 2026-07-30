@@ -20,9 +20,15 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.util.stream.Collectors;
+import com.codereviewx.backend.demo.DemoApiException;
+import org.springframework.http.ResponseEntity;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(DemoApiException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDemoApi(DemoApiException ex) {
+        return ResponseEntity.status(ex.getStatus()).body(ApiResponse.failure(ex.getCode() + ": " + ex.getMessage()));
+    }
     @ExceptionHandler(IllegalArgumentException.class) @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleIllegalArgument(IllegalArgumentException ex) { return ApiResponse.failure("Invalid request"); }
     @ExceptionHandler(RagNotFoundException.class) @ResponseStatus(HttpStatus.NOT_FOUND)

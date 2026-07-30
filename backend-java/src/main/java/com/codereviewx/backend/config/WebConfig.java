@@ -1,5 +1,6 @@
 package com.codereviewx.backend.config;
 
+import com.codereviewx.backend.demo.DemoProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -11,15 +12,21 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
+    private final DemoProperties demoProperties;
+
+    public WebConfig(DemoProperties demoProperties) {
+        this.demoProperties = demoProperties;
+    }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
                 .allowedOrigins(
-                        "http://localhost:5173",
-                        "http://127.0.0.1:5173"
+                        demoProperties.getAllowedOrigins().toArray(String[]::new)
                 )
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*");
+                .allowedMethods("GET", "POST", "PATCH", "OPTIONS")
+                .allowedHeaders("Content-Type", "Idempotency-Key", "Last-Event-ID", "Authorization")
+                .exposedHeaders("Location")
+                .maxAge(3600);
     }
 }
