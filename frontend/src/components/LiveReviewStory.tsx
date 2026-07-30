@@ -1,141 +1,216 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createDemoRun,
+  decideDemoRun,
+  DEMO_API_BASE,
+  getDemoSnapshot,
+  loadRecordedRun,
+} from '../api/demoRunApi';
+import type { DemoSnapshot } from '../types/demoRun';
 
-interface LiveReviewStoryProps {
-  onExit: () => void;
+const TERMINAL = new Set(['READY', 'FAILED']);
+
+interface DiffLine {
+  number: string;
+  code: string;
+  kind: 'context' | 'add' | 'remove';
 }
 
-const STEPS = [
-  { label: 'PR #128', detail: 'Ingest', duration: '1.2s', note: 'The pull request is pinned to an immutable commit before analysis begins.' },
-  { label: 'Index', detail: 'Vectorized', duration: '2.8s', note: 'The repository snapshot is chunked and indexed with commit-level isolation.' },
-  { label: 'Hybrid RAG', detail: 'Retrieved', duration: '3.1s', note: 'Vector and keyword retrieval are fused, reranked, and trimmed to an evidence budget.' },
-  { label: 'AI-1 Plan', detail: 'Planned', duration: '2.4s', note: 'The planner turns the diff and repository context into a bounded review plan.' },
-  { label: 'AI-2 Review', detail: 'Generated', duration: '4.3s', note: 'The executor follows the plan and produces structured candidate findings.' },
-  { label: 'Evidence Gate', detail: 'Verifying', duration: '1.0s', note: 'The gate rejects unsupported claims before they reach GitHub.' },
-  { label: 'Human Publish', detail: 'Pending', duration: '—', note: 'A reviewer chooses which comments are safe and useful to publish.' },
-];
+function visibleDiff(diff: string): DiffLine[] {
+  let nextLine = 0;
+  let oldLine = 0;
+  const lines: DiffLine[] = [];
+  for (const raw of diff.split('\n')) {
+    const hunk = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      nextLine = Number(hunk[2]);
+      continue;
+    }
+    if (/^(diff --git|index |--- |\+\+\+ )/.test(raw)) continue;
+    if (raw.startsWith('+')) {
+      lines.push({ number: String(nextLine++), code: raw.slice(1), kind: 'add' });
+    } else if (raw.startsWith('-')) {
+      lines.push({ number: `−${oldLine++}`, code: raw.slice(1), kind: 'remove' });
+    } else {
+      lines.push({ number: String(nextLine++), code: raw.startsWith(' ') ? raw.slice(1) : raw, kind: 'context' });
+      oldLine++;
+    }
+  }
+  return lines.slice(0, 80);
+}
 
-const CODE_LINES = [
-  ['79', 'public List<User> findByEmail(String email) throws SQLException {', ''],
-  ['80', '  List<User> users = new ArrayList<>();', ''],
-  ['81', '  String sql = "SELECT id, name, email, role FROM users ";', ''],
-  ['82', '  sql += "WHERE email = \'" + email + "\'";', 'finding'],
-  ['83', '  try (Connection conn = dataSource.getConnection();', ''],
-  ['84', '       Statement stmt = conn.createStatement();', ''],
-  ['85', '       ResultSet rs = stmt.executeQuery(sql)) {', ''],
-  ['86', '    while (rs.next()) {', ''],
-  ['87', '      users.add(mapRow(rs));', ''],
-  ['88', '    }', ''],
-  ['89', '  }', ''],
-  ['90', '  return users;', ''],
-  ['91', '}', ''],
-  ['92', '', ''],
-  ['93', 'private User mapRow(ResultSet rs) throws SQLException {', ''],
-];
+function formatDuration(value: number | null) {
+  if (value == null) return '—';
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${value}ms`;
+}
 
-const EVIDENCE = [
-  {
-    rank: 1,
-    path: 'src/main/java/com/acme/user/UserRepository.java',
-    lines: 'Lines 80–88',
-    score: 94,
-    excerpt: 'sql += "WHERE email = \'" + email + "\'";\nStatement stmt = conn.createStatement();',
-    rule: 'java/sql-injection · Use prepared statements or parameter binding.',
-    source: 'Secure Coding Guidelines (v2.1)',
-  },
-  {
-    rank: 2,
-    path: 'src/main/java/com/acme/user/AdminService.java',
-    lines: 'Lines 112–118',
-    score: 82,
-    excerpt: 'String q = "SELECT * FROM users WHERE role = \'" + role + "\'";\nStatement s = conn.createStatement();',
-    rule: 'Cross-file pattern · The same unsafe query construction appears here.',
-    source: 'Repository context at 9c4a7e1',
-  },
-];
-
-export function LiveReviewStory({ onExit }: LiveReviewStoryProps) {
-  const [activeStep, setActiveStep] = useState(5);
-  const [playing, setPlaying] = useState(false);
+export function LiveReviewStory() {
+  const [snapshot, setSnapshot] = useState<DemoSnapshot | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [openEvidence, setOpenEvidence] = useState<Set<number>>(() => new Set([1, 2]));
   const [showComments, setShowComments] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const lastEvent = useRef(0);
+
+  const useReplay = useCallback(async (reason?: string) => {
+    const recorded = await loadRecordedRun();
+    setSnapshot({ ...recorded, replayReason: reason || recorded.replayReason });
+    setSelected(new Set(recorded.commentPreviews.filter((item) => item.selected).map((item) => item.id)));
+  }, []);
+
+  const refresh = useCallback(async (runId: string) => {
+    const latest = await getDemoSnapshot(runId);
+    setSnapshot(latest);
+    const sequence = latest.events.length > 0
+      ? latest.events[latest.events.length - 1].sequence
+      : 0;
+    lastEvent.current = Math.max(lastEvent.current, sequence);
+    setSelected(new Set(latest.commentPreviews.filter((item) => item.selected).map((item) => item.id)));
+    return latest;
+  }, []);
 
   useEffect(() => {
-    if (!playing) return;
-    const timer = window.setTimeout(() => {
-      setActiveStep((current) => {
-        if (current >= STEPS.length - 1) {
-          setPlaying(false);
-          return current;
+    const runId = new URLSearchParams(window.location.search).get('runId');
+    if (!runId) {
+      void useReplay();
+      return;
+    }
+    let disposed = false;
+    let source: EventSource | null = null;
+    let retryTimer: number | undefined;
+    let retry = 1000;
+
+    const connect = async () => {
+      try {
+        const latest = await refresh(runId);
+        if (disposed || TERMINAL.has(latest.status)) return;
+        source = new EventSource(
+          `${DEMO_API_BASE}/api/demo-runs/${encodeURIComponent(runId)}/events?afterSequence=${lastEvent.current}`,
+        );
+        source.onmessage = () => {
+          retry = 1000;
+          void refresh(runId);
+        };
+        source.addEventListener('stream-complete', () => {
+          source?.close();
+          void refresh(runId);
+        });
+        source.onerror = () => {
+          source?.close();
+          if (!disposed) {
+            retryTimer = window.setTimeout(connect, retry);
+            retry = Math.min(retry * 2, 15_000);
+          }
+        };
+      } catch (error) {
+        if (!disposed) {
+          const message = error instanceof Error ? error.message : 'Live API unavailable';
+          setNotice(`Live execution could not be restored: ${message}`);
+          await useReplay(message);
         }
-        return current + 1;
-      });
-    }, 1150);
-    return () => window.clearTimeout(timer);
-  }, [activeStep, playing]);
+      }
+    };
+    void connect();
+    return () => {
+      disposed = true;
+      source?.close();
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
+  }, [refresh, useReplay]);
 
-  const progress = useMemo(
-    () => `${(activeStep / (STEPS.length - 1)) * 100}%`,
-    [activeStep],
-  );
+  const runLive = async () => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const created = await createDemoRun();
+      const url = new URL(window.location.href);
+      url.searchParams.set('runId', created.runId);
+      window.history.replaceState(null, '', url);
+      await refresh(created.runId);
+      window.location.reload();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Live API unavailable';
+      setNotice(`Replay Mode: ${message}`);
+      await useReplay(message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  function restart() {
-    setShowComments(false);
-    setActiveStep(0);
-    setPlaying(true);
-  }
-
-  function toggleEvidence(rank: number) {
-    setOpenEvidence((current) => {
-      const next = new Set(current);
-      if (next.has(rank)) next.delete(rank);
-      else next.add(rank);
-      return next;
+  const diffLines = useMemo(() => visibleDiff(snapshot?.diffText ?? ''), [snapshot?.diffText]);
+  const activeStep = useMemo(() => {
+    if (!snapshot) return 0;
+    let index = -1;
+    snapshot.steps.forEach((step, stepIndex) => {
+      if (step.status !== 'PENDING') index = stepIndex;
     });
+    return Math.max(0, index);
+  }, [snapshot]);
+  const progress = snapshot ? `${(activeStep / Math.max(snapshot.steps.length - 1, 1)) * 100}%` : '0%';
+  const primaryFinding = snapshot?.findings[0];
+  const highRisk = snapshot?.findings.filter((item) => item.severity === 'HIGH').length ?? 0;
+
+  const approve = async () => {
+    if (!snapshot || selected.size === 0) return;
+    if (snapshot.mode === 'LIVE') {
+      try {
+        const updated = await decideDemoRun(snapshot.runId, 'APPROVE_PREVIEW', [...selected]);
+        setSnapshot(updated);
+        setNotice('Preview approved. GitHub publishing is owner-controlled.');
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'Could not save the decision.');
+        return;
+      }
+    } else {
+      setSnapshot({ ...snapshot, decision: 'APPROVE_PREVIEW' });
+      setNotice('Replay decision recorded locally. GitHub publishing is owner-controlled.');
+    }
+    setShowComments(false);
+  };
+
+  if (!snapshot) {
+    return <section className="story"><div className="story-note">Loading trusted demo snapshot…</div></section>;
   }
 
   return (
-    <section className="story" aria-label="Interactive AI review story">
+    <section className="story" aria-label="Trusted AI review demo">
       <header className="story-header">
         <div>
-          <h1>Live Review Story</h1>
-          <p>AI agents collaborate with repository evidence and human judgment.</p>
+          <div className={`story-mode-badge story-mode-badge--${snapshot.mode.toLowerCase()}`}>
+            {snapshot.mode === 'LIVE' ? `LIVE · ${snapshot.status}` : 'REPLAY MODE'}
+          </div>
+          <h1>{snapshot.mode === 'LIVE' ? 'Live Review Run' : 'Recorded Review Story'}</h1>
+          <p>Real evidence, recoverable state, and an owner-controlled GitHub boundary.</p>
         </div>
         <div className="story-controls">
-          <button type="button" className="story-button story-button--quiet" onClick={onExit}>Exit demo</button>
-          <button
-            type="button"
-            className="story-button story-button--icon"
-            onClick={() => setPlaying((value) => !value)}
-            aria-label={playing ? 'Pause story' : 'Play story'}
-          >
-            {playing ? 'Pause' : 'Play'}
+          <button type="button" className="story-button story-button--icon" onClick={runLive} disabled={busy}>
+            {busy ? 'Starting…' : 'Run live review'}
           </button>
-          <button type="button" className="story-button story-button--quiet" onClick={restart}>Restart</button>
+          {snapshot.mode === 'LIVE' && <span className="story-run-id">Run {snapshot.runId.slice(0, 8)}</span>}
         </div>
       </header>
 
-      <div className="story-pipeline" aria-label="Review pipeline">
-        <div className="story-progress-track" aria-hidden="true">
-          <span className="story-progress-fill" style={{ width: progress }} />
+      {(notice || snapshot.replayReason) && (
+        <div className={`story-mode-notice${snapshot.mode === 'REPLAY' ? ' story-mode-notice--replay' : ''}`} role="status">
+          <strong>{snapshot.mode === 'REPLAY' ? 'Replay is explicit.' : 'Run update.'}</strong>
+          <span>{notice || snapshot.replayReason}</span>
         </div>
+      )}
+
+      <div className="story-pipeline" aria-label="Review pipeline">
+        <div className="story-progress-track" aria-hidden="true"><span className="story-progress-fill" style={{ width: progress }} /></div>
         <div className="story-steps">
-          {STEPS.map((step, index) => {
-            const state = index < activeStep ? 'complete' : index === activeStep ? 'active' : 'pending';
+          {snapshot.steps.map((step, index) => {
+            const complete = ['SUCCESS', 'READY', 'PUBLISHED'].includes(step.status);
+            const state = complete ? 'complete' : index === activeStep ? 'active' : 'pending';
             return (
-              <button
-                key={step.label}
-                type="button"
-                className={`story-step story-step--${state}`}
-                onClick={() => { setActiveStep(index); setPlaying(false); }}
-                aria-current={index === activeStep ? 'step' : undefined}
-              >
-                <span className="story-step-number">{index < activeStep ? '✓' : index + 1}</span>
-                <span className="story-step-copy">
-                  <strong>{step.label}</strong>
-                  <small>{step.detail}</small>
-                </span>
-                <span className="story-step-duration">{step.duration}</span>
-              </button>
+              <div key={step.id} className={`story-step story-step--${state}`}>
+                <span className="story-step-number">{complete ? '✓' : index + 1}</span>
+                <span className="story-step-copy"><strong>{step.label}</strong><small>{step.status}</small></span>
+                <span className="story-step-duration">{formatDuration(step.durationMs)}</span>
+              </div>
             );
           })}
         </div>
@@ -143,67 +218,72 @@ export function LiveReviewStory({ onExit }: LiveReviewStoryProps) {
 
       <div className="story-note" role="status">
         <span className="story-note-mark" aria-hidden="true">i</span>
-        <span key={activeStep}>{STEPS[activeStep].note}</span>
+        <span>{snapshot.steps[activeStep]?.summary || 'Waiting for the next durable event.'}</span>
       </div>
 
       <div className="story-stage">
         <section className="story-code" aria-label="Pull request code diff">
           <header className="story-panel-header">
-            <div><strong>Diff:</strong> <span>src/main/java/com/acme/user/UserRepository.java</span></div>
-            <div className="story-diff-count"><span>+23</span><span>−6</span></div>
+            <div><strong>Diff:</strong> <span>{primaryFinding?.filePath || 'Pinned public pull request'}</span></div>
+            <div className="story-diff-count"><span>real</span><span>bounded</span></div>
           </header>
-          <div className="story-code-body" role="table" aria-label="Java code diff">
-            {CODE_LINES.map(([line, code, state]) => (
-              <div key={line} className={`story-code-line${state ? ` story-code-line--${state}` : ''}`} role="row">
-                <span className="story-code-number" role="cell">{line}</span>
-                <code role="cell">{code || ' '}</code>
-                {state === 'finding' && <span className="story-finding-pin">SQL injection</span>}
-              </div>
-            ))}
+          <div className="story-code-body" role="table">
+            {diffLines.map((line, index) => {
+              const finding = primaryFinding && line.number === String(primaryFinding.line);
+              return (
+                <div key={`${line.number}-${index}`} className={`story-code-line${finding ? ' story-code-line--finding' : ''}`} role="row">
+                  <span className="story-code-number" role="cell">{line.number}</span>
+                  <code role="cell">{line.kind === 'add' ? '+ ' : line.kind === 'remove' ? '− ' : '  '}{line.code || ' '}</code>
+                  {finding && <span className="story-finding-pin">{primaryFinding.title}</span>}
+                </div>
+              );
+            })}
           </div>
           <footer className="story-code-footer">
-            <span>1 finding on line 82</span>
-            <span className="story-risk">High</span>
-            <span>SQL Injection</span>
+            <span>{snapshot.findings.length} evidence-gated finding(s)</span>
+            {primaryFinding && <><span className="story-risk">{primaryFinding.severity}</span><span>{primaryFinding.category}</span></>}
           </footer>
         </section>
 
         <section className="story-evidence" aria-label="Retrieval evidence inspector">
           <header className="story-panel-header story-panel-header--evidence">
             <div><span className="story-shield" aria-hidden="true">✓</span><strong>Why this finding is trusted</strong></div>
-            <span>Cross-file evidence · 2</span>
+            <span>Evidence · {snapshot.evidence.length}</span>
           </header>
           <div className="story-evidence-list">
-            {EVIDENCE.map((item) => {
+            {snapshot.evidence.map((item) => {
               const open = openEvidence.has(item.rank);
+              const score = Math.round((item.score > 1 ? item.score / 100 : item.score) * 100);
               return (
-                <article className={`story-evidence-item${open ? ' story-evidence-item--open' : ''}`} key={item.rank}>
-                  <button type="button" className="story-evidence-trigger" onClick={() => toggleEvidence(item.rank)} aria-expanded={open}>
+                <article className={`story-evidence-item${open ? ' story-evidence-item--open' : ''}`} key={`${item.issueKey}-${item.rank}`}>
+                  <button type="button" className="story-evidence-trigger" onClick={() => setOpenEvidence((current) => {
+                    const next = new Set(current); if (next.has(item.rank)) next.delete(item.rank); else next.add(item.rank); return next;
+                  })} aria-expanded={open}>
                     <span className="story-evidence-rank">{item.rank}</span>
-                    <span className="story-evidence-title"><strong>{item.path}</strong><small>{item.lines}</small></span>
-                    <span className="story-score"><span>Relevance {item.score / 100}</span><i><b style={{ width: `${item.score}%` }} /></i></span>
-                    <span className={`story-caret${open ? ' story-caret--open' : ''}`} aria-hidden="true" />
+                    <span className="story-evidence-title"><strong>{item.path}</strong><small>Lines {item.startLine}–{item.endLine}</small></span>
+                    <span className="story-score"><span>Relevance {score / 100}</span><i><b style={{ width: `${score}%` }} /></i></span>
+                    <span className={`story-caret${open ? ' story-caret--open' : ''}`} />
                   </button>
-                  {open && (
-                    <div className="story-evidence-body">
-                      <pre>{item.excerpt}</pre>
-                      <p><strong>Rule:</strong> {item.rule}</p>
-                      <footer><span>Source: {item.source}</span><span className="story-verified">✓ Verified</span></footer>
-                    </div>
-                  )}
+                  {open && <div className="story-evidence-body"><pre>{item.excerpt}</pre><p><strong>Citation:</strong> {item.citationLabel}</p><footer><span>Grounded repository context</span><span className="story-verified">✓ Verified</span></footer></div>}
                 </article>
               );
             })}
+            <details className="story-trace">
+              <summary>Safe tool trace · {snapshot.toolTrace.length} events</summary>
+              {snapshot.toolTrace.map((trace) => (
+                <div key={trace.sequence}><strong>{trace.toolName}</strong><span>{trace.outputSummary || trace.errorCode || trace.status}</span><small>{formatDuration(trace.durationMs)}</small></div>
+              ))}
+            </details>
           </div>
         </section>
       </div>
 
       <footer className="story-results">
-        <div className="story-result"><strong>3</strong><span>findings</span></div>
-        <div className="story-result story-result--danger"><strong>1</strong><span>high risk</span></div>
-        <div className="story-result story-result--accent"><strong>2</strong><span>evidence-backed</span></div>
-        <div className="story-ready"><span className="story-ready-mark">✓</span><span>Ready for<br />human review</span></div>
-        <button type="button" className="story-primary" onClick={() => { setShowComments(true); setActiveStep(6); setPlaying(false); }}>
+        <div className="story-result"><strong>{snapshot.findings.length}</strong><span>findings</span></div>
+        <div className="story-result story-result--danger"><strong>{highRisk}</strong><span>high risk</span></div>
+        <div className="story-result story-result--accent"><strong>{snapshot.evidence.length}</strong><span>evidence items</span></div>
+        <div className="story-ready"><span className="story-ready-mark">✓</span><span>{snapshot.status === 'READY' ? 'Ready for human review' : snapshot.status}</span></div>
+        <button type="button" className="story-primary" onClick={() => setShowComments(true)} disabled={snapshot.commentPreviews.length === 0}>
           Review comments <span aria-hidden="true">→</span>
         </button>
       </footer>
@@ -212,10 +292,18 @@ export function LiveReviewStory({ onExit }: LiveReviewStoryProps) {
         <div className="story-drawer" role="dialog" aria-modal="true" aria-labelledby="story-comments-title">
           <button type="button" className="story-drawer-backdrop" onClick={() => setShowComments(false)} aria-label="Close comments" />
           <div className="story-drawer-panel">
-            <header><div><h2 id="story-comments-title">Human review</h2><p>Only selected, evidence-backed comments will be published.</p></div><button type="button" onClick={() => setShowComments(false)}>Close</button></header>
-            <label className="story-comment"><input type="checkbox" defaultChecked /><span><strong>UserRepository.java:82</strong><small>High · SQL Injection</small><p>Build the query with a PreparedStatement and bind <code>email</code> as a parameter. Repository evidence shows the same unsafe pattern in AdminService.</p></span></label>
-            <label className="story-comment"><input type="checkbox" defaultChecked /><span><strong>AdminService.java:112</strong><small>Medium · Maintainability</small><p>Extract the repeated query construction into a parameterized repository method to prevent the pattern from spreading.</p></span></label>
-            <button type="button" className="story-primary story-primary--publish" onClick={() => setShowComments(false)}>Approve 2 comments for GitHub</button>
+            <header><div><h2 id="story-comments-title">Human review</h2><p>Approval changes Demo state only. GitHub publishing is owner-controlled.</p></div><button type="button" onClick={() => setShowComments(false)}>Close</button></header>
+            {snapshot.commentPreviews.map((preview) => (
+              <label className="story-comment" key={preview.id}>
+                <input type="checkbox" checked={selected.has(preview.id)} onChange={() => setSelected((current) => {
+                  const next = new Set(current); if (next.has(preview.id)) next.delete(preview.id); else next.add(preview.id); return next;
+                })} />
+                <span><strong>{preview.filePath}:{preview.line}</strong><small>{preview.severity} · {preview.category}</small><p>{preview.body}</p></span>
+              </label>
+            ))}
+            <button type="button" className="story-primary story-primary--publish" onClick={approve} disabled={selected.size === 0}>
+              Approve {selected.size} preview{selected.size === 1 ? '' : 's'}
+            </button>
           </div>
         </div>
       )}

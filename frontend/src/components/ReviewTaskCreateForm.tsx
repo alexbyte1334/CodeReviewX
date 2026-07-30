@@ -115,7 +115,7 @@ export function ReviewTaskCreateForm({
     } catch {
       setFormState('error');
       setErrorMsg(
-        'Backend is unavailable. Check that backend-java is running on localhost:8080.',
+        'Backend is unavailable. Check the configured API service.',
       );
     }
   }

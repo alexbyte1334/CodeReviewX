@@ -98,7 +98,7 @@ export default function App() {
       }
     } catch {
       setListError(
-        'Backend is unavailable. Check that backend-java is running on localhost:8080.',
+        'Backend is unavailable. Check the configured API service.',
       );
       setTasks([]);
     } finally {
@@ -166,7 +166,7 @@ export default function App() {
     } catch {
       if (generation !== taskGeneration.current) return;
       setDetailError(
-        'Backend is unavailable. Check that backend-java is running on localhost:8080.',
+        'Backend is unavailable. Check the configured API service.',
       );
     } finally {
       if (generation === taskGeneration.current) setDetailLoading(false);
@@ -506,7 +506,7 @@ export default function App() {
 
           {demoMode ? (
             <main className="workspace workspace--story">
-              <LiveReviewStory onExit={() => setDemoMode(false)} />
+              <LiveReviewStory />
             </main>
           ) : (
             <main className="workspace" ref={workspaceRef}>
@@ -520,7 +520,7 @@ export default function App() {
 
             {backendStatus === 'down' && (
               <div className="global-warning" role="alert">
-                Backend is unavailable. Check that backend-java is running on localhost:8080.
+                Backend is unavailable. Check the configured API service.
               </div>
             )}
 

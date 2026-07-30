@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
 import * as reviewTaskApi from '../api/reviewTaskApi';
+import * as demoRunApi from '../api/demoRunApi';
 
 vi.mock('../api/reviewTaskApi', () => ({
   getHealth: vi.fn(),
@@ -15,6 +16,14 @@ vi.mock('../api/reviewTaskApi', () => ({
   publishCommentPreview: vi.fn(),
 }));
 
+vi.mock('../api/demoRunApi', () => ({
+  DEMO_API_BASE: '',
+  loadRecordedRun: vi.fn(),
+  createDemoRun: vi.fn(),
+  getDemoSnapshot: vi.fn(),
+  decideDemoRun: vi.fn(),
+}));
+
 describe('App shell', () => {
   beforeEach(() => {
     document.documentElement.setAttribute('data-theme', 'light');
@@ -24,6 +33,31 @@ describe('App shell', () => {
       data: { status: 'UP', service: 'backend-java', reviewProvider: 'mimo' },
     });
     vi.mocked(reviewTaskApi.listReviewTasks).mockResolvedValue({ success: true, message: 'OK', data: [] });
+    vi.mocked(demoRunApi.loadRecordedRun).mockResolvedValue({
+      runId: 'recorded-v1', scenarioId: 'sql-injection-pr', mode: 'REPLAY', status: 'READY',
+      decision: null, replayReason: 'Recorded, sanitized run.', diffText: '@@ -1,1 +1,1 @@\n-old\n+unsafe();',
+      steps: [
+        'PR ingest', 'Repository index', 'Hybrid RAG', 'AI plan', 'AI review', 'Evidence gate', 'Human review',
+      ].map((label, index) => ({
+        id: `STEP_${index}`, label, status: index === 6 ? 'READY' : 'SUCCESS',
+        durationMs: index === 6 ? null : 100, summary: `${label} complete`, errorCode: null,
+      })),
+      findings: [{
+        issueKey: 'ISSUE-1', severity: 'HIGH', category: 'SECURITY', filePath: 'src/App.java',
+        line: 1, title: 'Unsafe query', description: 'Unsafe', recommendation: 'Bind parameters',
+      }],
+      evidence: [{
+        issueKey: 'ISSUE-1', citationLabel: 'E1', path: 'src/App.java', startLine: 1,
+        endLine: 1, excerpt: 'unsafe();', rank: 1, score: 0.9,
+      }],
+      toolTrace: [], commentPreviews: [{
+        id: 1, issueKey: 'ISSUE-1', filePath: 'src/App.java', line: 1, severity: 'HIGH',
+        category: 'SECURITY', body: 'Bind parameters.', selected: true,
+        publishStatus: 'NOT_PUBLISHED', githubUrl: null,
+      }],
+      events: [], publishedCommentUrl: null, createdAt: '2026-07-30T10:00:00',
+      updatedAt: '2026-07-30T10:00:01',
+    });
   });
 
   it('renders product navigation and workspace header', async () => {
@@ -117,13 +151,13 @@ describe('App shell', () => {
 
     await user.click(screen.getByRole('button', { name: /start live demo/i }));
 
-    expect(screen.getByRole('heading', { name: /live review story/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /recorded review story/i })).toBeInTheDocument();
     expect(screen.getByText(/offline-safe interview story/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /evidence gate/i })).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText(/replay mode/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /review comments/i }));
 
     expect(screen.getByRole('dialog', { name: /human review/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /approve 2 comments for github/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /approve 1 preview/i })).toBeInTheDocument();
   });
 });
