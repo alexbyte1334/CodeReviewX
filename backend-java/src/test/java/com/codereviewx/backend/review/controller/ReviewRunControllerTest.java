@@ -34,6 +34,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -100,6 +101,16 @@ class ReviewRunControllerTest {
         SeededRun seededRun = seedStage2Run();
         seededRunId = seededRun.runId();
         seededPreviewId = seededRun.previewId();
+    }
+
+    @Test
+    void anonymousDemoAdminPublishIsRejected() throws Exception {
+        mockMvc.perform(post("/api/admin/demo-runs/" + UUID.randomUUID() + "/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"selectedPreviewIds\":[1]}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message",
+                        org.hamcrest.Matchers.containsString("ADMIN_AUTH_REQUIRED")));
     }
 
     @Test
