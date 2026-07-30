@@ -31,7 +31,10 @@ public class ConfigurableReviewProvider implements ReviewProvider {
                 result.isSuccessful(),
                 result.getMessage(),
                 "mimo",
-                providerHit
+                providerHit,
+                result.getPromptTokens(),
+                result.getCompletionTokens(),
+                result.getTotalTokens()
         );
     }
 }

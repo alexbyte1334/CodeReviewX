@@ -16,7 +16,7 @@
     "p95_latency_ms": 0.0,
     "security_cases_blocked_or_safe": 1.0
   },
-  "fixedPipelineFixture": {
+  "fixedPipelineBaseline": {
     "actionable_precision": 1.0,
     "evidence_pass": 1.0,
     "expected_recall": 0.0,
@@ -29,14 +29,16 @@
     "p95_latency_ms": 0.0,
     "security_cases_blocked_or_safe": 0.6666666666666666
   },
+  "fixedPipelineBaselineSource": "fixture",
   "gates": {
     "evidenceValidation100": true,
     "illegalJsonOrActionRateBelow5": null,
     "medianTokensAtMost2xFixed": null,
     "precisionAtLeast80": true,
     "precisionDropAtMost5pp": true,
-    "recallGainAtLeast10pp": true,
+    "recallGain10ppOrStableTwoAdditionalFindings": true,
     "security100": true,
+    "stableTwoAdditionalFindings": null,
     "tokenBudgetSatisfied": null,
     "warmP95Under90Seconds": null
   },

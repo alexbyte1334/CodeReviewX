@@ -206,7 +206,7 @@ class ReviewTaskServiceGithubPrTest {
                 .allSatisfy(preview -> assertThat(preview.getDraftBody()).contains("Suggestion:"));
 
         ArgumentCaptor<String> executorPrompt = ArgumentCaptor.forClass(String.class);
-        verify(xiaomiMiMoClient).complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT),
+        verify(xiaomiMiMoClient).completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT),
                 executorPrompt.capture(), eq("test-executor-key"));
         assertThat(executorPrompt.getValue()).contains("request.query.password");
         assertThat(executorPrompt.getValue()).contains("--- PR DIFF START ---");

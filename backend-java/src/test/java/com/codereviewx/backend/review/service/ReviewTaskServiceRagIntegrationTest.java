@@ -122,19 +122,19 @@ class ReviewTaskServiceRagIntegrationTest {
             List<com.codereviewx.backend.rag.retrieval.RerankCandidate> candidates = invocation.getArgument(1);
             return candidates.stream().map(candidate -> new RerankedChunk(candidate, 0.95)).toList();
         });
-        when(mimoClient.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
-        when(mimoClient.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn("""
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.taskPlanJson()));
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion("""
                         {"summary":"review","findings":[
                           {"severity":"HIGH","category":"BUG","filePath":"src/App.ts","startLine":1,"endLine":1,
                            "title":"grounded","description":"A grounded issue.","recommendation":"fix","evidenceChunkIds":["C1"]},
                           {"severity":"LOW","category":"BUG","filePath":"src/Other.ts","startLine":1,"endLine":1,
                            "title":"ungrounded","description":"Wrong path.","recommendation":"fix","evidenceChunkIds":["C1"]}
                         ]}
-                        """);
-        when(mimoClient.complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.approvedGateJson());
+                        """));
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.approvedGateJson()));
         CreateReviewTaskRequest request = new CreateReviewTaskRequest(); request.setRepoUrl("https://github.com/example/repo"); request.setPrNumber(18);
 
         ReviewTaskResponse response = service.createTask(request);

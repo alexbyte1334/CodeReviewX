@@ -10,12 +10,16 @@ public final class TestMiMoAgentResponses {
     }
 
     public static void stubSuccessfulReview(XiaomiMiMoClient client) {
-        when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(taskPlanJson());
-        when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(candidateReviewJson());
-        when(client.complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(approvedGateJson());
+        when(client.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(completion(taskPlanJson()));
+        when(client.completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(completion(candidateReviewJson()));
+        when(client.completeWithUsage(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(completion(approvedGateJson()));
+    }
+
+    public static XiaomiMiMoClient.Completion completion(String content) {
+        return new XiaomiMiMoClient.Completion(content, 10, 5, 15);
     }
 
     public static String taskPlanJson() {

@@ -41,6 +41,15 @@ public class ReviewProviderTraceEntity {
     @Column(name = "finding_count")
     private Integer findingCount;
 
+    @Column(name = "prompt_tokens")
+    private Integer promptTokens;
+
+    @Column(name = "completion_tokens")
+    private Integer completionTokens;
+
+    @Column(name = "total_tokens")
+    private Integer totalTokens;
+
     @Column(name = "normalization_summary", length = 1000)
     private String normalizationSummary;
 
@@ -129,6 +138,30 @@ public class ReviewProviderTraceEntity {
 
     public void setFindingCount(Integer findingCount) {
         this.findingCount = findingCount;
+    }
+
+    public Integer getPromptTokens() {
+        return promptTokens;
+    }
+
+    public void setPromptTokens(Integer promptTokens) {
+        this.promptTokens = promptTokens;
+    }
+
+    public Integer getCompletionTokens() {
+        return completionTokens;
+    }
+
+    public void setCompletionTokens(Integer completionTokens) {
+        this.completionTokens = completionTokens;
+    }
+
+    public Integer getTotalTokens() {
+        return totalTokens;
+    }
+
+    public void setTotalTokens(Integer totalTokens) {
+        this.totalTokens = totalTokens;
     }
 
     public String getNormalizationSummary() {

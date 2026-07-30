@@ -49,6 +49,10 @@ public class XiaomiMiMoClient {
     }
 
     public String complete(String systemPrompt, String userPrompt, String apiKey) {
+        return completeWithUsage(systemPrompt, userPrompt, apiKey).content();
+    }
+
+    public Completion completeWithUsage(String systemPrompt, String userPrompt, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new XiaomiMiMoClientException("MiMo API key is not configured");
         }
@@ -72,13 +76,29 @@ public class XiaomiMiMoClient {
                     .retrieve()
                     .body(XiaomiMiMoClientResponse.class);
 
-            return extractContent(response);
+            XiaomiMiMoClientResponse.Usage usage = response == null ? null : response.getUsage();
+            int promptTokens = token(usage == null ? null : usage.getPromptTokens());
+            int completionTokens = token(usage == null ? null : usage.getCompletionTokens());
+            int totalTokens = token(usage == null ? null : usage.getTotalTokens());
+            if (totalTokens == 0 && (promptTokens > 0 || completionTokens > 0)) {
+                totalTokens = promptTokens + completionTokens;
+            }
+            return new Completion(
+                    extractContent(response),
+                    promptTokens,
+                    completionTokens,
+                    totalTokens
+            );
         } catch (RestClientResponseException ex) {
             throw new XiaomiMiMoClientException(
                     "MiMo API returned HTTP " + ex.getStatusCode().value(), ex);
         } catch (RestClientException ex) {
             throw new XiaomiMiMoClientException("MiMo API request failed", ex);
         }
+    }
+
+    private static int token(Integer value) {
+        return value == null || value < 0 ? 0 : value;
     }
 
     private static String extractContent(XiaomiMiMoClientResponse response) {
@@ -101,5 +121,9 @@ public class XiaomiMiMoClient {
             throw new XiaomiMiMoClientException("MiMo base URL is not configured");
         }
         return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+    }
+
+    public record Completion(String content, int promptTokens,
+                             int completionTokens, int totalTokens) {
     }
 }

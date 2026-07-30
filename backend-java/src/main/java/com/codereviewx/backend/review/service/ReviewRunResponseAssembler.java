@@ -113,6 +113,9 @@ public class ReviewRunResponseAssembler {
         summary.setModelName(trace.getModelName());
         summary.setOutputSummary(trace.getOutputSummary());
         summary.setFindingCount(trace.getFindingCount());
+        summary.setPromptTokens(trace.getPromptTokens());
+        summary.setCompletionTokens(trace.getCompletionTokens());
+        summary.setTotalTokens(trace.getTotalTokens());
         summary.setFallbackReason(trace.getFallbackReason());
         return summary;
     }

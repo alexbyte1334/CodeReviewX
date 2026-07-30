@@ -32,7 +32,12 @@ class ConfigurableReviewProviderTest {
                 java.util.List.of(),
                 XiaomiMiMoReviewProvider.PROVIDER_NAME,
                 true,
-                null
+                null,
+                null,
+                false,
+                20,
+                10,
+                30
         );
         when(xiaomiMiMoReviewProvider.review(context)).thenReturn(mimoResult);
 
@@ -42,6 +47,7 @@ class ConfigurableReviewProviderTest {
         assertThat(result.getRequestedProvider()).isEqualTo("mimo");
         assertThat(result.getProviderUsed()).isEqualTo("mimo");
         assertThat(result.isProviderHit()).isTrue();
+        assertThat(result.getTotalTokens()).isEqualTo(30);
         verify(xiaomiMiMoReviewProvider).review(context);
     }
 

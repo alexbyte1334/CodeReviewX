@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -55,21 +56,26 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
         }
 
         try {
+            AtomicInteger promptTokens = new AtomicInteger();
+            AtomicInteger completionTokens = new AtomicInteger();
+            AtomicInteger totalTokens = new AtomicInteger();
             TaskPlan taskPlan = recordStep(context, "mimo.ai1.plan", () -> {
-                String planOutput = client.complete(
+                String planOutput = complete(
                         ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT,
                         promptBuilder.buildPlannerPrompt(context),
-                        properties.getPlannerApiKey()
+                        properties.getPlannerApiKey(),
+                        promptTokens, completionTokens, totalTokens
                 );
                 return parser.parseTaskPlan(planOutput);
             }, ignored -> "Planner produced a structured task plan.");
             String taskPlanJson = toJson(taskPlan);
 
             CandidateReview candidateReview = recordStep(context, "mimo.ai2.execute", () -> {
-                String candidateOutput = client.complete(
+                String candidateOutput = complete(
                         ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT,
                         promptBuilder.buildExecutorPrompt(context, taskPlanJson),
-                        properties.getExecutorApiKey()
+                        properties.getExecutorApiKey(),
+                        promptTokens, completionTokens, totalTokens
                 );
                 return parser.parseCandidateReview(candidateOutput, context.getRagEvidenceBundle());
             }, review -> "Executor produced a candidate review with "
@@ -77,10 +83,11 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
             String candidateReviewJson = toJson(candidateReview);
 
             GateDecision gateDecision = recordStep(context, "mimo.ai1.gate", () -> {
-                String gateOutput = client.complete(
+                String gateOutput = complete(
                         ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT,
                         promptBuilder.buildGatekeeperPrompt(taskPlanJson, candidateReviewJson, context),
-                        properties.getPlannerApiKey()
+                        properties.getPlannerApiKey(),
+                        promptTokens, completionTokens, totalTokens
                 );
                 GateDecision decision = parser.parseGateDecision(gateOutput);
                 if (!Boolean.TRUE.equals(decision.getApproved())) {
@@ -98,7 +105,9 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
                     () -> issueGenerator.generate(candidateReview),
                     generatedFindings -> "IssueGenerator mapped approved review to "
                             + generatedFindings.size() + " issue(s).");
-            return new ReviewProviderResult(findings, PROVIDER_NAME, true, null);
+            return new ReviewProviderResult(
+                    findings, PROVIDER_NAME, true, null, null, false,
+                    promptTokens.get(), completionTokens.get(), totalTokens.get());
         } catch (MiMoAgentException ex) {
             throw ex;
         } catch (XiaomiMiMoClientException ex) {
@@ -108,6 +117,18 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
             throw new MiMoAgentException(ReviewErrorCodes.MIMO_PROVIDER_ERROR,
                     "Unexpected MiMo provider failure", ex);
         }
+    }
+
+    private String complete(String systemPrompt, String userPrompt, String apiKey,
+                            AtomicInteger promptTokens,
+                            AtomicInteger completionTokens,
+                            AtomicInteger totalTokens) {
+        XiaomiMiMoClient.Completion completion =
+                client.completeWithUsage(systemPrompt, userPrompt, apiKey);
+        promptTokens.addAndGet(completion.promptTokens());
+        completionTokens.addAndGet(completion.completionTokens());
+        totalTokens.addAndGet(completion.totalTokens());
+        return completion.content();
     }
 
     private <T> T recordStep(ReviewContext context,

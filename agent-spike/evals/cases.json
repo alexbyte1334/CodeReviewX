@@ -1,6 +1,6 @@
 [
   {
-    "id":"cross-auth-guard","kind":"positive","expected":["AUTH-1"],"fixedFindings":[],
+    "id":"cross-auth-guard","kind":"positive","expected":["AUTH-1"],"fixedFindings":[],"expectedMatchers":{"AUTH-1":{"paths":["src/AuthController.java","src/AuthService.java"],"keywords":["owner","authorization"]}},
     "files":{"src/AuthController.java":"if (request.user() != null) service.delete(id);","src/AuthService.java":"void delete(long id) { repository.deleteById(id); }"},
     "actions":[
       {"action":"search_repository","arguments":{"query":"delete"}},
@@ -8,7 +8,7 @@
     ]
   },
   {
-    "id":"cross-sql-helper","kind":"positive","expected":["SQL-1"],"fixedFindings":[],
+    "id":"cross-sql-helper","kind":"positive","expected":["SQL-1"],"fixedFindings":[],"expectedMatchers":{"SQL-1":{"paths":["src/UserRepository.java","src/Sql.java"],"keywords":["sql","query","concat","injection"]}},
     "files":{"src/UserRepository.java":"return db.query(Sql.build(email));","src/Sql.java":"String build(String value) { return \"select * from u where e='\" + value + \"'\"; }"},
     "actions":[
       {"action":"search_repository","arguments":{"query":"return"}},
@@ -16,7 +16,7 @@
     ]
   },
   {
-    "id":"cross-path-normalization","kind":"positive","expected":["PATH-1"],"fixedFindings":[],
+    "id":"cross-path-normalization","kind":"positive","expected":["PATH-1"],"fixedFindings":[],"expectedMatchers":{"PATH-1":{"paths":["src/Download.java","src/Files.java"],"keywords":["path","normal"]}},
     "files":{"src/Download.java":"return files.read(request.path());","src/Files.java":"byte[] read(String path) { return io.read(root + path); }"},
     "actions":[
       {"action":"search_repository","arguments":{"query":"read"}},
@@ -24,7 +24,7 @@
     ]
   },
   {
-    "id":"cross-cache-tenant","kind":"positive","expected":["TENANT-1"],"fixedFindings":[],
+    "id":"cross-cache-tenant","kind":"positive","expected":["TENANT-1"],"fixedFindings":[],"expectedMatchers":{"TENANT-1":{"paths":["src/Profile.java","src/Cache.java"],"keywords":["tenant","cache"]}},
     "files":{"src/Profile.java":"return cache.get(userId);","src/Cache.java":"Object get(long id) { return shared.get(id); }"},
     "actions":[
       {"action":"search_repository","arguments":{"query":"get"}},
@@ -32,7 +32,7 @@
     ]
   },
   {
-    "id":"cross-secret-log","kind":"positive","expected":["SECRET-1"],"fixedFindings":[],
+    "id":"cross-secret-log","kind":"positive","expected":["SECRET-1"],"fixedFindings":[],"expectedMatchers":{"SECRET-1":{"paths":["src/Login.java","src/Audit.java"],"keywords":["credential","secret","log"]}},
     "files":{"src/Login.java":"audit.record(credentials);","src/Audit.java":"void record(Object value) { log.info(\"{}\", value); }"},
     "actions":[
       {"action":"search_repository","arguments":{"query":"record"}},
@@ -40,7 +40,7 @@
     ]
   },
   {
-    "id":"cross-timeout","kind":"positive","expected":["TIMEOUT-1"],"fixedFindings":[],
+    "id":"cross-timeout","kind":"positive","expected":["TIMEOUT-1"],"fixedFindings":[],"expectedMatchers":{"TIMEOUT-1":{"paths":["src/Client.java","src/Transport.java"],"keywords":["timeout","deadline"]}},
     "files":{"src/Client.java":"return transport.call(request);","src/Transport.java":"Response call(Request r) { return http.send(r); }"},
     "actions":[
       {"action":"search_repository","arguments":{"query":"call"}},

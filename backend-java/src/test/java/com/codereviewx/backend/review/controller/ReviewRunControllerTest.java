@@ -123,6 +123,9 @@ class ReviewRunControllerTest {
                 .andExpect(jsonPath("$.data.reviewMode", is("GITHUB_PR")))
                 .andExpect(jsonPath("$.data.inputSnapshotSummary.headSha", is("abc123")))
                 .andExpect(jsonPath("$.data.providerSummary.providerUsed", is("mimo")))
+                .andExpect(jsonPath("$.data.providerSummary.promptTokens", is(120)))
+                .andExpect(jsonPath("$.data.providerSummary.completionTokens", is(30)))
+                .andExpect(jsonPath("$.data.providerSummary.totalTokens", is(150)))
                 .andExpect(jsonPath("$.data.inputSnapshotSummary.snapshotJson").doesNotExist())
                 .andExpect(jsonPath("$.data.providerSummary.inputSummary").doesNotExist());
     }
@@ -377,6 +380,9 @@ class ReviewRunControllerTest {
         providerTrace.setInputSummary("raw prompt should not be returned");
         providerTrace.setOutputSummary("3 findings normalized from provider response.");
         providerTrace.setFindingCount(3);
+        providerTrace.setPromptTokens(120);
+        providerTrace.setCompletionTokens(30);
+        providerTrace.setTotalTokens(150);
         providerTrace.setFallbackReason(null);
         providerTrace.setStartedAt(now);
         providerTrace.setFinishedAt(now);

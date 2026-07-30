@@ -35,7 +35,12 @@ class XiaomiMiMoClientTest {
                                 "content": "[]"
                               }
                             }
-                          ]
+                          ],
+                          "usage": {
+                            "prompt_tokens": 11,
+                            "completion_tokens": 7,
+                            "total_tokens": 18
+                          }
                         }
                         """, MediaType.APPLICATION_JSON));
 
@@ -44,6 +49,59 @@ class XiaomiMiMoClientTest {
         String content = client.complete("system", "user");
 
         assertThat(content).isEqualTo("[]");
+        server.verify();
+    }
+
+    @Test
+    void completeWithUsage_returnsProviderTokenCounts() {
+        XiaomiMiMoProperties properties = new XiaomiMiMoProperties();
+        properties.setBaseUrl("https://api.example.com/v1");
+        properties.setModel("mimo-v2.5-pro");
+        properties.setApiKey("test-key");
+
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.example.com/v1/chat/completions"))
+                .andRespond(withSuccess("""
+                        {
+                          "choices":[{"message":{"role":"assistant","content":"[]"}}],
+                          "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        XiaomiMiMoClient.Completion completion =
+                new XiaomiMiMoClient(properties, builder.build())
+                        .completeWithUsage("system", "user", "test-key");
+
+        assertThat(completion.content()).isEqualTo("[]");
+        assertThat(completion.promptTokens()).isEqualTo(11);
+        assertThat(completion.completionTokens()).isEqualTo(7);
+        assertThat(completion.totalTokens()).isEqualTo(18);
+        server.verify();
+    }
+
+    @Test
+    void completeWithUsage_derivesTotalWhenProviderOmitsIt() {
+        XiaomiMiMoProperties properties = new XiaomiMiMoProperties();
+        properties.setBaseUrl("https://api.example.com/v1");
+        properties.setModel("mimo-v2.5-pro");
+        properties.setApiKey("test-key");
+
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.example.com/v1/chat/completions"))
+                .andRespond(withSuccess("""
+                        {
+                          "choices":[{"message":{"role":"assistant","content":"[]"}}],
+                          "usage":{"prompt_tokens":11,"completion_tokens":7}
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        XiaomiMiMoClient.Completion completion =
+                new XiaomiMiMoClient(properties, builder.build())
+                        .completeWithUsage("system", "user", "test-key");
+
+        assertThat(completion.totalTokens()).isEqualTo(18);
         server.verify();
     }
 

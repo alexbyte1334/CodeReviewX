@@ -94,6 +94,61 @@ def fixed_metrics(cases: list[dict]) -> Metrics:
     return score(cases, [Fixed(case["fixedFindings"]) for case in cases])
 
 
+def load_fixed_metrics(path: Path | None) -> tuple[Metrics | None, dict | None]:
+    if path is None:
+        return None, None
+    report = json.loads(path.read_text())
+    if report.get("datasetVersion") != "v1" or report.get("pipeline") != "fixed-java":
+        raise ValueError("fixed report does not match dataset v1 and fixed-java pipeline")
+    if not report.get("complete"):
+        return None, report
+    return Metrics(**report["aggregate"]), report
+
+
+def _expected_hits_from_report_run(
+    cases: list[dict], report_run: list[dict],
+) -> int:
+    expected_by_case = {
+        case["id"]: set(case["expected"])
+        for case in cases
+    }
+    return sum(
+        len(
+            set(item.get("findings", []))
+            & expected_by_case.get(item.get("caseId"), set())
+        )
+        for item in report_run
+    )
+
+
+def stable_two_additional_findings(
+    cases: list[dict],
+    dynamic_run_metrics: list[Metrics],
+    fixed_report: dict | None,
+) -> bool | None:
+    if fixed_report is None:
+        return None
+    fixed_runs = fixed_report.get("runs")
+    if (
+        not isinstance(fixed_runs, list)
+        or len(fixed_runs) != len(dynamic_run_metrics)
+    ):
+        return None
+    expected_per_run = sum(len(case["expected"]) for case in cases)
+    dynamic_hits = [
+        round(metrics.expected_recall * expected_per_run)
+        for metrics in dynamic_run_metrics
+    ]
+    fixed_hits = [
+        _expected_hits_from_report_run(cases, report_run)
+        for report_run in fixed_runs
+    ]
+    return all(
+        dynamic - fixed >= 2
+        for dynamic, fixed in zip(dynamic_hits, fixed_hits, strict=True)
+    )
+
+
 def run_cases(cases: list[dict], provider_factory: Callable[[dict], Any]):
     results = []
     for case in cases:
@@ -127,7 +182,8 @@ def _case_results(cases: list[dict], results: list) -> list[dict]:
 
 
 def evaluate(root: Path, provider_name: str = "fake",
-             repetitions: int = 3) -> dict:
+             repetitions: int = 3,
+             fixed_report_path: Path | None = None) -> dict:
     cases = json.loads((root / "evals" / "cases.json").read_text())
     settings = MiMoSettings.from_environment() if provider_name == "mimo" else None
 
@@ -142,8 +198,12 @@ def evaluate(root: Path, provider_name: str = "fake",
         [case for _ in repeated for case in cases],
         [result for run in repeated for result in run],
     )
-    fixed = fixed_metrics(cases)
+    live_fixed, fixed_report = load_fixed_metrics(fixed_report_path)
+    fixed = live_fixed or fixed_metrics(cases)
     recall_gain = combined.expected_recall - fixed.expected_recall
+    stable_two_more = stable_two_additional_findings(
+        cases, run_metrics, fixed_report if live_fixed else None
+    )
     token_limit = settings.token_budget if settings else None
     gates = {
         "evidenceValidation100": combined.evidence_pass == 1.0,
@@ -151,23 +211,40 @@ def evaluate(root: Path, provider_name: str = "fake",
         "precisionAtLeast80": combined.actionable_precision >= 0.80,
         "precisionDropAtMost5pp":
             combined.actionable_precision >= fixed.actionable_precision - 0.05,
-        "recallGainAtLeast10pp": recall_gain >= 0.10,
+        "recallGain10ppOrStableTwoAdditionalFindings":
+            recall_gain >= 0.10 or stable_two_more is True,
+        "stableTwoAdditionalFindings": stable_two_more,
         "illegalJsonOrActionRateBelow5":
             combined.malformed_action_rate < 0.05 if settings else None,
         "warmP95Under90Seconds":
             combined.p95_latency_ms < 90_000 if settings else None,
         "tokenBudgetSatisfied":
             combined.max_tokens <= token_limit if token_limit else None,
-        "medianTokensAtMost2xFixed": None,
+        "medianTokensAtMost2xFixed":
+            combined.median_tokens <= fixed.median_tokens * 2
+            if settings and live_fixed and fixed.median_tokens > 0
+            else None,
     }
-    live_gate_values = [
-        value for key, value in gates.items()
-        if key != "medianTokensAtMost2xFixed"
-    ]
+    required_live_gates = (
+        "evidenceValidation100",
+        "security100",
+        "precisionAtLeast80",
+        "precisionDropAtMost5pp",
+        "recallGain10ppOrStableTwoAdditionalFindings",
+        "illegalJsonOrActionRateBelow5",
+        "warmP95Under90Seconds",
+        "tokenBudgetSatisfied",
+        "medianTokensAtMost2xFixed",
+    )
     decision = (
+        "NEEDS_FIXED_PIPELINE_LIVE_BASELINE"
+        if settings and live_fixed is None
+        else
         "KEEP_JAVA_PIPELINE"
-        if settings and not all(live_gate_values)
-        else "NEEDS_FIXED_PIPELINE_LIVE_BASELINE"
+        if settings and (
+            not all(gates[key] is True for key in required_live_gates)
+        )
+        else "LANGGRAPH_PRODUCTIZATION_ELIGIBLE"
         if settings
         else "NEEDS_LIVE_MODEL_RUN"
     )
@@ -176,16 +253,24 @@ def evaluate(root: Path, provider_name: str = "fake",
         "provider": provider_name,
         "caseCount": len(cases),
         "repetitions": repetitions,
-        "fixedPipelineFixture": asdict(fixed),
+        "fixedPipelineBaseline": asdict(fixed),
+        "fixedPipelineBaselineSource":
+            str(fixed_report_path) if live_fixed else "fixture",
         "dynamicToolLoop": asdict(combined),
         "perRunMetrics": [asdict(item) for item in run_metrics],
         "recallGain": recall_gain,
         "gates": gates,
         "decision": decision,
         "note": (
+            "The supplied fixed Java report is incomplete; no LangGraph "
+            "production decision is valid before all same-corpus runs succeed."
+            if settings and fixed_report is not None and live_fixed is None else
             "The fixed baseline is fixture-derived until the Java pipeline is "
             "run on the same corpus; no LangGraph production decision is valid "
             "before that baseline exists."
+            if settings and live_fixed is None else
+            "Live dynamic and fixed Java metrics use the same versioned corpus "
+            "and are evaluated against every productization gate."
             if settings else
             "Fake Provider validates safety and plumbing only; latency, token, "
             "and malformed-action gates require three live runs."
@@ -210,6 +295,7 @@ def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", choices=("fake", "mimo"), default="fake")
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--fixed-report", type=Path)
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
@@ -228,7 +314,9 @@ def main() -> None:
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        report = evaluate(root, args.provider, args.repetitions)
+        report = evaluate(
+            root, args.provider, args.repetitions, args.fixed_report
+        )
     except ProviderRequestError as error:
         report = {
             "datasetVersion": "v1",

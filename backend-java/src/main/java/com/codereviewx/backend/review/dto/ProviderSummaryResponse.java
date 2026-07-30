@@ -8,6 +8,9 @@ public class ProviderSummaryResponse {
     private String modelName;
     private String outputSummary;
     private Integer findingCount;
+    private Integer promptTokens;
+    private Integer completionTokens;
+    private Integer totalTokens;
     private String fallbackReason;
 
     public String getRequestedProvider() {
@@ -56,6 +59,30 @@ public class ProviderSummaryResponse {
 
     public void setFindingCount(Integer findingCount) {
         this.findingCount = findingCount;
+    }
+
+    public Integer getPromptTokens() {
+        return promptTokens;
+    }
+
+    public void setPromptTokens(Integer promptTokens) {
+        this.promptTokens = promptTokens;
+    }
+
+    public Integer getCompletionTokens() {
+        return completionTokens;
+    }
+
+    public void setCompletionTokens(Integer completionTokens) {
+        this.completionTokens = completionTokens;
+    }
+
+    public Integer getTotalTokens() {
+        return totalTokens;
+    }
+
+    public void setTotalTokens(Integer totalTokens) {
+        this.totalTokens = totalTokens;
     }
 
     public String getFallbackReason() {

@@ -36,7 +36,10 @@ class ReviewTraceRecorderTest {
                 true,
                 null,
                 "mimo",
-                false
+                false,
+                20,
+                10,
+                30
         );
         ReviewTaskEntity task = new ReviewTaskEntity();
         task.setRepoUrl("https://github.com/example/repo");
@@ -56,5 +59,8 @@ class ReviewTraceRecorderTest {
         assertThat(trace.getFallbackReason())
                 .isEqualTo("Requested provider was not fulfilled; provider used is unknown.");
         assertThat(trace.getFallbackReason()).doesNotContain("null provider");
+        assertThat(trace.getPromptTokens()).isEqualTo(20);
+        assertThat(trace.getCompletionTokens()).isEqualTo(10);
+        assertThat(trace.getTotalTokens()).isEqualTo(30);
     }
 }

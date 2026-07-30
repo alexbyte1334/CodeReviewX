@@ -58,12 +58,15 @@ class XiaomiMiMoReviewProviderTest {
 
         ReviewProviderResult result = provider.review(context);
 
-        verify(client).complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), eq("planner-key"));
-        verify(client).complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), eq("executor-key"));
-        verify(client).complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), eq("planner-key"));
+        verify(client).completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), eq("planner-key"));
+        verify(client).completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), eq("executor-key"));
+        verify(client).completeWithUsage(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), eq("planner-key"));
         assertThat(result.isSuccessful()).isTrue();
         assertThat(result.getProviderName()).isEqualTo(XiaomiMiMoReviewProvider.PROVIDER_NAME);
         assertThat(result.getFindings()).hasSize(3);
+        assertThat(result.getPromptTokens()).isEqualTo(30);
+        assertThat(result.getCompletionTokens()).isEqualTo(15);
+        assertThat(result.getTotalTokens()).isEqualTo(45);
 
         ReviewFinding finding = result.getFindings().get(0);
         assertThat(finding.getIssueKey()).isEqualTo("MIMO-ISSUE-1");
@@ -94,8 +97,8 @@ class XiaomiMiMoReviewProviderTest {
 
     @Test
     void review_rejectsInvalidPlannerJson() {
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn("[]");
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion("[]"));
 
         assertThatThrownBy(() -> provider.review(context))
                 .isInstanceOf(MiMoAgentException.class)
@@ -109,10 +112,10 @@ class XiaomiMiMoReviewProviderTest {
 
     @Test
     void review_rejectsInvalidExecutorJson() {
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn("[]");
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.taskPlanJson()));
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion("[]"));
 
         assertThatThrownBy(() -> provider.review(context))
                 .isInstanceOf(MiMoAgentException.class)
@@ -122,18 +125,18 @@ class XiaomiMiMoReviewProviderTest {
 
     @Test
     void review_rejectsGatekeeperRejection() {
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.candidateReviewJson());
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn("""
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.taskPlanJson()));
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.candidateReviewJson()));
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion("""
                         {
                           "approved": false,
                           "reason": "Ungrounded finding.",
                           "requiredChanges": ["Remove ungrounded finding."]
                         }
-                        """);
+                        """));
 
         assertThatThrownBy(() -> provider.review(context))
                 .isInstanceOf(MiMoAgentException.class)
@@ -149,26 +152,30 @@ class XiaomiMiMoReviewProviderTest {
                 findingJson("[\"C9\"]", "safe description"),
                 findingJson("[\"C1\"]", "bounded evidence content with enough unique source tokens"))) {
             org.mockito.Mockito.reset(client);
-            org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                    .thenReturn(TestMiMoAgentResponses.taskPlanJson());
-            org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
-                    .thenReturn("{\"summary\":\"x\",\"findings\":[" + finding + "]}");
+            org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                    .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.taskPlanJson()));
+            org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                    .thenReturn(TestMiMoAgentResponses.completion(
+                            "{\"summary\":\"x\",\"findings\":[" + finding + "]}"));
             assertThatThrownBy(() -> provider.review(context)).isInstanceOf(MiMoAgentException.class)
                     .extracting("errorCode").isEqualTo(ReviewErrorCodes.MIMO_REVIEW_INVALID);
-            verify(client, never()).complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString());
+            verify(client, never()).completeWithUsage(
+                    eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString());
         }
     }
 
     @Test
     void reviewAcceptsValidMultipleKnownEvidenceLabelsAndPassesAllowedSetToGatekeeper() {
         context = ragContext();
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn("{\"summary\":\"x\",\"findings\":[" + findingJson("[\"C1\",\"C2\"]", "safe description") + "]}");
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.taskPlanJson()));
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(
+                        "{\"summary\":\"x\",\"findings\":["
+                                + findingJson("[\"C1\",\"C2\"]", "safe description") + "]}"));
         org.mockito.ArgumentCaptor<String> gatePrompt = org.mockito.ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), gatePrompt.capture(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.approvedGateJson());
+        org.mockito.Mockito.when(client.completeWithUsage(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), gatePrompt.capture(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.approvedGateJson()));
 
         assertThat(provider.review(context).getFindings()).singleElement()
                 .extracting(ReviewFinding::getEvidenceChunkIds).isEqualTo(List.of("C1", "C2"));

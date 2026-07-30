@@ -154,12 +154,13 @@ final class RagFindingProductionEvaluation {
             return ranked;
         });
 
-        when(mimoClient.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
-        when(mimoClient.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(executorOutput(evalCase, mutation, selectedKeys));
-        when(mimoClient.complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.approvedGateJson());
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.taskPlanJson()));
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(
+                        executorOutput(evalCase, mutation, selectedKeys)));
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.approvedGateJson()));
 
         List<PersistedEvidence> persisted = new ArrayList<>();
         AtomicReference<RagEvidenceBundle> persistedBundle = new AtomicReference<>();
@@ -235,12 +236,13 @@ final class RagFindingProductionEvaluation {
             List<com.codereviewx.backend.rag.retrieval.RerankCandidate> candidates = invocation.getArgument(1);
             return List.of(new RerankedChunk(candidates.get(0), 1.0));
         });
-        when(mimoClient.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.taskPlanJson());
-        when(mimoClient.complete(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn("{\"summary\":\"no AI finding\",\"findings\":[]}");
-        when(mimoClient.complete(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
-                .thenReturn(TestMiMoAgentResponses.approvedGateJson());
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.taskPlanJson()));
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(
+                        "{\"summary\":\"no AI finding\",\"findings\":[]}"));
+        when(mimoClient.completeWithUsage(eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.completion(TestMiMoAgentResponses.approvedGateJson()));
 
         CreateReviewTaskRequest request = new CreateReviewTaskRequest();
         request.setRepoUrl("https://github.com/evals/sample-repo");

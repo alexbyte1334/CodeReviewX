@@ -29,4 +29,22 @@ MIMO_EXECUTOR_API_KEY=... \
 
 A live dynamic result is not sufficient for productization: the decision
 remains blocked until the current Java pipeline is executed against the same
-versioned corpus, including its measured token baseline.
+versioned corpus, including its measured token baseline. Start the Spring
+service with MiMo configured, then run:
+
+```bash
+.venv/bin/python -m codereviewx_agent.fixed_pipeline_eval \
+  --base-url http://localhost:8080 \
+  --repetitions 3
+
+.venv/bin/python -m codereviewx_agent.eval_runner \
+  --provider mimo \
+  --repetitions 3 \
+  --fixed-report .runtime-evals/fixed-java-live-latest.json
+```
+
+The fixed runner generates bounded synthetic diffs from the same 12 cases and
+calls the real synchronous Java `ReviewTask` pipeline. It reads only bounded
+issues, run status, latency, and provider token totals; it never invokes a
+GitHub publishing endpoint. An incomplete or failed fixed report cannot unlock
+the LangGraph productization decision.

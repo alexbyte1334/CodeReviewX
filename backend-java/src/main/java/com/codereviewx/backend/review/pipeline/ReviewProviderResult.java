@@ -16,6 +16,9 @@ public class ReviewProviderResult {
     private final String requestedProvider;
     /** Whether the requested provider was actually used (no fallback). */
     private final boolean providerHit;
+    private final Integer promptTokens;
+    private final Integer completionTokens;
+    private final Integer totalTokens;
 
     public ReviewProviderResult(List<ReviewFinding> findings,
                                 String providerName,
@@ -30,12 +33,28 @@ public class ReviewProviderResult {
                                 String message,
                                 String requestedProvider,
                                 boolean providerHit) {
+        this(findings, providerName, successful, message, requestedProvider,
+                providerHit, null, null, null);
+    }
+
+    public ReviewProviderResult(List<ReviewFinding> findings,
+                                String providerName,
+                                boolean successful,
+                                String message,
+                                String requestedProvider,
+                                boolean providerHit,
+                                Integer promptTokens,
+                                Integer completionTokens,
+                                Integer totalTokens) {
         this.findings = findings;
         this.providerName = providerName;
         this.successful = successful;
         this.message = message;
         this.requestedProvider = requestedProvider;
         this.providerHit = providerHit;
+        this.promptTokens = promptTokens;
+        this.completionTokens = completionTokens;
+        this.totalTokens = totalTokens;
     }
 
     public List<ReviewFinding> getFindings() {
@@ -60,6 +79,18 @@ public class ReviewProviderResult {
 
     public boolean isProviderHit() {
         return providerHit;
+    }
+
+    public Integer getPromptTokens() {
+        return promptTokens;
+    }
+
+    public Integer getCompletionTokens() {
+        return completionTokens;
+    }
+
+    public Integer getTotalTokens() {
+        return totalTokens;
     }
 
     public String getProviderUsed() {
