@@ -166,8 +166,8 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 | `GITHUB_PER_FILE_CONTEXT_MAX_BYTES` | 单文件 context 内容截断阈值 | `12000` |
 | `GITHUB_MAX_CONTEXT_BYTES` | 单次 review context 总字节上限 | `48000` |
 | `BACKEND_PORT` | 后端端口 | `8080` |
-| `DEMO_PR_NUMBER` | 固定 DemoTarget PR；未配置时 Live API fail closed | `0` |
-| `DEMO_EXPECTED_HEAD_SHA` | 固定 DemoTarget head SHA | — |
+| `DEMO_PR_NUMBER` | 固定 [DemoTarget PR #1](https://github.com/alexbyte1334/CodeReviewX-DemoTarget/pull/1) | `1` |
+| `DEMO_EXPECTED_HEAD_SHA` | 固定 DemoTarget head SHA | `d5aa95a3f43f23ca438e53e94c4d3bed4868904a` |
 | `DEMO_ADMIN_TOKEN` | 仅所有者发布使用；不得进入 Pages | — |
 | `DEMO_IP_HASH_SALT` | 限流 IP 哈希盐 | — |
 

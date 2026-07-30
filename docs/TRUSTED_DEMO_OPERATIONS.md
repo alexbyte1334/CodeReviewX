@@ -5,8 +5,12 @@ service backed by one PostgreSQL/pgvector service. No Python Worker is deployed.
 
 ## Provisioning
 
-1. Create `alexbyte1334/CodeReviewX-DemoTarget` as a public repository.
-2. Open one stable SQL-injection PR and record its PR number, base SHA, and head SHA.
+1. Use the public
+   [`alexbyte1334/CodeReviewX-DemoTarget`](https://github.com/alexbyte1334/CodeReviewX-DemoTarget)
+   repository.
+2. Keep [SQL-injection PR #1](https://github.com/alexbyte1334/CodeReviewX-DemoTarget/pull/1)
+   open and pinned to base `0726356f24df82e9827bb9182d0e5f006070ce76`
+   and head `d5aa95a3f43f23ca438e53e94c4d3bed4868904a`.
 3. Pre-index that exact 1024-dimensional head SHA.
 4. Deploy `backend-java/Dockerfile` through `railway.json` with the
    `postgres` Spring profile.
