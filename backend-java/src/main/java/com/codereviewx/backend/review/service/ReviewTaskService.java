@@ -28,6 +28,9 @@ import com.codereviewx.backend.rag.retrieval.RagEvidenceBundle;
 import com.codereviewx.backend.rag.service.RagReviewContextFacade;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.ObjectProvider;
+import com.codereviewx.backend.demo.DemoStore;
+import com.codereviewx.backend.demo.DemoScenarioGuard;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -53,6 +56,8 @@ public class ReviewTaskService {
     private final RagReviewContextFacade ragReviewContextFacade;
     private final ReviewEvidenceValidator evidenceValidator;
     private final ReviewIssueEvidencePersister evidencePersister;
+    private final ObjectProvider<DemoStore> demoStore;
+    private final ObjectProvider<DemoScenarioGuard> demoScenarioGuard;
 
     public ReviewTaskService(ReviewTaskRepository reviewTaskRepository,
                              ReviewIssueRepository reviewIssueRepository,
@@ -67,7 +72,9 @@ public class ReviewTaskService {
                              ReviewStaticAnalysisService staticAnalysisService,
                              RagReviewContextFacade ragReviewContextFacade,
                              ReviewEvidenceValidator evidenceValidator,
-                             ReviewIssueEvidencePersister evidencePersister) {
+                             ReviewIssueEvidencePersister evidencePersister,
+                             ObjectProvider<DemoStore> demoStore,
+                             ObjectProvider<DemoScenarioGuard> demoScenarioGuard) {
         this.reviewTaskRepository = reviewTaskRepository;
         this.reviewIssueRepository = reviewIssueRepository;
         this.reviewRunRepository = reviewRunRepository;
@@ -82,6 +89,8 @@ public class ReviewTaskService {
         this.ragReviewContextFacade = ragReviewContextFacade;
         this.evidenceValidator = evidenceValidator;
         this.evidencePersister = evidencePersister;
+        this.demoStore = demoStore;
+        this.demoScenarioGuard = demoScenarioGuard;
     }
 
     /**
@@ -123,6 +132,28 @@ public class ReviewTaskService {
         );
         return completeProviderReview(savedTask, savedRun, normalizedDiffText, normalizedProvider,
                 staticFindings, null, null);
+    }
+
+    /**
+     * Executes a task/run pair that was created by the durable demo queue.
+     * Creation and execution intentionally use separate transactions so an API
+     * request never owns the long-running model transaction.
+     */
+    public ReviewTaskResponse executeExistingGithubTask(Long taskId, Long runId) {
+        ReviewTaskEntity task = reviewTaskRepository.findById(taskId)
+                .orElseThrow(() -> new ReviewTaskNotFoundException(taskId));
+        ReviewRunEntity run = reviewRunRepository.findById(runId)
+                .orElseThrow(() -> new ReviewRequestInvalidException("Review run not found"));
+        if (!taskId.equals(run.getReviewTaskId()) || !runId.equals(task.getLatestRunId())) {
+            throw new ReviewRequestInvalidException("Review task/run ownership mismatch");
+        }
+        if (task.getReviewMode() != ReviewMode.GITHUB_PR || run.getReviewMode() != ReviewMode.GITHUB_PR) {
+            throw new ReviewRequestInvalidException("Demo execution only supports GITHUB_PR");
+        }
+        task.setStatus(ReviewTaskStatus.RUNNING);
+        task.setUpdatedAt(LocalDateTime.now());
+        reviewTaskRepository.save(task);
+        return completeGithubPrIngestion(task, run, "mimo");
     }
 
     private void validateCreateRequest(CreateReviewTaskRequest request) {
@@ -181,6 +212,8 @@ public class ReviewTaskService {
                     ingestionFinishedAt);
         }
 
+        demoScenarioGuard.ifAvailable(guard -> guard.validate(run.getId(), result.getMetadata()));
+
         GithubPrDiffLoadResult diffResult = githubPrDiffLoader.load(result.getMetadata());
         LocalDateTime diffFinishedAt = LocalDateTime.now();
         reviewTraceRecorder.recordDiffLoad(run.getId(), task, diffResult, ingestionFinishedAt, diffFinishedAt);
@@ -189,6 +222,8 @@ public class ReviewTaskService {
             return completeFailedGithubPrIngestion(task, run, diffResult.getErrorCode(), diffResult.getErrorMessage(),
                     diffFinishedAt);
         }
+
+        demoStore.ifAvailable(store -> store.captureDiff(run.getId(), diffResult.getDiff().diffText()));
 
         reviewInputSnapshotService.persistGithubPrSnapshot(
                 run.getId(), task, result.getMetadata(), diffResult.getDiff(), diffFinishedAt);
