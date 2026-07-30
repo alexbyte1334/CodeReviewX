@@ -85,11 +85,14 @@ public class CommentPreviewPublishService {
         if (result.isSuccess()) {
             preview.setPublishStatus(PublishStatus.PUBLISHED);
             preview.setGithubCommentId(result.getGithubCommentId());
+            preview.setGithubCommentUrl("https://github.com/" + snapshot.getOwner() + "/" + snapshot.getRepo()
+                    + "/pull/" + snapshot.getPrNumber() + "#discussion_r" + result.getGithubCommentId());
             preview.setPublishErrorMessage(null);
             preview.setPublishedAt(finishedAt);
         } else {
             preview.setPublishStatus(PublishStatus.FAILED);
             preview.setGithubCommentId(null);
+            preview.setGithubCommentUrl(null);
             preview.setPublishErrorMessage(result.getErrorMessage());
         }
         preview.setUpdatedAt(finishedAt);

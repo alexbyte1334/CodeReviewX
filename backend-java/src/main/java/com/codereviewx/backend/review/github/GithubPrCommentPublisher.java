@@ -29,12 +29,13 @@ public class GithubPrCommentPublisher {
         }
 
         try {
-            GithubPrCommentHttpResponse response = httpClient.publishPullRequestComment(
-                    properties.getApiBaseUrl(),
-                    request,
-                    properties.getToken(),
-                    properties.getTimeoutSeconds()
-            );
+            boolean markerControlled = request.body() != null
+                    && request.body().contains("<!-- codereviewx-demo:");
+            GithubPrCommentHttpResponse response = markerControlled
+                    ? httpClient.upsertPullRequestComment(properties.getApiBaseUrl(), request,
+                    properties.getToken(), properties.getTimeoutSeconds())
+                    : httpClient.publishPullRequestComment(properties.getApiBaseUrl(), request,
+                    properties.getToken(), properties.getTimeoutSeconds());
             return toResult(response);
         } catch (GithubPrCommentClientException ex) {
             return GithubPrCommentPublishResult.failure(COMMENT_FAILED_MESSAGE);
@@ -43,7 +44,7 @@ public class GithubPrCommentPublisher {
 
     private GithubPrCommentPublishResult toResult(GithubPrCommentHttpResponse response) {
         int status = response.statusCode();
-        if (status == 201 && response.commentId() != null) {
+        if ((status == 200 || status == 201) && response.commentId() != null) {
             return GithubPrCommentPublishResult.success(response.commentId());
         }
         if (status == 401 || status == 403 && !response.rateLimited()) {

@@ -51,7 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.mockito.ArgumentCaptor;
 
-@SpringBootTest
+@SpringBootTest(properties = "codereviewx.demo.admin-token=test-admin")
 @AutoConfigureMockMvc
 class ReviewRunControllerTest {
 
@@ -159,6 +159,7 @@ class ReviewRunControllerTest {
     void publishCommentPreview_rejectsUnselectedPreview() throws Exception {
         mockMvc.perform(post("/api/review-runs/" + seededRunId
                         + "/comment-previews/" + seededPreviewId + "/publish")
+                        .header("Authorization", "Bearer test-admin")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmed\":true}"))
                 .andExpect(status().isBadRequest())
@@ -172,6 +173,7 @@ class ReviewRunControllerTest {
 
         mockMvc.perform(post("/api/review-runs/" + seededRunId
                         + "/comment-previews/" + seededPreviewId + "/publish")
+                        .header("Authorization", "Bearer test-admin")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmed\":false}"))
                 .andExpect(status().isBadRequest())
@@ -198,6 +200,7 @@ class ReviewRunControllerTest {
 
         mockMvc.perform(post("/api/review-runs/" + seededRunId
                         + "/comment-previews/" + seededPreviewId + "/publish")
+                        .header("Authorization", "Bearer test-admin")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmed\":true}"))
                 .andExpect(status().isOk())
@@ -229,6 +232,7 @@ class ReviewRunControllerTest {
                 .thenReturn(GithubPrCommentPublishResult.failure("GitHub rejected the comment target."));
 
         mockMvc.perform(post("/api/review-runs/" + seededRunId + "/comment-previews/publish-selected")
+                        .header("Authorization", "Bearer test-admin")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmed\":true}"))
                 .andExpect(status().isOk())
@@ -243,6 +247,7 @@ class ReviewRunControllerTest {
         seedInvalidSelectedPreviewWithoutLine();
 
         mockMvc.perform(post("/api/review-runs/" + seededRunId + "/comment-previews/publish-selected")
+                        .header("Authorization", "Bearer test-admin")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmed\":true}"))
                 .andExpect(status().isBadRequest())
@@ -261,6 +266,15 @@ class ReviewRunControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success", is(false)))
                 .andExpect(jsonPath("$.message", is("Review run not found")));
+    }
+
+    @Test
+    void legacyPublishEndpoint_rejectsAnonymousRequests() throws Exception {
+        mockMvc.perform(post("/api/review-runs/" + seededRunId
+                        + "/comment-previews/" + seededPreviewId + "/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmed\":true}"))
+                .andExpect(status().isForbidden());
     }
 
     private void selectSeededPreview() {

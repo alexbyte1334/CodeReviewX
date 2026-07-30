@@ -1,8 +1,8 @@
 # CodeReviewX Architecture
 
 > Current architecture, aligned with the implementation in this repository.
-> Historical plans for a separate Python `ai-service` are documented as future
-> expansion, not as the current runtime shape.
+> The production runtime is React + Spring Boot + PostgreSQL/pgvector. A Python
+> dynamic-agent spike is an evaluation-only architecture gate, not a service.
 
 ## 1. Product Boundary
 
@@ -53,9 +53,7 @@ External HTTP dependencies:
   - Xiaomi MiMo OpenAI-compatible API
 ```
 
-There is no active `ai-service` process in the current implementation. The
-`ai-service/` folder is retained only as a historical placeholder and possible
-future extraction target.
+There is no Python runtime process in the current implementation.
 
 ## 3. Main User Flow
 
@@ -129,6 +127,8 @@ Responsibilities:
 - Display issue summary, risk level, provider hit state, agent trace, and
   comment previews.
 - Let the user select comment previews and explicitly confirm publish actions.
+- Render the same snapshot contract for Live and Replay, with the mode always visible.
+- Restore a Live run by opaque UUID and replay SSE from the last sequence.
 
 Boundaries:
 
@@ -153,8 +153,10 @@ Responsibilities:
 - Normalize approved model output into structured issues.
 - Persist review tasks, runs, issues, traces, sanitized snapshots, and comment
   previews.
-- Publish selected comment previews to GitHub only after explicit user
-  confirmation.
+- Publish selected comment previews to GitHub only after explicit owner
+  authentication.
+- Create public Demo runs in a short transaction and execute them through a
+  PostgreSQL-backed lease queue.
 
 Boundaries:
 
@@ -166,19 +168,14 @@ Boundaries:
 - Does not execute the external Semgrep binary in the request path; current
   request-time static findings are built-in lightweight rules.
 
-### ai-service
+### Public Demo execution boundary
 
-Current status:
-
-- Placeholder only.
-- No runtime process is required.
-- Not referenced by the active frontend/backend flow.
-
-Future extraction option:
-
-- A later version may extract the existing in-process RAG indexing and provider
-  orchestration into a dedicated worker/service. External Semgrep execution
-  also remains a possible extraction.
+- `POST /api/demo-runs` accepts only `sql-injection-pr` and returns an opaque UUID.
+- A Spring Worker recovers expired leases and resets partial projections before retry.
+- `review_run_event` is the append-only SSE/audit projection.
+- Anonymous decisions only select previews; they never call GitHub.
+- Only `/api/admin/demo-runs/{uuid}/publish` can publish, with a server-side bearer token.
+- The pinned repository, PR number, and head SHA are revalidated before model use and publish.
 
 ## 5. Review Modes
 

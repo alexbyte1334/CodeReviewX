@@ -34,6 +34,7 @@ public class HealthController {
         data.put("dependencies", Map.of(
                 "database", state(snapshot.database()),
                 "github", state(snapshot.github()),
+                "mimo", state(mimoProperties.hasRoleApiKeys()),
                 "embedding", state(snapshot.embedding()),
                 "rerank", state(snapshot.rerank())));
         return ApiResponse.success(data);

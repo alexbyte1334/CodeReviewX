@@ -1,7 +1,6 @@
 # CodeReviewX API
 
-> Current frontend-to-backend REST API. Historical `backend-java -> ai-service`
-> API sketches are no longer part of the active runtime.
+> Current frontend-to-backend REST API. No Python service is part of the runtime.
 
 ## 1. Base URL and Envelope
 
@@ -288,11 +287,17 @@ NOT_PUBLISHED -> PUBLISHING -> PUBLISHED | FAILED
 | `MIMO_PROVIDER_ERROR` | provider request or structured parsing failed |
 | `MIMO_GATE_REJECTED` | AI-1 gate rejected AI-2 candidate review |
 
-## 7. Removed Historical API Surface
+## 7. Trusted Demo API
 
-The old document described a planned Python FastAPI `ai-service` API. That
-service is not implemented and is not called by the current application. All
-active review orchestration lives in `backend-java`.
+`POST /api/demo-runs` requires a UUID `Idempotency-Key` and accepts only
+`{"scenarioId":"sql-injection-pr"}`. It returns HTTP 202 with opaque snapshot
+and event URLs. `GET /api/demo-runs/{uuid}/events` is an SSE stream with
+monotonic IDs and Last-Event-ID replay. `POST /api/demo-runs/{uuid}/decision`
+accepts `APPROVE_PREVIEW` or `REJECT` and never writes to GitHub.
+
+GitHub writes are isolated to `POST /api/admin/demo-runs/{uuid}/publish`, which
+requires `Authorization: Bearer <DEMO_ADMIN_TOKEN>`. The token must never be
+placed in Pages, URLs, logs, or recorded snapshots.
 # RAG API contract (implemented routes)
 
 RAG routes are available only when `RAG_ENABLED=true`; they return bounded
@@ -307,7 +312,7 @@ metadata/evidence excerpts, never full chunks or secrets:
 | GET | `/api/review-tasks/{taskId}/issues/{issueKey}/evidence` | bounded issue evidence |
 | POST | `/api/review-tasks` | review; RAG selection is server-side by task id bucket |
 | GET | `/api/review-runs/{runId}/comment-previews` | preview/evidence-safe metadata |
-| POST | `/api/review-runs/{runId}/comment-previews/{previewId}/publish` | publish only with `confirmed:true` |
+| POST | `/api/review-runs/{runId}/comment-previews/{previewId}/publish` | legacy owner-only publish; bearer token required |
 
 Index job states are `QUEUED -> RUNNING -> READY|FAILED`; an absent repository
 returns `RAG_NOT_FOUND`; an existing repository with no matching job returns

@@ -56,6 +56,21 @@ class GithubPrCommentPublisherTest {
         assertThat(result.getErrorMessage()).contains("comment target");
     }
 
+    @Test
+    void publish_demoMarkerUsesIdempotentUpsert() {
+        RecordingClient client = new RecordingClient(new GithubPrCommentHttpResponse(200, false, 123L));
+        GithubPrCommentPublisher publisher = new GithubPrCommentPublisher(propertiesWithToken(), client);
+        GithubPrCommentPublishRequest marked = new GithubPrCommentPublishRequest(
+                "example", "repo", 12, "head-sha", "src/App.java", 42, "RIGHT",
+                "Draft\n<!-- codereviewx-demo:sql-injection-pr:ISSUE-1 -->");
+
+        GithubPrCommentPublishResult result = publisher.publish(marked);
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(client.upsertCalled).isTrue();
+        assertThat(client.called).isFalse();
+    }
+
     private static GithubPrCommentPublishResult publishWithStatus(int status, boolean rateLimited) {
         GithubPrCommentPublisher publisher = new GithubPrCommentPublisher(
                 propertiesWithToken(),
@@ -86,6 +101,7 @@ class GithubPrCommentPublisherTest {
     private static class RecordingClient implements GithubPrCommentHttpClient {
         private final GithubPrCommentHttpResponse response;
         private boolean called;
+        private boolean upsertCalled;
 
         private RecordingClient(GithubPrCommentHttpResponse response) {
             this.response = response;
@@ -97,6 +113,14 @@ class GithubPrCommentPublisherTest {
                                                                      String token,
                                                                      int timeoutSeconds) {
             called = true;
+            return response;
+        }
+
+        @Override
+        public GithubPrCommentHttpResponse upsertPullRequestComment(
+                String apiBaseUrl, GithubPrCommentPublishRequest publishRequest,
+                String token, int timeoutSeconds) {
+            upsertCalled = true;
             return response;
         }
     }

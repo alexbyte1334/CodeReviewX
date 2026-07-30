@@ -40,8 +40,7 @@ React frontend
      -> Xiaomi MiMo planner / executor / gatekeeper APIs
 ```
 
-There is no active Python `ai-service` process in the current runtime.
-`ai-service/` remains only as a historical placeholder; the active runtime is
+There is no active Python service in the current runtime. The active runtime is
 fully implemented in `backend-java`. The production profile includes
 restart-safe indexing, PostgreSQL/pgvector hybrid retrieval, reranking, evidence
 persistence, rollout switches, and an explicit legacy fallback. Local Docker,
@@ -62,6 +61,8 @@ delivery was merged into `main` after GitHub Actions passed.
   ReviewProviderTrace, and ReviewCommentPreview persistence.
 - Fail-fast error handling for missing provider credentials, invalid provider
   output, missing GitHub token, and unsafe publish requests.
+- Durable public Demo runs, execution leases, append-only events, rate buckets,
+  explicit Replay fallback, and owner-controlled publishing.
 
 ### GitHub PR Input
 
@@ -111,7 +112,8 @@ github.pr.metadata.load
 
 - Local comment previews are generated from persisted issues.
 - The frontend lets the user select previews.
-- Publishing requires `confirmed=true`.
+- Public Demo publishing requires a server-only admin bearer token in addition
+  to selected previews and all evidence/target validations.
 - The backend validates target metadata and selected preview ownership.
 - Publish status is persisted as `NOT_PUBLISHED`, `PUBLISHING`, `PUBLISHED`, or
   `FAILED`.
@@ -150,8 +152,8 @@ Keep these invariants true:
   are ignored or absent from the public repository.
 - Public APIs do not return GitHub tokens, MiMo keys, Authorization headers,
   raw prompts, raw model output, or raw full diff.
-- GitHub comment publishing requires both selected previews and explicit user
-  confirmation.
+- GitHub comment publishing requires selected previews and explicit owner
+  authorization for public or legacy HTTP routes.
 - GitHub token permissions should be minimized to Metadata read, Contents read,
   and Pull requests read/write for comment publishing.
 
@@ -162,6 +164,7 @@ Backend:
 ```bash
 cd backend-java
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn test
+JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn verify -Ppostgres-integration
 ```
 
 Frontend:

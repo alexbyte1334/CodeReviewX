@@ -6,4 +6,10 @@ public interface GithubPrCommentHttpClient {
                                                           GithubPrCommentPublishRequest publishRequest,
                                                           String token,
                                                           int timeoutSeconds);
+
+    default GithubPrCommentHttpResponse upsertPullRequestComment(
+            String apiBaseUrl, GithubPrCommentPublishRequest publishRequest,
+            String token, int timeoutSeconds) {
+        return publishPullRequestComment(apiBaseUrl, publishRequest, token, timeoutSeconds);
+    }
 }

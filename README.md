@@ -5,9 +5,12 @@
 [![Java 17](https://img.shields.io/badge/Java-17-blue.svg)](backend-java)
 [![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](frontend)
 
-## [▶ Open the Live Interview Demo](https://alexbyte1334.github.io/CodeReviewX/)
+## [▶ Open the Trusted Interview Demo](https://alexbyte1334.github.io/CodeReviewX/)
 
-The GitHub Pages link opens directly in the offline-safe Story Mode. It walks through PR ingestion, hybrid RAG, dual-agent review, evidence gating, and human-approved GitHub comments without backend credentials; use **Exit demo** to inspect the full workspace.
+GitHub Pages opens a versioned **Recorded Review Story** when the API is
+unavailable. When `DEMO_API_BASE_URL` is configured, **Run live review** starts
+a real, recoverable run against one pinned public PR. Live and Replay modes are
+always labelled; anonymous approval never writes to GitHub.
 
 面向 Java / Python 等项目的 **AI 辅助代码审查 Agent**。在本地创建审查任务，粘贴 PR 信息或直接提交 GitHub PR，获取结构化的风险等级、问题摘要与修复建议。Production profile 提供 PostgreSQL/pgvector full-repository hybrid RAG；默认 H2 demo profile 禁用 RAG，legacy bounded context 仅作为显式 fallback。
 
@@ -21,6 +24,7 @@ The GitHub Pages link opens directly in the offline-safe Story Mode. It walks th
 | AI 审查 | MiMo planner → executor → gatekeeper；gate 拒绝会 fail fast，不静默回退 |
 | 生产 RAG | PostgreSQL/pgvector 混合检索、RRF、rerank、证据预算与 commit 隔离 |
 | GitHub 集成 | PR metadata/diff 拉取、comment preview、人工确认后发布 |
+| 可信公开 Demo | 固定场景、异步 lease Worker、SSE 恢复、显式 Replay、所有者受控发布 |
 | 工程门禁 | 后端/前端测试、离线 eval、Semgrep、secret/dependency scan、Docker build |
 | 项目阶段 | 工程化 MVP；生产部署仍需外部 embedding/rerank、认证与托管密钥能力 |
 
@@ -43,6 +47,7 @@ The GitHub Pages link opens directly in the offline-safe Story Mode. It walks th
 - **MiMo 双 AI agent** — AI-1 负责 task plan 与质量 gate，AI-2 负责执行审查，获批 JSON 由 IssueGenerator 生成 issues
 - **Static Finding 合并** — 手动 diff 与 GitHub PR 变更会生成 Semgrep-style finding；GitHub PR changed-file context 会补充 dependency hygiene finding
 - **Human-in-the-loop 评论发布** — 前端选择 comment preview，确认后调用 GitHub PR review comment API
+- **Trusted Demo boundary** — public UUID、固定 PR/head SHA、每 IP 限流、SSE 事件重放；匿名决策和管理员发布彻底分离
 - **Provider 命中反馈** — 每次审查返回 `requestedProvider`、`providerUsed`、`providerHit`
 - **Fail fast** — 缺少 MiMo role key、模型 JSON 非法或 gate 拒绝时任务失败，不回退到 Mock
 - **结构化输出** — 每条 issue 含 severity、category、文件路径、行号、标题、描述与建议
@@ -161,6 +166,10 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 | `GITHUB_PER_FILE_CONTEXT_MAX_BYTES` | 单文件 context 内容截断阈值 | `12000` |
 | `GITHUB_MAX_CONTEXT_BYTES` | 单次 review context 总字节上限 | `48000` |
 | `BACKEND_PORT` | 后端端口 | `8080` |
+| `DEMO_PR_NUMBER` | 固定 DemoTarget PR；未配置时 Live API fail closed | `0` |
+| `DEMO_EXPECTED_HEAD_SHA` | 固定 DemoTarget head SHA | — |
+| `DEMO_ADMIN_TOKEN` | 仅所有者发布使用；不得进入 Pages | — |
+| `DEMO_IP_HASH_SALT` | 限流 IP 哈希盐 | — |
 
 ---
 
@@ -172,6 +181,11 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 | `POST` | `/api/review-tasks` | 创建审查任务 |
 | `GET` | `/api/review-tasks` | 任务列表 |
 | `GET` | `/api/review-tasks/{id}` | 任务详情 |
+| `POST` | `/api/demo-runs` | 异步创建白名单 Live Run（需 UUID Idempotency-Key） |
+| `GET` | `/api/demo-runs/{uuid}` | 获取可恢复公开快照 |
+| `GET` | `/api/demo-runs/{uuid}/events` | SSE 事件流，支持 Last-Event-ID |
+| `POST` | `/api/demo-runs/{uuid}/decision` | 匿名批准预览或拒绝；不写 GitHub |
+| `POST` | `/api/admin/demo-runs/{uuid}/publish` | Bearer 管理员受控发布 |
 
 **创建任务请求示例：**
 
@@ -360,11 +374,14 @@ CodeReviewX/
 ## 运行测试
 
 ```bash
-# 后端（完整测试包含 PostgreSQL/pgvector Testcontainers，需要 Docker）
+# 快速后端测试（不需要 Docker）
 cd backend-java
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn test
 
-# 前端（当前 85 tests）
+# PostgreSQL/pgvector 集成门禁（需要 Docker）
+JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn verify -Ppostgres-integration
+
+# 前端
 cd frontend
 npm run typecheck
 npm run build
@@ -382,6 +399,7 @@ npm test -- --run
 - MCP、Function Calling
 - 生产级认证与团队协作
 - 多租户生产认证、托管密钥与 GitHub App 安装
+- 任意公开仓库/PR、匿名 GitHub 发布、自动修复
 
 GitHub PR 的 production RAG profile 会安全 clone 指定 commit 并建立有界全仓库索引；它不会执行仓库代码。H2 profile 继续使用 changed-file fallback。超大仓库或 PR 会按文件、字节、chunk 和上下文预算截断或失败。
 

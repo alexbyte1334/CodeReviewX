@@ -23,6 +23,7 @@ class HealthControllerTest {
         assertThat(data.get("dependencies")).isEqualTo(Map.of(
                 "database", "UP",
                 "github", "UP",
+                "mimo", "DOWN",
                 "embedding", "DOWN",
                 "rerank", "DOWN"));
     }
