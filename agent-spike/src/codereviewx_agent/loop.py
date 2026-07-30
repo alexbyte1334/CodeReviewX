@@ -5,6 +5,7 @@ from time import perf_counter
 from typing import Any, Protocol
 
 from .actions import ActionViolation, parse_action, safe_path, validate_findings
+from .mimo_provider import ProviderRequestError
 from .tools import RepositoryTools
 
 
@@ -22,6 +23,9 @@ class LoopResult:
     blocked: bool = False
     error_code: str | None = None
     duration_ms: int = 0
+    provider_requests: int = 0
+    provider_tokens: int = 0
+    provider_malformed_actions: int = 0
 
 
 class BoundedReviewerLoop:
@@ -68,8 +72,18 @@ class BoundedReviewerLoop:
             result.error_code = "ACTION_BLOCKED"
             result.observations.append({"error": str(error)})
             return self._finish(result, started)
+        except ProviderRequestError as error:
+            result.blocked = True
+            result.error_code = "PROVIDER_ERROR"
+            result.observations.append({"error": str(error)})
+            return self._finish(result, started)
 
-    @staticmethod
-    def _finish(result: LoopResult, started: float) -> LoopResult:
+    def _finish(self, result: LoopResult, started: float) -> LoopResult:
         result.duration_ms = int((perf_counter() - started) * 1000)
+        result.provider_requests = int(
+            getattr(self.provider, "request_count", 0))
+        result.provider_tokens = int(
+            getattr(self.provider, "total_tokens", 0))
+        result.provider_malformed_actions = int(
+            getattr(self.provider, "malformed_actions", 0))
         return result

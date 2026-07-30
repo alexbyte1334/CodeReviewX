@@ -26,6 +26,7 @@ __pycache__/
 venv/
 .pytest_cache/
 .mypy_cache/
+agent-spike/.runtime-evals/
 
 # Node / Frontend
 node_modules/
