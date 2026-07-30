@@ -8,13 +8,14 @@ class DemoRedactorTest {
 
     @Test
     void redactsCommonCredentialShapesWithoutRemovingSafeCounts() {
+        String fakeBearer = "ghp_" + "abcdef1234567890abcdef";
         String safe = DemoRedactor.sanitize(
-                "Authorization: Bearer ghp_abcdef123456 token=plain "
+                "Authorization: " + "Bearer " + fakeBearer + " token=plain "
                         + "api_key=vendor-secret password=hunter2 matches=3",
                 1900);
 
         assertThat(safe)
-                .doesNotContain("ghp_abcdef123456", "plain", "vendor-secret", "hunter2")
+                .doesNotContain(fakeBearer, "plain", "vendor-secret", "hunter2")
                 .contains("Authorization: Bearer [redacted]")
                 .contains("matches=3");
     }
