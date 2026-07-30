@@ -1,0 +1,19 @@
+[project]
+name = "codereviewx-agent-spike"
+version = "0.1.0"
+description = "Evaluation-only bounded LangGraph reviewer spike"
+requires-python = ">=3.12"
+dependencies = [
+  "langgraph>=0.2,<1.0"
+]
+
+[project.scripts]
+codereviewx-agent-eval = "codereviewx_agent.eval_runner:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
