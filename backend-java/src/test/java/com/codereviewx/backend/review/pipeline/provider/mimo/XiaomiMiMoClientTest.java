@@ -12,6 +12,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class XiaomiMiMoClientTest {
@@ -104,5 +105,28 @@ class XiaomiMiMoClientTest {
         assertThatThrownBy(() -> client.complete("system", "user"))
                 .isInstanceOf(XiaomiMiMoClientException.class)
                 .hasMessageContaining("HTTP 400");
+        server.verify();
+    }
+
+    @Test
+    void complete_retriesOneTransientServerFailure() {
+        XiaomiMiMoProperties properties = new XiaomiMiMoProperties();
+        properties.setBaseUrl("https://api.example.com/v1");
+        properties.setModel("mimo-v2.5-pro");
+        properties.setApiKey("test-key");
+
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.example.com/v1/chat/completions"))
+                .andRespond(withServerError());
+        server.expect(requestTo("https://api.example.com/v1/chat/completions"))
+                .andRespond(withSuccess("""
+                        {"choices":[{"message":{"role":"assistant","content":"{}"}}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        XiaomiMiMoClient client = new XiaomiMiMoClient(properties, builder.build());
+
+        assertThat(client.complete("system", "user")).isEqualTo("{}");
+        server.verify();
     }
 }

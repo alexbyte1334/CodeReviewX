@@ -108,6 +108,24 @@ class XiaomiMiMoReviewProviderTest {
     }
 
     @Test
+    void review_recordsSafeClientFailureWithoutPromptOrKey() {
+        org.mockito.Mockito.when(client.complete(
+                        eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenThrow(new XiaomiMiMoClientException("MiMo API returned HTTP 503", null, true));
+
+        assertThatThrownBy(() -> provider.review(context))
+                .isInstanceOf(MiMoAgentException.class)
+                .extracting("errorCode")
+                .isEqualTo(ReviewErrorCodes.MIMO_PROVIDER_ERROR);
+
+        assertThat(context.getAgentSteps()).singleElement().satisfies(step -> {
+            assertThat(step.getErrorCode()).isEqualTo(ReviewErrorCodes.MIMO_PROVIDER_ERROR);
+            assertThat(step.getOutputSummary()).isEqualTo("MiMo API returned HTTP 503");
+            assertThat(step.getOutputSummary()).doesNotContain("planner-key", "diff --git");
+        });
+    }
+
+    @Test
     void review_rejectsInvalidExecutorJson() {
         org.mockito.Mockito.when(client.complete(eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
                 .thenReturn(TestMiMoAgentResponses.taskPlanJson());

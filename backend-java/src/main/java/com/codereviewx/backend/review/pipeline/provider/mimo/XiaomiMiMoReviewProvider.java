@@ -140,6 +140,18 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
                     ex.getMessage()
             ));
             throw ex;
+        } catch (XiaomiMiMoClientException ex) {
+            LocalDateTime finishedAt = LocalDateTime.now();
+            context.addAgentStep(new ReviewAgentStep(
+                    stepName,
+                    ToolTraceStatus.FAILED,
+                    startedAt,
+                    finishedAt,
+                    ex.getMessage(),
+                    ReviewErrorCodes.MIMO_PROVIDER_ERROR,
+                    ex.getMessage()
+            ));
+            throw ex;
         } catch (RuntimeException ex) {
             LocalDateTime finishedAt = LocalDateTime.now();
             context.addAgentStep(new ReviewAgentStep(

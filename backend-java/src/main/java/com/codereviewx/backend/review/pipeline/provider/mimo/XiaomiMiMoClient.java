@@ -18,6 +18,7 @@ import java.util.List;
 public class XiaomiMiMoClient {
 
     private static final double DEFAULT_TEMPERATURE = 0.2;
+    private static final int MAX_ATTEMPTS = 2;
 
     private final RestClient restClient;
     private final XiaomiMiMoProperties properties;
@@ -64,6 +65,21 @@ public class XiaomiMiMoClient {
 
         String url = normalizeBaseUrl(properties.getBaseUrl()) + "/chat/completions";
 
+        XiaomiMiMoClientException lastFailure = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                return execute(url, apiKey, request);
+            } catch (XiaomiMiMoClientException ex) {
+                lastFailure = ex;
+                if (!ex.isRetryable() || attempt == MAX_ATTEMPTS) {
+                    throw ex;
+                }
+            }
+        }
+        throw lastFailure;
+    }
+
+    private String execute(String url, String apiKey, XiaomiMiMoClientRequest request) {
         try {
             XiaomiMiMoClientResponse response = restClient.post()
                     .uri(url)
@@ -75,10 +91,13 @@ public class XiaomiMiMoClient {
 
             return extractContent(response);
         } catch (RestClientResponseException ex) {
+            int status = ex.getStatusCode().value();
             throw new XiaomiMiMoClientException(
-                    "MiMo API returned HTTP " + ex.getStatusCode().value(), ex);
+                    "MiMo API returned HTTP " + status,
+                    ex,
+                    status == 408 || status == 429 || status >= 500);
         } catch (RestClientException ex) {
-            throw new XiaomiMiMoClientException("MiMo API request failed", ex);
+            throw new XiaomiMiMoClientException("MiMo API network request failed", ex, true);
         }
     }
 
