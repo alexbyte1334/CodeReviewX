@@ -12,7 +12,7 @@ public class XiaomiMiMoProperties {
     private String plannerApiKey = "";
     private String executorApiKey = "";
     /** Connect and read timeout for MiMo HTTP calls (seconds). */
-    private int timeoutSeconds = 30;
+    private int timeoutSeconds = 45;
     /** Hard output budget shared by the bounded planner, executor and gatekeeper calls. */
     private int maxCompletionTokens = 1024;
     // Reasoning tokens are included in MiMo's completion budget. The real PR

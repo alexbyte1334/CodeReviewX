@@ -157,7 +157,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 | `MIMO_EXECUTOR_API_KEY` | AI-2 Executor MiMo API Key | — |
 | `MIMO_BASE_URL` | API 地址 | `https://api.xiaomimimo.com/v1` |
 | `MIMO_MODEL` | 模型名称 | `mimo-v2.5-pro` |
-| `MIMO_TIMEOUT_SECONDS` | 单次请求超时（秒）；三阶段总时限仍由 Demo deadline 控制 | `30` |
+| `MIMO_TIMEOUT_SECONDS` | 单次请求超时（秒）；三阶段总时限仍由 Demo deadline 控制 | `45` |
 | `MIMO_MAX_COMPLETION_TOKENS` | 所有 MiMo 调用的全局输出预算上限 | `1024` |
 | `MIMO_PLANNER_MAX_COMPLETION_TOKENS` | Planner 输出预算（包含推理 token） | `1024` |
 | `MIMO_EXECUTOR_MAX_COMPLETION_TOKENS` | Executor 输出预算 | `1024` |
