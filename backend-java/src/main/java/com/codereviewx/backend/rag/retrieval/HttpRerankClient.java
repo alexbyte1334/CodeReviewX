@@ -62,10 +62,13 @@ public class HttpRerankClient implements RerankClient {
         }
 
         if (metrics != null) metrics.recordRerankRequest();
-        List<RerankDocument> requestCandidates = candidates.stream()
-                .map(candidate -> new RerankDocument(candidate.chunkId(), com.codereviewx.backend.rag.security.RagSecurityPolicy.redactOutbound(candidate.text())))
+        List<String> requestDocuments = candidates.stream()
+                .map(candidate -> com.codereviewx.backend.rag.security.RagSecurityPolicy.redactOutbound(candidate.text()))
                 .toList();
-        String requestBody = writeRequest(new RerankRequest(properties.getRerankModel(), com.codereviewx.backend.rag.security.RagSecurityPolicy.redactOutbound(query), requestCandidates));
+        String requestBody = writeRequest(new RerankRequest(
+                properties.getRerankModel(),
+                com.codereviewx.backend.rag.security.RagSecurityPolicy.redactOutbound(query),
+                requestDocuments));
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
                 .header("Authorization", "Bearer " + properties.getRerankApiKey())
@@ -191,10 +194,7 @@ public class HttpRerankClient implements RerankClient {
         return "HttpRerankClient{model='" + properties.getRerankModel() + "'}";
     }
 
-    private record RerankRequest(String model, String query, List<RerankDocument> candidates) {
-    }
-
-    private record RerankDocument(String id, String text) {
+    private record RerankRequest(String model, String query, List<String> documents) {
     }
 
     private record IndexedChunk(int originalIndex, RerankedChunk chunk) {

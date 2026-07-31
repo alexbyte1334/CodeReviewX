@@ -94,7 +94,7 @@ public interface DeliveryReadinessService {
                 if (probe != Probe.GITHUB) {
                     String body = probe == Probe.EMBEDDING
                             ? "{\"model\":\"" + rag.getEmbeddingModel() + "\",\"input\":[\"health\"]}"
-                            : "{\"model\":\"" + rag.getRerankModel() + "\",\"query\":\"health\",\"documents\":[{\"id\":\"health\",\"text\":\"health\"}]}";
+                            : "{\"model\":\"" + rag.getRerankModel() + "\",\"query\":\"health\",\"documents\":[\"health\"]}";
                     builder.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body));
                 } else builder.GET();
                 HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());

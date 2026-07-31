@@ -29,8 +29,7 @@ class DeliveryReadinessServiceTest {
             HttpRequest request = invocation.getArgument(0);
             String requestBody = body(request);
             if (request.uri().getPath().endsWith("rerank")) {
-                assertThat(new ObjectMapper().readTree(requestBody).path("documents").get(0).path("id").asText()).isEqualTo("health");
-                assertThat(new ObjectMapper().readTree(requestBody).path("documents").get(0).path("text").asText()).isEqualTo("health");
+                assertThat(new ObjectMapper().readTree(requestBody).path("documents").get(0).asText()).isEqualTo("health");
             }
             String body = request.uri().getPath().endsWith("embeddings")
                     ? "{\"data\":[{\"index\":0,\"embedding\":[0.1,0.2]}]}"
