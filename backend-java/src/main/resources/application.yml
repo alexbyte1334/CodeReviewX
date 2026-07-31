@@ -70,7 +70,7 @@ codereviewx:
       planner-api-key: ${MIMO_PLANNER_API_KEY:}
       executor-api-key: ${MIMO_EXECUTOR_API_KEY:}
       timeout-seconds: ${MIMO_TIMEOUT_SECONDS:45}
-      max-completion-tokens: ${MIMO_MAX_COMPLETION_TOKENS:1024}
+      max-completion-tokens: ${MIMO_MAX_COMPLETION_TOKENS:2048}
       planner-max-completion-tokens: ${MIMO_PLANNER_MAX_COMPLETION_TOKENS:1024}
-      executor-max-completion-tokens: ${MIMO_EXECUTOR_MAX_COMPLETION_TOKENS:1024}
+      executor-max-completion-tokens: ${MIMO_EXECUTOR_MAX_COMPLETION_TOKENS:2048}
       gatekeeper-max-completion-tokens: ${MIMO_GATEKEEPER_MAX_COMPLETION_TOKENS:384}

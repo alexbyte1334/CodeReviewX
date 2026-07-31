@@ -14,11 +14,13 @@ public class XiaomiMiMoProperties {
     /** Connect and read timeout for MiMo HTTP calls (seconds). */
     private int timeoutSeconds = 45;
     /** Hard output budget shared by the bounded planner, executor and gatekeeper calls. */
-    private int maxCompletionTokens = 1024;
+    private int maxCompletionTokens = 2048;
     // Reasoning tokens are included in MiMo's completion budget. The real PR
     // planner needs the full bounded budget to reach its final JSON response.
     private int plannerMaxCompletionTokens = 1024;
-    private int executorMaxCompletionTokens = 1024;
+    // The executor receives the diff plus RAG evidence. MiMo reasoning tokens
+    // count against this budget, so 1024 can end before final JSON is emitted.
+    private int executorMaxCompletionTokens = 2048;
     private int gatekeeperMaxCompletionTokens = 384;
 
     public String getBaseUrl() {
