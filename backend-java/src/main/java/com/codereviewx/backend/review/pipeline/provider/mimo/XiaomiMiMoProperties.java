@@ -12,7 +12,9 @@ public class XiaomiMiMoProperties {
     private String plannerApiKey = "";
     private String executorApiKey = "";
     /** Connect and read timeout for MiMo HTTP calls (seconds). */
-    private int timeoutSeconds = 60;
+    private int timeoutSeconds = 25;
+    /** Hard output budget shared by the bounded planner, executor and gatekeeper calls. */
+    private int maxCompletionTokens = 1024;
 
     public String getBaseUrl() {
         return baseUrl;
@@ -44,6 +46,14 @@ public class XiaomiMiMoProperties {
 
     public void setTimeoutSeconds(int timeoutSeconds) {
         this.timeoutSeconds = timeoutSeconds;
+    }
+
+    public int getMaxCompletionTokens() {
+        return maxCompletionTokens;
+    }
+
+    public void setMaxCompletionTokens(int maxCompletionTokens) {
+        this.maxCompletionTokens = Math.max(64, maxCompletionTokens);
     }
 
     public boolean hasApiKey() {
@@ -86,6 +96,7 @@ public class XiaomiMiMoProperties {
                 + ", apiKey='***'"
                 + ", plannerApiKey='***'"
                 + ", executorApiKey='***'"
+                + ", maxCompletionTokens=" + maxCompletionTokens
                 + '}';
     }
 }

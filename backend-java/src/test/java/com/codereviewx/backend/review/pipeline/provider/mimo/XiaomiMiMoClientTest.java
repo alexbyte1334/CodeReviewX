@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -26,6 +27,9 @@ class XiaomiMiMoClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("https://api.example.com/v1/chat/completions"))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {"model":"mimo-v2.5-pro","max_completion_tokens":1024}
+                        """, false))
                 .andRespond(withSuccess("""
                         {
                           "choices": [

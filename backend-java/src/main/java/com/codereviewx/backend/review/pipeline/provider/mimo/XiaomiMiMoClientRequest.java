@@ -9,14 +9,18 @@ public class XiaomiMiMoClientRequest {
     private String model;
     private List<Message> messages;
     private double temperature;
+    @JsonProperty("max_completion_tokens")
+    private int maxCompletionTokens;
 
     public XiaomiMiMoClientRequest() {
     }
 
-    public XiaomiMiMoClientRequest(String model, List<Message> messages, double temperature) {
+    public XiaomiMiMoClientRequest(String model, List<Message> messages, double temperature,
+                                   int maxCompletionTokens) {
         this.model = model;
         this.messages = messages;
         this.temperature = temperature;
+        this.maxCompletionTokens = maxCompletionTokens;
     }
 
     public String getModel() {
@@ -41,6 +45,14 @@ public class XiaomiMiMoClientRequest {
 
     public void setTemperature(double temperature) {
         this.temperature = temperature;
+    }
+
+    public int getMaxCompletionTokens() {
+        return maxCompletionTokens;
+    }
+
+    public void setMaxCompletionTokens(int maxCompletionTokens) {
+        this.maxCompletionTokens = maxCompletionTokens;
     }
 
     public static class Message {

@@ -69,4 +69,5 @@ codereviewx:
       model: ${MIMO_MODEL:mimo-v2.5-pro}
       planner-api-key: ${MIMO_PLANNER_API_KEY:}
       executor-api-key: ${MIMO_EXECUTOR_API_KEY:}
-      timeout-seconds: ${MIMO_TIMEOUT_SECONDS:60}
+      timeout-seconds: ${MIMO_TIMEOUT_SECONDS:25}
+      max-completion-tokens: ${MIMO_MAX_COMPLETION_TOKENS:1024}
