@@ -12,9 +12,12 @@ public class XiaomiMiMoProperties {
     private String plannerApiKey = "";
     private String executorApiKey = "";
     /** Connect and read timeout for MiMo HTTP calls (seconds). */
-    private int timeoutSeconds = 25;
+    private int timeoutSeconds = 30;
     /** Hard output budget shared by the bounded planner, executor and gatekeeper calls. */
     private int maxCompletionTokens = 1024;
+    private int plannerMaxCompletionTokens = 512;
+    private int executorMaxCompletionTokens = 1024;
+    private int gatekeeperMaxCompletionTokens = 384;
 
     public String getBaseUrl() {
         return baseUrl;
@@ -54,6 +57,43 @@ public class XiaomiMiMoProperties {
 
     public void setMaxCompletionTokens(int maxCompletionTokens) {
         this.maxCompletionTokens = Math.max(64, maxCompletionTokens);
+    }
+
+    public int getPlannerMaxCompletionTokens() {
+        return plannerMaxCompletionTokens;
+    }
+
+    public void setPlannerMaxCompletionTokens(int plannerMaxCompletionTokens) {
+        this.plannerMaxCompletionTokens = Math.max(64, plannerMaxCompletionTokens);
+    }
+
+    public int getExecutorMaxCompletionTokens() {
+        return executorMaxCompletionTokens;
+    }
+
+    public void setExecutorMaxCompletionTokens(int executorMaxCompletionTokens) {
+        this.executorMaxCompletionTokens = Math.max(64, executorMaxCompletionTokens);
+    }
+
+    public int getGatekeeperMaxCompletionTokens() {
+        return gatekeeperMaxCompletionTokens;
+    }
+
+    public void setGatekeeperMaxCompletionTokens(int gatekeeperMaxCompletionTokens) {
+        this.gatekeeperMaxCompletionTokens = Math.max(64, gatekeeperMaxCompletionTokens);
+    }
+
+    int maxCompletionTokensFor(String systemPrompt) {
+        if (ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT.equals(systemPrompt)) {
+            return Math.min(maxCompletionTokens, plannerMaxCompletionTokens);
+        }
+        if (ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT.equals(systemPrompt)) {
+            return Math.min(maxCompletionTokens, executorMaxCompletionTokens);
+        }
+        if (ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT.equals(systemPrompt)) {
+            return Math.min(maxCompletionTokens, gatekeeperMaxCompletionTokens);
+        }
+        return maxCompletionTokens;
     }
 
     public boolean hasApiKey() {
@@ -97,6 +137,9 @@ public class XiaomiMiMoProperties {
                 + ", plannerApiKey='***'"
                 + ", executorApiKey='***'"
                 + ", maxCompletionTokens=" + maxCompletionTokens
+                + ", plannerMaxCompletionTokens=" + plannerMaxCompletionTokens
+                + ", executorMaxCompletionTokens=" + executorMaxCompletionTokens
+                + ", gatekeeperMaxCompletionTokens=" + gatekeeperMaxCompletionTokens
                 + '}';
     }
 }

@@ -52,6 +52,29 @@ class XiaomiMiMoClientTest {
     }
 
     @Test
+    void complete_appliesBoundedPlannerBudget() {
+        XiaomiMiMoProperties properties = new XiaomiMiMoProperties();
+        properties.setBaseUrl("https://api.example.com/v1");
+        properties.setModel("mimo-v2.5-pro");
+        properties.setApiKey("test-key");
+
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.example.com/v1/chat/completions"))
+                .andExpect(content().json("""
+                        {"max_completion_tokens":512}
+                        """, false))
+                .andRespond(withSuccess("""
+                        {"choices":[{"message":{"role":"assistant","content":"{}"}}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        XiaomiMiMoClient client = new XiaomiMiMoClient(properties, builder.build());
+
+        assertThat(client.complete(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT, "user")).isEqualTo("{}");
+        server.verify();
+    }
+
+    @Test
     void complete_throwsWhenApiKeyMissing() {
         XiaomiMiMoProperties properties = new XiaomiMiMoProperties();
         properties.setApiKey("");

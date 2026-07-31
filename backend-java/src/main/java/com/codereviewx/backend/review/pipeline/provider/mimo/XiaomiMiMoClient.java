@@ -59,7 +59,7 @@ public class XiaomiMiMoClient {
                         new XiaomiMiMoClientRequest.Message("user", userPrompt)
                 ),
                 DEFAULT_TEMPERATURE,
-                properties.getMaxCompletionTokens()
+                properties.maxCompletionTokensFor(systemPrompt)
         );
 
         String url = normalizeBaseUrl(properties.getBaseUrl()) + "/chat/completions";
