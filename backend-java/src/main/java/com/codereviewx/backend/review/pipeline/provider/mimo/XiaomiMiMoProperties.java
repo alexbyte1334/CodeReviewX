@@ -15,7 +15,9 @@ public class XiaomiMiMoProperties {
     private int timeoutSeconds = 30;
     /** Hard output budget shared by the bounded planner, executor and gatekeeper calls. */
     private int maxCompletionTokens = 1024;
-    private int plannerMaxCompletionTokens = 512;
+    // Reasoning tokens are included in MiMo's completion budget. The real PR
+    // planner needs the full bounded budget to reach its final JSON response.
+    private int plannerMaxCompletionTokens = 1024;
     private int executorMaxCompletionTokens = 1024;
     private int gatekeeperMaxCompletionTokens = 384;
 

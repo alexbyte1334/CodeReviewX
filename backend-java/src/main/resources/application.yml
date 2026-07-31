@@ -71,6 +71,6 @@ codereviewx:
       executor-api-key: ${MIMO_EXECUTOR_API_KEY:}
       timeout-seconds: ${MIMO_TIMEOUT_SECONDS:30}
       max-completion-tokens: ${MIMO_MAX_COMPLETION_TOKENS:1024}
-      planner-max-completion-tokens: ${MIMO_PLANNER_MAX_COMPLETION_TOKENS:512}
+      planner-max-completion-tokens: ${MIMO_PLANNER_MAX_COMPLETION_TOKENS:1024}
       executor-max-completion-tokens: ${MIMO_EXECUTOR_MAX_COMPLETION_TOKENS:1024}
       gatekeeper-max-completion-tokens: ${MIMO_GATEKEEPER_MAX_COMPLETION_TOKENS:384}

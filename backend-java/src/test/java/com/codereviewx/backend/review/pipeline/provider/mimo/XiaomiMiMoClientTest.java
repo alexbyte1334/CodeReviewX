@@ -63,7 +63,7 @@ class XiaomiMiMoClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("https://api.example.com/v1/chat/completions"))
                 .andExpect(content().json("""
-                        {"max_completion_tokens":512}
+                        {"max_completion_tokens":1024}
                         """, false))
                 .andRespond(withSuccess("""
                         {"choices":[{"message":{"role":"assistant","content":"{}"}}]}
