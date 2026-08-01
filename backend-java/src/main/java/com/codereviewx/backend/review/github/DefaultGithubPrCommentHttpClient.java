@@ -154,7 +154,7 @@ public class DefaultGithubPrCommentHttpClient implements GithubPrCommentHttpClie
 
     private String extractMarker(String body) {
         if (body == null) return null;
-        int start = body.indexOf("<!-- codereviewx-demo:");
+        int start = body.indexOf("<!-- codereviewx-review:");
         if (start < 0) return null;
         int end = body.indexOf("-->", start);
         return end < 0 ? null : body.substring(start, end + 3);

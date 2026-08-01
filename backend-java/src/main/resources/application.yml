@@ -33,24 +33,9 @@ management:
       include: readinessState,database,github,embedding,rerank
 
 codereviewx:
-  deployment-mode: ${CODEREVIEWX_DEPLOYMENT_MODE:public-demo}
-  demo:
-    enabled: ${DEMO_ENABLED:true}
-    scenario-id: ${DEMO_SCENARIO_ID:sql-injection-pr}
-    repo-url: ${DEMO_REPO_URL:https://github.com/alexbyte1334/CodeReviewX-DemoTarget}
-    pr-number: ${DEMO_PR_NUMBER:1}
-    expected-head-sha: ${DEMO_EXPECTED_HEAD_SHA:d5aa95a3f43f23ca438e53e94c4d3bed4868904a}
-    admin-token: ${DEMO_ADMIN_TOKEN:}
-    ip-hash-salt: ${DEMO_IP_HASH_SALT:change-me-in-production}
-    requests-per-hour: ${DEMO_REQUESTS_PER_HOUR:3}
-    concurrent-per-ip: ${DEMO_CONCURRENT_PER_IP:1}
-    global-concurrency: ${DEMO_GLOBAL_CONCURRENCY:2}
-    lease-duration: ${DEMO_LEASE_DURATION:120s}
-    execution-deadline: ${DEMO_EXECUTION_DEADLINE:90s}
-    poll-interval-ms: ${DEMO_POLL_INTERVAL_MS:500}
-    allowed-origins:
-      - ${DEMO_PAGES_ORIGIN:https://alexbyte1334.github.io}
-      - ${DEMO_LOCAL_ORIGIN:http://localhost:5173}
+  deployment-mode: self-host
+  cors:
+    allowed-origins: ${CODEREVIEWX_ALLOWED_ORIGINS:http://localhost:5173}
   rag:
     retention:
       cleanup-cron: ${RAG_RETENTION_CLEANUP_CRON:0 15 2 * * *}

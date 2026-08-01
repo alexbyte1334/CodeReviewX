@@ -3,7 +3,7 @@ package com.codereviewx.backend.review.dto;
 import java.util.List;
 
 public record ReviewApiSnapshot(String runId, String status, String mode, String repositoryUrl,
-                                Integer prNumber, Long taskId, Long reviewRunId,
+                                Integer prNumber,
                                 String snapshotUrl, String eventsUrl,
                                 ReviewTaskResponse review, List<ReviewApiEvent> events,
                                 String errorCode, String errorMessage) {

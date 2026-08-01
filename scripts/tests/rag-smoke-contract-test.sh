@@ -33,8 +33,8 @@ case "$args" in
   *"/index-status?"*)
     printf '%s\n' '{"success":true,"data":{"status":"READY"}}'
     ;;
-  *"/api/review-tasks "*)
-    printf '%s\n' '{"success":true,"data":{"id":9,"latestRunId":8,"issues":[{"id":10}]}}'
+  *"/api/reviews "*)
+    printf '%s\n' '{"success":true,"data":{"runId":"run-1","review":{"issues":[{"id":"ISSUE-1"}]}}}'
     ;;
   *"/trace "*)
     printf '%s\n' '{"success":true,"data":{"items":[{"toolName":"rag.index.ensure"},{"toolName":"rag.query.build"},{"toolName":"rag.retrieve.hybrid"},{"toolName":"rag.rerank"},{"toolName":"rag.context.assemble"}]}}'
@@ -49,7 +49,7 @@ case "$args" in
     printf '%s\n' '{"success":false}' >"$output_file"
     printf '400'
     ;;
-  *"/comment-previews "*)
+  *"/previews "*)
     printf '%s\n' '{"success":true,"data":{"items":[{"id":20,"publishStatus":"PENDING","selectedForPublish":false}]}}'
     ;;
   *)
@@ -92,7 +92,7 @@ assert_timeout() {
 }
 
 index_line="$(invocation '/api/repositories/index')"
-review_line="$(invocation '/api/review-tasks')"
+review_line="$(invocation '/api/reviews')"
 health_line="$(invocation '/api/health')"
 status_line="$(invocation '/index-status')"
 publish_line="$(invocation '/publish')"

@@ -26,7 +26,7 @@ review workflows. It demonstrates a complete engineering loop:
 The project is not positioned as a production SaaS: multi-user authentication
 and GitHub App installation remain out of scope. The production profile now
 provides bounded repository clone/indexing and semantic/vector RAG on
-PostgreSQL/pgvector; the default H2 demo profile intentionally does not.
+PostgreSQL/pgvector; the default H2 local development profile intentionally does not.
 
 ## 2. Current Runtime Shape
 
@@ -34,7 +34,7 @@ PostgreSQL/pgvector; the default H2 demo profile intentionally does not.
 React frontend
   -> Spring Boot backend-java
      -> PostgreSQL 16 + pgvector (production RAG profile)
-     -> H2 (RAG-disabled local demo profile)
+     -> H2 (RAG-disabled local development profile)
      -> GitHub REST API
      -> OpenAI-compatible embedding and rerank APIs
      -> Xiaomi MiMo planner / executor / gatekeeper APIs
@@ -61,7 +61,7 @@ delivery was merged into `main` after GitHub Actions passed.
   ReviewProviderTrace, and ReviewCommentPreview persistence.
 - Fail-fast error handling for missing provider credentials, invalid provider
   output, missing GitHub token, and unsafe publish requests.
-- Durable public Demo runs, execution leases, append-only events, rate buckets,
+- Durable self-hosted review runs, execution leases, append-only events, rate buckets,
   explicit Replay fallback, and owner-controlled publishing.
 
 ### GitHub PR Input
@@ -112,7 +112,7 @@ github.pr.metadata.load
 
 - Local comment previews are generated from persisted issues.
 - The frontend lets the user select previews.
-- Public Demo publishing requires a server-only admin bearer token in addition
+- Self-hosted review publishing requires a server-only admin bearer token in addition
   to selected previews and all evidence/target validations.
 - The backend validates target metadata and selected preview ownership.
 - Publish status is persisted as `NOT_PUBLISHED`, `PUBLISHING`, `PUBLISHED`, or
@@ -256,7 +256,7 @@ Use this project to explain:
 - how trace and snapshot tables make the review workflow observable without
   leaking secrets;
 - how the production profile uses PostgreSQL/pgvector full-repository hybrid
-  retrieval while the H2 profile remains a local demo;
+  retrieval while the H2 profile remains a local development;
 - how human confirmation reduces risk before external side effects;
 - how bounded GitHub diff loading controls cost, latency, and privacy.
 

@@ -23,7 +23,6 @@
         <testcontainers.version>1.21.4</testcontainers.version>
         <test.excluded-groups>postgres</test.excluded-groups>
         <test.groups></test.groups>
-        <demo.enabled>true</demo.enabled>
     </properties>
 
     <dependencies>
@@ -107,9 +106,6 @@
                 <configuration>
                     <groups>${test.groups}</groups>
                     <excludedGroups>${test.excluded-groups}</excludedGroups>
-                    <systemPropertyVariables>
-                        <codereviewx.demo.enabled>${demo.enabled}</codereviewx.demo.enabled>
-                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>
@@ -125,7 +121,6 @@
             <properties>
                 <test.groups>postgres</test.groups>
                 <test.excluded-groups></test.excluded-groups>
-                <demo.enabled>false</demo.enabled>
             </properties>
         </profile>
     </profiles>

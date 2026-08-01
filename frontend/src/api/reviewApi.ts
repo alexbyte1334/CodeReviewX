@@ -2,10 +2,8 @@ import type { ApiResponse } from '../types/apiResponse';
 import type {
   CommentPreview,
   CommentPreviewListResponse,
-  CreateReviewTaskRequest,
   HealthData,
   ReviewTask,
-  ToolTraceListResponse,
   RepositoryIndexStatus, RetrievalTrace, RetrievalEvidence, RepositoryIndexResponse,
 } from '../types/reviewTask';
 
@@ -13,9 +11,10 @@ import type {
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
 export interface ReviewApiEvent { sequence: number; type: string; status: string; summary: string | null; errorCode: string | null; }
+export type ReviewApiReview = Omit<ReviewTask, 'id' | 'latestRunId'>;
 export interface ReviewApiSnapshot {
   runId: string; status: string; mode: 'LIVE' | 'REPLAY'; repositoryUrl: string; prNumber: number;
-  taskId: number; reviewRunId: number; review: ReviewTask; events: ReviewApiEvent[];
+  review: ReviewApiReview; events: ReviewApiEvent[];
   errorCode: string | null; errorMessage: string | null;
 }
 
@@ -38,46 +37,20 @@ export async function getHealth(): Promise<ApiResponse<HealthData>> {
   return fetchJson<HealthData>(`${BASE_URL}/api/health`);
 }
 
-export async function createReviewTask(
-  payload: CreateReviewTaskRequest,
-): Promise<ApiResponse<ReviewTask>> {
-  return fetchJson<ReviewTask>(`${BASE_URL}/api/review-tasks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function listReviewTasks(): Promise<ApiResponse<ReviewTask[]>> {
-  return fetchJson<ReviewTask[]>(`${BASE_URL}/api/review-tasks`);
-}
-
-export async function getReviewTask(id: number): Promise<ApiResponse<ReviewTask>> {
-  return fetchJson<ReviewTask>(`${BASE_URL}/api/review-tasks/${id}`);
-}
-
 export async function getCommentPreviews(
-  runId: number,
+  runId: string,
 ): Promise<ApiResponse<CommentPreviewListResponse>> {
   return fetchJson<CommentPreviewListResponse>(
-    `${BASE_URL}/api/review-runs/${runId}/comment-previews`,
-  );
-}
-
-export async function getToolTrace(
-  runId: number,
-): Promise<ApiResponse<ToolTraceListResponse>> {
-  return fetchJson<ToolTraceListResponse>(
-    `${BASE_URL}/api/review-runs/${runId}/trace`,
+    `${BASE_URL}/api/reviews/${encodeURIComponent(runId)}/previews`,
   );
 }
 
 export async function updateCommentPreviewSelection(
-  runId: number,
+  runId: string,
   selectedPreviewIds: number[],
 ): Promise<ApiResponse<CommentPreviewListResponse>> {
   return fetchJson<CommentPreviewListResponse>(
-    `${BASE_URL}/api/review-runs/${runId}/comment-previews/selection`,
+    `${BASE_URL}/api/reviews/${encodeURIComponent(runId)}/previews/selection`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -87,10 +60,10 @@ export async function updateCommentPreviewSelection(
 }
 
 export async function publishSelectedCommentPreviews(
-  runId: number,
+  runId: string,
 ): Promise<ApiResponse<CommentPreviewListResponse>> {
   return fetchJson<CommentPreviewListResponse>(
-    `${BASE_URL}/api/review-runs/${runId}/comment-previews/publish-selected`,
+    `${BASE_URL}/api/reviews/${encodeURIComponent(runId)}/previews/publish`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -100,11 +73,11 @@ export async function publishSelectedCommentPreviews(
 }
 
 export async function publishCommentPreview(
-  runId: number,
+  runId: string,
   previewId: number,
 ): Promise<ApiResponse<CommentPreview>> {
   return fetchJson<CommentPreview>(
-    `${BASE_URL}/api/review-runs/${runId}/comment-previews/${previewId}/publish`,
+    `${BASE_URL}/api/reviews/${encodeURIComponent(runId)}/previews/${previewId}/publish`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -128,5 +101,5 @@ export async function getRepositoryIndexStatus(owner: string, repo: string, ref:
 }
 export async function requestRepositoryIndex(repoUrl: string, ref: string): Promise<ApiResponse<RepositoryIndexResponse>> { return fetchJson(`${BASE_URL}/api/repositories/index`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repoUrl,ref})}); }
 export async function requestRepositoryReindex(owner: string, repo: string, ref: string): Promise<ApiResponse<RepositoryIndexResponse>> { return fetchJson(`${BASE_URL}/api/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/reindex?ref=${encodeURIComponent(ref)}`, {method:'POST'}); }
-export async function getRetrievalEvidence(taskId:number, issueKey:string): Promise<ApiResponse<RetrievalEvidence[]>> { return fetchJson(`${BASE_URL}/api/review-tasks/${taskId}/issues/${encodeURIComponent(issueKey)}/evidence`); }
-export async function getRetrievalTrace(runId:number): Promise<ApiResponse<RetrievalTrace>> { return fetchJson(`${BASE_URL}/api/review-runs/${runId}/retrieval`); }
+export async function getRetrievalEvidence(runId:string, issueKey:string): Promise<ApiResponse<RetrievalEvidence[]>> { return fetchJson(`${BASE_URL}/api/reviews/${encodeURIComponent(runId)}/issues/${encodeURIComponent(issueKey)}/evidence`); }
+export async function getRetrievalTrace(runId:string): Promise<ApiResponse<RetrievalTrace>> { return fetchJson(`${BASE_URL}/api/reviews/${encodeURIComponent(runId)}/retrieval`); }

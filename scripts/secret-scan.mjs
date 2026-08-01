@@ -40,7 +40,7 @@ const placeholderValues = [
   '<local-planner-secret-not-committed>',
   '<local-executor-secret-not-committed>',
   'test-token',
-  'DEMO_SECRET_TOKEN_SHOULD_NOT_SHIP',
+  'TEST_SECRET_TOKEN_SHOULD_NOT_SHIP',
 ];
 
 const tokenPatterns = [

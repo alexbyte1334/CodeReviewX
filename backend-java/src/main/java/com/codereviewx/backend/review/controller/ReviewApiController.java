@@ -4,12 +4,19 @@ import com.codereviewx.backend.common.ApiResponse;
 import com.codereviewx.backend.review.dto.CreateReviewRequest;
 import com.codereviewx.backend.review.dto.ReviewApiSnapshot;
 import com.codereviewx.backend.review.service.ReviewApiService;
+import com.codereviewx.backend.review.dto.CommentPreviewListResponse;
+import com.codereviewx.backend.review.dto.CommentPreviewItemResponse;
+import com.codereviewx.backend.review.dto.ToolTraceListResponse;
+import com.codereviewx.backend.review.dto.UpdateCommentPreviewSelectionRequest;
+import com.codereviewx.backend.review.dto.PublishCommentPreviewRequest;
+import com.codereviewx.backend.rag.dto.RetrievalTraceResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -20,6 +27,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import jakarta.annotation.PreDestroy;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -85,5 +93,45 @@ public class ReviewApiController {
     @PostMapping("/{publicId}/retry")
     public ResponseEntity<ApiResponse<ReviewApiSnapshot>> retry(@PathVariable String publicId) {
         return ResponseEntity.accepted().body(ApiResponse.success(reviews.retry(publicId)));
+    }
+
+    @GetMapping("/{publicId}/trace")
+    public ApiResponse<ToolTraceListResponse> trace(@PathVariable String publicId) {
+        return ApiResponse.success(reviews.trace(publicId));
+    }
+
+    @GetMapping("/{publicId}/previews")
+    public ApiResponse<CommentPreviewListResponse> previews(@PathVariable String publicId) {
+        return ApiResponse.success(reviews.previews(publicId));
+    }
+
+    @PatchMapping("/{publicId}/previews/selection")
+    public ApiResponse<CommentPreviewListResponse> selectPreviews(@PathVariable String publicId,
+                                                                    @Valid @RequestBody UpdateCommentPreviewSelectionRequest request) {
+        return ApiResponse.success(reviews.selectPreviews(publicId, request));
+    }
+
+    @PostMapping("/{publicId}/previews/publish")
+    public ApiResponse<CommentPreviewListResponse> publishSelected(@PathVariable String publicId,
+                                                                     @Valid @RequestBody PublishCommentPreviewRequest request) {
+        return ApiResponse.success(reviews.publishSelected(publicId, request));
+    }
+
+    @PostMapping("/{publicId}/previews/{previewId}/publish")
+    public ApiResponse<CommentPreviewItemResponse> publishOne(@PathVariable String publicId,
+                                                               @PathVariable long previewId,
+                                                               @Valid @RequestBody PublishCommentPreviewRequest request) {
+        return ApiResponse.success(reviews.publishOne(publicId, previewId, request));
+    }
+
+    @GetMapping("/{publicId}/issues/{issueKey}/evidence")
+    public ApiResponse<List<RetrievalTraceResponse.Evidence>> evidence(@PathVariable String publicId,
+                                                                         @PathVariable String issueKey) {
+        return ApiResponse.success(reviews.evidence(publicId, issueKey));
+    }
+
+    @GetMapping("/{publicId}/retrieval")
+    public ApiResponse<RetrievalTraceResponse> retrieval(@PathVariable String publicId) {
+        return ApiResponse.success(reviews.retrieval(publicId));
     }
 }

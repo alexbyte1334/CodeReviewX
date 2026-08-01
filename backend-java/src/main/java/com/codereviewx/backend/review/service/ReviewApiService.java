@@ -4,6 +4,13 @@ import com.codereviewx.backend.review.dto.CreateReviewRequest;
 import com.codereviewx.backend.review.dto.CreateReviewTaskRequest;
 import com.codereviewx.backend.review.dto.ReviewApiSnapshot;
 import com.codereviewx.backend.review.dto.ReviewTaskResponse;
+import com.codereviewx.backend.review.dto.CommentPreviewListResponse;
+import com.codereviewx.backend.review.dto.ToolTraceListResponse;
+import com.codereviewx.backend.review.dto.UpdateCommentPreviewSelectionRequest;
+import com.codereviewx.backend.review.dto.PublishCommentPreviewRequest;
+import com.codereviewx.backend.review.dto.CommentPreviewItemResponse;
+import com.codereviewx.backend.rag.dto.RetrievalTraceResponse;
+import com.codereviewx.backend.rag.security.RagSecurityPolicy;
 import com.codereviewx.backend.review.exception.ReviewRequestInvalidException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,11 +31,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 public class ReviewApiService {
     private final JdbcTemplate jdbc;
     private final ReviewTaskService tasks;
+    private final ReviewRunService runs;
     private final ConcurrentMap<Long, Boolean> active = new ConcurrentHashMap<>();
 
-    public ReviewApiService(JdbcTemplate jdbc, ReviewTaskService tasks) {
+    public ReviewApiService(JdbcTemplate jdbc, ReviewTaskService tasks, ReviewRunService runs) {
         this.jdbc = jdbc;
         this.tasks = tasks;
+        this.runs = runs;
     }
 
     @Transactional
@@ -133,7 +142,7 @@ public class ReviewApiService {
             new ReviewApiSnapshot.ReviewApiEvent(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)), row.apiId());
         String path = "/api/reviews/" + row.publicId();
         return new ReviewApiSnapshot(row.publicId(), row.status(), "LIVE", row.repoUrl(), row.prNumber(),
-                row.taskId(), row.runId(), path, path + "/events", review, events, row.errorCode(), row.errorMessage());
+                path, path + "/events", review, events, row.errorCode(), row.errorMessage());
     }
 
     public List<ReviewApiSnapshot.ReviewApiEvent> events(String publicId, long after) {
@@ -142,6 +151,53 @@ public class ReviewApiService {
             SELECT sequence_number,event_type,status,summary,error_code FROM review_api_event
             WHERE review_api_run_id=? AND sequence_number>? ORDER BY sequence_number""", (rs, n) ->
             new ReviewApiSnapshot.ReviewApiEvent(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)), row.apiId(), after);
+    }
+
+    public ToolTraceListResponse trace(String publicId) {
+        return runs.getTrace(row(publicId).runId());
+    }
+
+    public CommentPreviewListResponse previews(String publicId) {
+        return runs.getCommentPreviews(row(publicId).runId());
+    }
+
+    public CommentPreviewListResponse selectPreviews(String publicId, UpdateCommentPreviewSelectionRequest request) {
+        return runs.updateCommentPreviewSelection(row(publicId).runId(), request);
+    }
+
+    public CommentPreviewListResponse publishSelected(String publicId, PublishCommentPreviewRequest request) {
+        return runs.publishSelectedCommentPreviews(row(publicId).runId(), request);
+    }
+
+    public CommentPreviewItemResponse publishOne(String publicId, long previewId, PublishCommentPreviewRequest request) {
+        return runs.publishCommentPreview(row(publicId).runId(), previewId, request);
+    }
+
+    public List<RetrievalTraceResponse.Evidence> evidence(String publicId, String issueKey) {
+        Row row = row(publicId);
+        if (issueKey == null || !issueKey.matches("[A-Za-z0-9_.:-]{1,64}")) {
+            throw new ReviewRequestInvalidException("Invalid issue key");
+        }
+        List<RetrievalTraceResponse.Evidence> result = jdbc.query(
+                "SELECT e.citation_label,e.path,e.start_line,e.end_line,e.evidence_excerpt,e.retrieval_rank,e.retrieval_score " +
+                        "FROM review_issue_evidence e JOIN review_issue i ON i.id=e.review_issue_id " +
+                        "WHERE i.review_run_id=? AND i.issue_key=? ORDER BY e.retrieval_rank,e.citation_label",
+                (rs, n) -> new RetrievalTraceResponse.Evidence(rs.getString(1), rs.getString(2), rs.getInt(3),
+                        rs.getInt(4), RagSecurityPolicy.redactOutbound(rs.getString(5)), rs.getInt(6), rs.getDouble(7)),
+                row.runId(), issueKey);
+        if (result.isEmpty()) throw new ReviewRequestInvalidException("Issue evidence not found");
+        return result;
+    }
+
+    public RetrievalTraceResponse retrieval(String publicId) {
+        Row row = row(publicId);
+        List<RetrievalTraceResponse> result = jdbc.query(
+                "SELECT degraded,latency_ms,vector_candidate_count+lexical_candidate_count,selected_count " +
+                        "FROM rag_retrieval_trace WHERE review_run_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
+                (rs, n) -> new RetrievalTraceResponse(rs.getBoolean(1), rs.getBoolean(1) ? "RETRIEVAL_DEGRADED" : null,
+                        rs.getLong(2), rs.getInt(3), rs.getInt(4), null, List.of()), row.runId());
+        if (result.isEmpty()) throw new ReviewRequestInvalidException("Retrieval trace not found");
+        return result.get(0);
     }
 
     private ReviewApiSnapshot findByIdempotency(String key) {

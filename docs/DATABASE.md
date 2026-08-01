@@ -1,11 +1,11 @@
 # CodeReviewX Database
 
-> Current persistence model for the H2 demo and PostgreSQL/pgvector production
+> Current persistence model for the H2 local development and PostgreSQL/pgvector production
 > RAG profiles.
 
 ## 1. Runtime Database
 
-The default RAG-disabled local demo uses H2 file storage:
+The default RAG-disabled local development uses H2 file storage:
 
 ```text
 jdbc:h2:file:./data/codereviewx;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE

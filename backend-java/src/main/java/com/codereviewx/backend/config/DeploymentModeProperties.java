@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "codereviewx")
 public class DeploymentModeProperties {
 
-    private DeploymentMode deploymentMode = DeploymentMode.PUBLIC_DEMO;
+    private DeploymentMode deploymentMode = DeploymentMode.SELF_HOST;
 
     public DeploymentMode getDeploymentMode() {
         return deploymentMode;
@@ -17,12 +17,7 @@ public class DeploymentModeProperties {
         this.deploymentMode = deploymentMode;
     }
 
-    public boolean isPublicDemo() {
-        return deploymentMode == DeploymentMode.PUBLIC_DEMO;
-    }
-
     public enum DeploymentMode {
-        PUBLIC_DEMO,
         SELF_HOST
     }
 }

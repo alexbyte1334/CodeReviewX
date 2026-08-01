@@ -30,7 +30,7 @@ public class GithubPrCommentPublisher {
 
         try {
             boolean markerControlled = request.body() != null
-                    && request.body().contains("<!-- codereviewx-demo:");
+                    && request.body().contains("<!-- codereviewx-review:");
             GithubPrCommentHttpResponse response = markerControlled
                     ? httpClient.upsertPullRequestComment(properties.getApiBaseUrl(), request,
                     properties.getToken(), properties.getTimeoutSeconds())

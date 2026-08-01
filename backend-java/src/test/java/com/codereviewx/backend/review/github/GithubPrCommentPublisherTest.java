@@ -62,7 +62,7 @@ class GithubPrCommentPublisherTest {
         GithubPrCommentPublisher publisher = new GithubPrCommentPublisher(propertiesWithToken(), client);
         GithubPrCommentPublishRequest marked = new GithubPrCommentPublishRequest(
                 "example", "repo", 12, "head-sha", "src/App.java", 42, "RIGHT",
-                "Draft\n<!-- codereviewx-demo:sql-injection-pr:ISSUE-1 -->");
+                "Draft\n<!-- codereviewx-review:sql-injection-pr:ISSUE-1 -->");
 
         GithubPrCommentPublishResult result = publisher.publish(marked);
 

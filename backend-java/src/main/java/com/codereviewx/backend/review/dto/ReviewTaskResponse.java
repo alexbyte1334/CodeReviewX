@@ -6,6 +6,7 @@ import com.codereviewx.backend.review.enums.RiskLevel;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public class ReviewTaskResponse {
 
@@ -33,6 +34,7 @@ public class ReviewTaskResponse {
     public ReviewTaskResponse() {
     }
 
+    @JsonIgnore
     public Long getId() {
         return id;
     }
@@ -153,6 +155,7 @@ public class ReviewTaskResponse {
         this.providerHit = providerHit;
     }
 
+    @JsonIgnore
     public Long getLatestRunId() {
         return latestRunId;
     }

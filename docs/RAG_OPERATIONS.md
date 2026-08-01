@@ -87,7 +87,7 @@ Immediately set `RAG_REVIEW_PERCENTAGE=0` and restart; this deterministically
 restores bounded legacy context. Keep `RAG_FALLBACK_ENABLED=true` for graceful
 index/model degradation, or set it false to fail closed when evidence is
 required. Do not run a V4 down migration or delete index data. If PostgreSQL is
-unavailable, stop new RAG reviews, preserve existing data, and keep the H2 demo
+unavailable, stop new RAG reviews, preserve existing data, and keep the H2 local development
 profile available. Restore the last known-good application image/config after
 the incident. Rollback is complete when new runs contain no RAG retrieval trace,
 legacy context is present, and publish behavior remains unchanged. Re-enable
