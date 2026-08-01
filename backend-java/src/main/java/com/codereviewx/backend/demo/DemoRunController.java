@@ -23,10 +23,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class DemoRunController {
     private final DemoRunService runs;
     private final DemoSseService sse;
+    private final DemoClientIpResolver clientIps;
 
-    public DemoRunController(DemoRunService runs, DemoSseService sse) {
+    public DemoRunController(DemoRunService runs, DemoSseService sse, DemoClientIpResolver clientIps) {
         this.runs = runs;
         this.sse = sse;
+        this.clientIps = clientIps;
     }
 
     @PostMapping
@@ -34,11 +36,9 @@ public class DemoRunController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @RequestBody CreateRequest request,
             HttpServletRequest httpRequest) {
-        String forwarded = httpRequest.getHeader("X-Forwarded-For");
-        String remoteIp = forwarded == null || forwarded.isBlank()
-                ? httpRequest.getRemoteAddr() : forwarded.split(",")[0].trim();
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(runs.create(request == null ? null : request.scenarioId(), idempotencyKey, remoteIp));
+                .body(runs.create(request == null ? null : request.scenarioId(), idempotencyKey,
+                        clientIps.resolve(httpRequest)));
     }
 
     @GetMapping("/{publicId}")

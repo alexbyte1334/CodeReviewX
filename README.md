@@ -170,6 +170,8 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 | `GITHUB_PER_FILE_CONTEXT_MAX_BYTES` | 单文件 context 内容截断阈值 | `12000` |
 | `GITHUB_MAX_CONTEXT_BYTES` | 单次 review context 总字节上限 | `48000` |
 | `BACKEND_PORT` | 后端端口 | `8080` |
+| `CODEREVIEWX_DEPLOYMENT_MODE` | API 暴露模式；本地/自托管使用 `self-host`，Railway 公共样例必须使用 `public-demo` | `self-host`（本地 profile） |
+| `MANAGEMENT_ENDPOINTS_EXPOSED` | Actuator 暴露列表；公共样例保持只含 `health` | `health` |
 | `DEMO_PR_NUMBER` | 固定 [DemoTarget PR #1](https://github.com/alexbyte1334/CodeReviewX-DemoTarget/pull/1) | `1` |
 | `DEMO_EXPECTED_HEAD_SHA` | 固定 DemoTarget head SHA | `d5aa95a3f43f23ca438e53e94c4d3bed4868904a` |
 | `DEMO_ADMIN_TOKEN` | 仅所有者发布使用；不得进入 Pages | — |
@@ -190,6 +192,8 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 mvn spring-boot:run
 | `GET` | `/api/demo-runs/{uuid}/events` | SSE 事件流，支持 Last-Event-ID |
 | `POST` | `/api/demo-runs/{uuid}/decision` | 匿名批准预览或拒绝；不写 GitHub |
 | `POST` | `/api/admin/demo-runs/{uuid}/publish` | Bearer 管理员受控发布 |
+
+Railway 的 `public-demo` 模式只开放固定 DemoTarget API、健康检查和管理员受控发布；通用任务、Run/Trace、检索、索引和旧发布接口会返回 `404 ENDPOINT_NOT_AVAILABLE`。自托管开发必须显式使用 `CODEREVIEWX_DEPLOYMENT_MODE=self-host`，不要把自托管模式的通用 API 直接暴露到公网。
 
 **创建任务请求示例：**
 

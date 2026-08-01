@@ -22,6 +22,9 @@ service backed by one PostgreSQL/pgvector service. No Python Worker is deployed.
    Pull requests read/write, with an expiry.
 7. Set the GitHub repository variable `DEMO_API_BASE_URL` to the Railway HTTPS
    origin and redeploy Pages.
+8. Set `CODEREVIEWX_DEPLOYMENT_MODE=public-demo` and
+   `MANAGEMENT_ENDPOINTS_EXPOSED=health` on the Railway API service. Keep all
+   provider keys, GitHub token, admin token and IP salt sealed server variables.
 
 ## Required smoke checks
 
@@ -30,6 +33,8 @@ service backed by one PostgreSQL/pgvector service. No Python Worker is deployed.
 - SSE events appear within two seconds and reconnect from the last event ID.
 - Unknown scenarios and malformed UUIDs fail before model use.
 - Anonymous legacy and admin publish calls return 401/403.
+- Anonymous legacy review, index, retrieval and numeric Run endpoints return
+  `404 ENDPOINT_NOT_AVAILABLE`; only the fixed DemoTarget surface is public.
 - Repeating owner publish for the same run does not duplicate a comment.
 - `/actuator/health/liveness` stays process-only; `/api/health` reports each dependency.
 - The Pages bundle contains no local API address, admin token, or provider key.

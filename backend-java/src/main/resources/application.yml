@@ -25,7 +25,7 @@ server:
   port: ${BACKEND_PORT:8080}
 
 management:
-  endpoints.web.exposure.include: health,info,metrics,prometheus
+  endpoints.web.exposure.include: ${MANAGEMENT_ENDPOINTS_EXPOSED:health}
   endpoint.health:
     show-details: when_authorized
     probes.enabled: true
@@ -33,6 +33,7 @@ management:
       include: readinessState,database,github,embedding,rerank
 
 codereviewx:
+  deployment-mode: ${CODEREVIEWX_DEPLOYMENT_MODE:public-demo}
   demo:
     enabled: ${DEMO_ENABLED:true}
     scenario-id: ${DEMO_SCENARIO_ID:sql-injection-pr}

@@ -1,3 +1,5 @@
 # Local development profile placeholder.
 # Database settings live in application.yml and use file-based H2 for local runtime.
 # No external services are configured.
+codereviewx:
+  deployment-mode: self-host

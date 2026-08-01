@@ -18,6 +18,7 @@ spring:
       enabled: false
 
 codereviewx:
+  deployment-mode: self-host
   github:
     api-base-url: https://api.github.com
     token:
