@@ -29,7 +29,7 @@ class ReviewApiControllerTest {
 
     @Test
     void createReturnsAcceptedAndForwardsIdempotencyKey() throws Exception {
-        ReviewApiSnapshot snapshot = new ReviewApiSnapshot("00000000-0000-0000-0000-000000000001", "QUEUED", "LIVE", "https://github.com/a/b", 1, 1L, 1L, null, List.of(), null, null);
+        ReviewApiSnapshot snapshot = new ReviewApiSnapshot("00000000-0000-0000-0000-000000000001", "QUEUED", "LIVE", "https://github.com/a/b", 1, 1L, 1L, "/api/reviews/id", "/api/reviews/id/events", null, List.of(), null, null);
         when(service.create(any(), eq("client-key"))).thenReturn(snapshot);
         mvc.perform(post("/api/reviews").header("Idempotency-Key", "client-key")
                 .contentType(MediaType.APPLICATION_JSON)

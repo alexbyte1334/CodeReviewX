@@ -19,7 +19,7 @@ export interface ReviewApiSnapshot {
   errorCode: string | null; errorMessage: string | null;
 }
 
-export async function createReview(request: { repositoryUrl: string; prNumber: number; diffText?: string }, idempotencyKey: string): Promise<ApiResponse<ReviewApiSnapshot>> {
+export async function createReview(request: { repositoryUrl: string; prNumber: number; inputMode?: 'GITHUB_PR' | 'MANUAL_DIFF'; diffText?: string }, idempotencyKey: string): Promise<ApiResponse<ReviewApiSnapshot>> {
   return fetchJson<ReviewApiSnapshot>(`${BASE_URL}/api/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(request) });
 }
 export async function getReviewSnapshot(runId: string): Promise<ApiResponse<ReviewApiSnapshot>> { return fetchJson(`${BASE_URL}/api/reviews/${encodeURIComponent(runId)}`); }

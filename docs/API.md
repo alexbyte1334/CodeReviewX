@@ -340,3 +340,7 @@ the snapshot response. `GET /api/reviews/{runId}` is safe to poll and
 unpublished runs may be retried with `POST /api/reviews/{runId}/retry`; retry
 clears prior projections before executing again. Public-demo mode intentionally
 blocks this surface and exposes only the fixed DemoTarget story.
+
+The existing numeric `/api/review-tasks` workspace remains a compatibility
+surface in self-host mode. The new UI is available at `#/reviews/new`; the
+legacy workspace remains reachable while existing users migrate.
