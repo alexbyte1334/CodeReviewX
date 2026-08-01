@@ -108,12 +108,27 @@ public class XiaomiMiMoClient {
             throw new XiaomiMiMoClientException("MiMo API returned an empty response");
         }
 
-        XiaomiMiMoClientResponse.Message message = response.getChoices().get(0).getMessage();
+        XiaomiMiMoClientResponse.Choice choice = response.getChoices().get(0);
+        XiaomiMiMoClientResponse.Message message = choice.getMessage();
         if (message == null || message.getContent() == null || message.getContent().isBlank()) {
-            throw new XiaomiMiMoClientException("MiMo API returned empty assistant content");
+            throw emptyContentException(choice.getFinishReason());
         }
 
         return message.getContent().trim();
+    }
+
+    private static XiaomiMiMoClientException emptyContentException(String finishReason) {
+        if ("length".equals(finishReason)) {
+            return new XiaomiMiMoClientException(
+                    "MiMo response exhausted max_completion_tokens before final content");
+        }
+        if ("content_filter".equals(finishReason)) {
+            return new XiaomiMiMoClientException("MiMo response was blocked by content filtering");
+        }
+        if ("repetition_truncation".equals(finishReason)) {
+            return new XiaomiMiMoClientException("MiMo response was truncated due to repetition");
+        }
+        return new XiaomiMiMoClientException("MiMo API returned empty assistant content");
     }
 
     private static String normalizeBaseUrl(String baseUrl) {

@@ -11,6 +11,8 @@ public class XiaomiMiMoClientRequest {
     private double temperature;
     @JsonProperty("max_completion_tokens")
     private int maxCompletionTokens;
+    private boolean stream;
+    private Thinking thinking;
 
     public XiaomiMiMoClientRequest() {
     }
@@ -21,6 +23,8 @@ public class XiaomiMiMoClientRequest {
         this.messages = messages;
         this.temperature = temperature;
         this.maxCompletionTokens = maxCompletionTokens;
+        this.stream = false;
+        this.thinking = new Thinking("disabled");
     }
 
     public String getModel() {
@@ -53,6 +57,42 @@ public class XiaomiMiMoClientRequest {
 
     public void setMaxCompletionTokens(int maxCompletionTokens) {
         this.maxCompletionTokens = maxCompletionTokens;
+    }
+
+    public boolean isStream() {
+        return stream;
+    }
+
+    public void setStream(boolean stream) {
+        this.stream = stream;
+    }
+
+    public Thinking getThinking() {
+        return thinking;
+    }
+
+    public void setThinking(Thinking thinking) {
+        this.thinking = thinking;
+    }
+
+    public static class Thinking {
+
+        private String type;
+
+        public Thinking() {
+        }
+
+        public Thinking(String type) {
+            this.type = type;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type = type;
+        }
     }
 
     public static class Message {

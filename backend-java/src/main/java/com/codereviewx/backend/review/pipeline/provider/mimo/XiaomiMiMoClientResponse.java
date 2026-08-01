@@ -1,6 +1,7 @@
 package com.codereviewx.backend.review.pipeline.provider.mimo;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
@@ -21,6 +22,8 @@ public class XiaomiMiMoClientResponse {
     public static class Choice {
 
         private Message message;
+        @JsonProperty("finish_reason")
+        private String finishReason;
 
         public Message getMessage() {
             return message;
@@ -28,6 +31,14 @@ public class XiaomiMiMoClientResponse {
 
         public void setMessage(Message message) {
             this.message = message;
+        }
+
+        public String getFinishReason() {
+            return finishReason;
+        }
+
+        public void setFinishReason(String finishReason) {
+            this.finishReason = finishReason;
         }
     }
 

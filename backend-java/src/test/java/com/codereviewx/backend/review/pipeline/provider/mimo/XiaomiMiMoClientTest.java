@@ -29,7 +29,12 @@ class XiaomiMiMoClientTest {
         server.expect(requestTo("https://api.example.com/v1/chat/completions"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().json("""
-                        {"model":"mimo-v2.5-pro","max_completion_tokens":2048}
+                        {
+                          "model":"mimo-v2.5-pro",
+                          "max_completion_tokens":2048,
+                          "stream":false,
+                          "thinking":{"type":"disabled"}
+                        }
                         """, false))
                 .andRespond(withSuccess("""
                         {
@@ -128,6 +133,40 @@ class XiaomiMiMoClientTest {
         assertThatThrownBy(() -> client.complete("system", "user"))
                 .isInstanceOf(XiaomiMiMoClientException.class)
                 .hasMessageContaining("HTTP 400");
+        server.verify();
+    }
+
+    @Test
+    void complete_reportsTokenExhaustionWithoutLeakingReasoningContent() {
+        XiaomiMiMoProperties properties = new XiaomiMiMoProperties();
+        properties.setBaseUrl("https://api.example.com/v1");
+        properties.setModel("mimo-v2.5-pro");
+        properties.setApiKey("test-key");
+
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.example.com/v1/chat/completions"))
+                .andRespond(withSuccess("""
+                        {
+                          "choices": [
+                            {
+                              "finish_reason": "length",
+                              "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "reasoning_content": "sensitive internal reasoning"
+                              }
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        XiaomiMiMoClient client = new XiaomiMiMoClient(properties, builder.build());
+
+        assertThatThrownBy(() -> client.complete("system", "user"))
+                .isInstanceOf(XiaomiMiMoClientException.class)
+                .hasMessage("MiMo response exhausted max_completion_tokens before final content")
+                .hasMessageNotContaining("sensitive internal reasoning");
         server.verify();
     }
 
