@@ -4,7 +4,7 @@ import com.codereviewx.backend.review.github.GithubPrDiff;
 import com.codereviewx.backend.review.github.GithubPrDiffFile;
 import com.codereviewx.backend.review.github.GithubPrMetadata;
 import com.codereviewx.backend.review.persistence.entity.ReviewInputSnapshotEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,12 +28,12 @@ public class ReviewInputSnapshotService {
     }
 
     public void persistGithubPrSnapshot(Long runId,
-                                        ReviewTaskEntity task,
+                                        ReviewApiRunEntity task,
                                         GithubPrMetadata metadata,
                                         GithubPrDiff diff,
                                         LocalDateTime now) {
         ReviewInputSnapshotEntity snapshot = new ReviewInputSnapshotEntity();
-        snapshot.setReviewRunId(runId);
+        snapshot.setReviewApiRunId(runId);
         snapshot.setRepoUrl(task.getRepoUrl());
         snapshot.setOwner(metadata.owner());
         snapshot.setRepo(metadata.repo());

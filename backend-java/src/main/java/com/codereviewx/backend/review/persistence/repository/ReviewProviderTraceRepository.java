@@ -9,7 +9,7 @@ import java.util.Optional;
 
 public interface ReviewProviderTraceRepository extends JpaRepository<ReviewProviderTraceEntity, Long> {
 
-    Optional<ReviewProviderTraceEntity> findByReviewRunId(Long reviewRunId);
+    Optional<ReviewProviderTraceEntity> findByReviewApiRunId(Long reviewApiRunId);
 
-    List<ReviewProviderTraceEntity> findByReviewRunIdIn(Collection<Long> reviewRunIds);
+    List<ReviewProviderTraceEntity> findByReviewApiRunIdIn(Collection<Long> reviewApiRunIds);
 }

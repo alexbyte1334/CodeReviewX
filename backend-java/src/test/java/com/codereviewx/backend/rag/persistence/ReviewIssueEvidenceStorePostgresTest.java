@@ -39,7 +39,7 @@ class ReviewIssueEvidenceStorePostgresTest {
         store = new ReviewIssueEvidenceStore(jdbc, properties);
     }
 
-    @BeforeEach void clean() { jdbc.execute("TRUNCATE review_issue_evidence, review_issue, review_run, review_task, rag_chunk, rag_document, rag_index_snapshot, rag_index_job, rag_repository RESTART IDENTITY CASCADE"); }
+    @BeforeEach void clean() { jdbc.execute("TRUNCATE review_issue_evidence, review_issue, review_api_run, review_api_run, rag_chunk, rag_document, rag_index_snapshot, rag_index_job, rag_repository RESTART IDENTITY CASCADE"); }
 
     @Test void persistsAfterIssueWithSourceFkHashAndBoundedExcerptAndRollsBackAtomically() {
         long chunkId = sourceChunk();
@@ -72,9 +72,9 @@ class ReviewIssueEvidenceStorePostgresTest {
 
     private long issue() {
         Timestamp now = Timestamp.valueOf(LocalDateTime.now());
-        long task = jdbc.queryForObject("INSERT INTO review_task(repo_url,pr_number,status,created_at,updated_at,review_mode) VALUES ('x',1,'RUNNING',?,?,'GITHUB_PR') RETURNING id", Long.class, now, now);
-        long run = jdbc.queryForObject("INSERT INTO review_run(review_task_id,run_number,review_mode,status,created_at,updated_at) VALUES (?,1,'GITHUB_PR','REVIEWING',?,?) RETURNING id", Long.class, task, now, now);
-        return jdbc.queryForObject("INSERT INTO review_issue(review_task_id,review_run_id,issue_key,severity,category,source,status,file_path,start_line,end_line,title,description,recommendation,created_at,updated_at) VALUES (?,?,'M','HIGH','BUG','MIMO','OPEN','src/A.java',1,1,'t','d','r',?,?) RETURNING id", Long.class, task, run, now, now);
+        long task = jdbc.queryForObject("INSERT INTO review_api_run(repo_url,pr_number,status,created_at,updated_at,review_mode) VALUES ('x',1,'RUNNING',?,?,'GITHUB_PR') RETURNING id", Long.class, now, now);
+        long run = jdbc.queryForObject("INSERT INTO review_api_run(review_api_run_id,run_number,review_mode,status,created_at,updated_at) VALUES (?,1,'GITHUB_PR','REVIEWING',?,?) RETURNING id", Long.class, task, now, now);
+        return jdbc.queryForObject("INSERT INTO review_issue(review_api_run_id,review_api_run_id,issue_key,severity,category,source,status,file_path,start_line,end_line,title,description,recommendation,created_at,updated_at) VALUES (?,?,'M','HIGH','BUG','MIMO','OPEN','src/A.java',1,1,'t','d','r',?,?) RETURNING id", Long.class, task, run, now, now);
     }
 
     private long sourceChunk() {

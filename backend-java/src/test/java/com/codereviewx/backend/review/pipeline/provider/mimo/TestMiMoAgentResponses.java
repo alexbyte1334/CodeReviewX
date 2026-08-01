@@ -50,7 +50,7 @@ public final class TestMiMoAgentResponses {
                     {
                       "severity": "MEDIUM",
                       "category": "MAINTAINABILITY",
-                      "filePath": "src/main/java/com/codereviewx/backend/review/service/ReviewTaskService.java",
+                      "filePath": "src/main/java/com/codereviewx/backend/review/service/ReviewWorkflowService.java",
                       "startLine": 76,
                       "endLine": 93,
                       "title": "Service method is doing too much work",
@@ -60,7 +60,7 @@ public final class TestMiMoAgentResponses {
                     {
                       "severity": "LOW",
                       "category": "TEST",
-                      "filePath": "src/test/java/com/codereviewx/backend/review/service/ReviewTaskServiceTest.java",
+                      "filePath": "src/test/java/com/codereviewx/backend/review/service/ReviewWorkflowServiceTest.java",
                       "startLine": 21,
                       "endLine": 21,
                       "title": "Missing negative-path coverage",

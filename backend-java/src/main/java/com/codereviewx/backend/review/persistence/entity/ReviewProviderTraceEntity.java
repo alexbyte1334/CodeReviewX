@@ -17,8 +17,8 @@ public class ReviewProviderTraceEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "review_run_id", nullable = false)
-    private Long reviewRunId;
+    @Column(name = "review_api_run_id", nullable = false)
+    private Long reviewApiRunId;
 
     @Column(name = "requested_provider", length = 32)
     private String requestedProvider;
@@ -67,12 +67,12 @@ public class ReviewProviderTraceEntity {
         this.id = id;
     }
 
-    public Long getReviewRunId() {
-        return reviewRunId;
+    public Long getReviewApiRunId() {
+        return reviewApiRunId;
     }
 
-    public void setReviewRunId(Long reviewRunId) {
-        this.reviewRunId = reviewRunId;
+    public void setReviewApiRunId(Long reviewApiRunId) {
+        this.reviewApiRunId = reviewApiRunId;
     }
 
     public String getRequestedProvider() {

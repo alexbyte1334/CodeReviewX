@@ -4,11 +4,11 @@ import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.enums.ReviewRunStatus;
 import com.codereviewx.backend.review.enums.ReviewTaskStatus;
 import com.codereviewx.backend.review.persistence.entity.ReviewInputSnapshotEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewRunEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,10 +47,10 @@ class PostgresJpaCompatibilityTest {
     private Flyway flyway;
 
     @Autowired
-    private ReviewTaskRepository reviewTaskRepository;
+    private ReviewApiRunRepository reviewTaskRepository;
 
     @Autowired
-    private ReviewRunRepository reviewRunRepository;
+    private ReviewApiRunRepository reviewRunRepository;
 
     @Autowired
     private ReviewInputSnapshotRepository reviewInputSnapshotRepository;
@@ -69,12 +69,12 @@ class PostgresJpaCompatibilityTest {
                         FROM information_schema.columns
                         WHERE table_schema = 'public'
                           AND (table_name, column_name) IN (
-                              ('review_task', 'diff_text'),
+                              ('review_api_run', 'diff_text'),
                               ('review_input_snapshot', 'snapshot_json')
                           )
                         """, String.class))
                 .containsExactlyInAnyOrder(
-                        "review_task.diff_text=text:",
+                        "review_api_run.diff_text=text:",
                         "review_input_snapshot.snapshot_json=text:"
                 );
 
@@ -83,7 +83,7 @@ class PostgresJpaCompatibilityTest {
         String snapshotJson = ("{\"marker\":\"" + marker + "\",\"payload\":\"text-value\"}\n").repeat(120);
         LocalDateTime now = LocalDateTime.now();
 
-        ReviewTaskEntity task = new ReviewTaskEntity();
+        ReviewApiRunEntity task = new ReviewApiRunEntity();
         task.setRepoUrl("https://github.com/example/postgres-jpa-compatibility");
         task.setPrNumber(42);
         task.setDiffText(diffText);
@@ -93,8 +93,8 @@ class PostgresJpaCompatibilityTest {
         task.setUpdatedAt(now);
         Long taskId = reviewTaskRepository.saveAndFlush(task).getId();
 
-        ReviewRunEntity run = new ReviewRunEntity();
-        run.setReviewTaskId(taskId);
+        ReviewApiRunEntity run = new ReviewApiRunEntity();
+
         run.setRunNumber(1);
         run.setReviewMode(ReviewMode.MANUAL_DIFF);
         run.setStatus(ReviewRunStatus.PENDING);
@@ -103,7 +103,7 @@ class PostgresJpaCompatibilityTest {
         Long runId = reviewRunRepository.saveAndFlush(run).getId();
 
         ReviewInputSnapshotEntity snapshot = new ReviewInputSnapshotEntity();
-        snapshot.setReviewRunId(runId);
+        snapshot.setReviewApiRunId(runId);
         snapshot.setRepoUrl(task.getRepoUrl());
         snapshot.setPrNumber(task.getPrNumber());
         snapshot.setSnapshotJson(snapshotJson);
@@ -111,14 +111,14 @@ class PostgresJpaCompatibilityTest {
         reviewInputSnapshotRepository.saveAndFlush(snapshot);
 
         assertThat(reviewTaskRepository.findById(taskId).orElseThrow().getDiffText()).isEqualTo(diffText);
-        assertThat(reviewInputSnapshotRepository.findByReviewRunId(runId).orElseThrow().getSnapshotJson())
+        assertThat(reviewInputSnapshotRepository.findByReviewApiRunId(runId).orElseThrow().getSnapshotJson())
                 .isEqualTo(snapshotJson);
 
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT CAST(diff_text AS text) FROM review_task WHERE id = ?", String.class, taskId))
+                "SELECT CAST(diff_text AS text) FROM review_api_run WHERE id = ?", String.class, taskId))
                 .isEqualTo(diffText);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT CAST(snapshot_json AS text) FROM review_input_snapshot WHERE review_run_id = ?",
+                "SELECT CAST(snapshot_json AS text) FROM review_input_snapshot WHERE review_api_run_id = ?",
                 String.class, runId))
                 .isEqualTo(snapshotJson);
     }

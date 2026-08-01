@@ -19,11 +19,11 @@ class RagEvidencePublishGateTest {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         RagEvidencePublishGate gate = new RagEvidencePublishGate(properties, traces, jdbc);
         ReviewCommentPreviewEntity preview = preview("MIMO", 42L, 9L);
-        when(traces.findByReviewRunIdAndToolName(9L, "rag.context.assemble")).thenReturn(List.of(success("assembled")));
-        when(traces.findByReviewRunIdAndToolName(9L, "evidence.validate")).thenReturn(List.of());
+        when(traces.findByReviewApiRunIdAndToolName(9L, "rag.context.assemble")).thenReturn(List.of(success("assembled")));
+        when(traces.findByReviewApiRunIdAndToolName(9L, "evidence.validate")).thenReturn(List.of());
         when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(42L))).thenReturn(0);
         assertThatThrownBy(() -> gate.validate(preview)).isInstanceOf(ReviewRequestInvalidException.class);
-        when(traces.findByReviewRunIdAndToolName(9L, "evidence.validate")).thenReturn(List.of(success("validated")));
+        when(traces.findByReviewApiRunIdAndToolName(9L, "evidence.validate")).thenReturn(List.of(success("validated")));
         when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(42L))).thenReturn(1);
         assertThatCode(() -> gate.validate(preview)).doesNotThrowAnyException();
     }
@@ -33,7 +33,7 @@ class RagEvidencePublishGateTest {
         ReviewToolTraceRepository traces = mock(ReviewToolTraceRepository.class);
         RagEvidencePublishGate gate = new RagEvidencePublishGate(properties, traces, mock(JdbcTemplate.class));
         ReviewCommentPreviewEntity preview = preview("MIMO", 7L, 7L);
-        when(traces.findByReviewRunIdAndToolName(7L, "rag.context.assemble")).thenReturn(List.of());
+        when(traces.findByReviewApiRunIdAndToolName(7L, "rag.context.assemble")).thenReturn(List.of());
         assertThatCode(() -> gate.validate(preview)).doesNotThrowAnyException();
     }
 
@@ -51,6 +51,6 @@ class RagEvidencePublishGateTest {
     }
     private static ReviewCommentPreviewEntity preview(String source, Long issueId, Long runId) {
         ReviewCommentPreviewEntity preview = new ReviewCommentPreviewEntity(); preview.setSource(source);
-        preview.setReviewIssueId(issueId); preview.setReviewRunId(runId); return preview;
+        preview.setReviewIssueId(issueId); preview.setReviewApiRunId(runId); return preview;
     }
 }

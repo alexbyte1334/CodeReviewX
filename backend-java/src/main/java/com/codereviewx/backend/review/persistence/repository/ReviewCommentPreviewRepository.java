@@ -11,19 +11,19 @@ import java.util.Optional;
 
 public interface ReviewCommentPreviewRepository extends JpaRepository<ReviewCommentPreviewEntity, Long> {
 
-    List<ReviewCommentPreviewEntity> findByReviewRunIdOrderByIdAsc(Long reviewRunId);
+    List<ReviewCommentPreviewEntity> findByReviewApiRunIdOrderByIdAsc(Long reviewApiRunId);
 
-    List<ReviewCommentPreviewEntity> findByReviewRunIdAndSelectedForPublishTrueOrderByIdAsc(Long reviewRunId);
+    List<ReviewCommentPreviewEntity> findByReviewApiRunIdAndSelectedForPublishTrueOrderByIdAsc(Long reviewApiRunId);
 
-    Optional<ReviewCommentPreviewEntity> findByIdAndReviewRunId(Long id, Long reviewRunId);
+    Optional<ReviewCommentPreviewEntity> findByIdAndReviewApiRunId(Long id, Long reviewApiRunId);
 
-    int countByReviewRunId(Long reviewRunId);
+    int countByReviewApiRunId(Long reviewApiRunId);
 
     @Query("""
-            select preview.reviewRunId as reviewRunId, count(preview) as itemCount
+            select preview.reviewApiRunId as reviewApiRunId, count(preview) as itemCount
             from ReviewCommentPreviewEntity preview
-            where preview.reviewRunId in :reviewRunIds
-            group by preview.reviewRunId
+            where preview.reviewApiRunId in :reviewApiRunIds
+            group by preview.reviewApiRunId
             """)
-    List<RunCountProjection> countByReviewRunIds(@Param("reviewRunIds") Collection<Long> reviewRunIds);
+    List<RunCountProjection> countByReviewApiRunIds(@Param("reviewApiRunIds") Collection<Long> reviewApiRunIds);
 }

@@ -30,11 +30,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 @Service
 public class ReviewApiService {
     private final JdbcTemplate jdbc;
-    private final ReviewTaskService tasks;
+    private final ReviewWorkflowService tasks;
     private final ReviewRunService runs;
     private final ConcurrentMap<Long, Boolean> active = new ConcurrentHashMap<>();
 
-    public ReviewApiService(JdbcTemplate jdbc, ReviewTaskService tasks, ReviewRunService runs) {
+    public ReviewApiService(JdbcTemplate jdbc, ReviewWorkflowService tasks, ReviewRunService runs) {
         this.jdbc = jdbc;
         this.tasks = tasks;
         this.runs = runs;
@@ -59,15 +59,12 @@ public class ReviewApiService {
         if ("MANUAL_DIFF".equalsIgnoreCase(request.getInputMode())) {
             taskRequest.setReviewMode(com.codereviewx.backend.review.enums.ReviewMode.MANUAL_DIFF);
         }
-        var pending = tasks.createPendingTask(taskRequest);
         String publicId = UUID.randomUUID().toString();
+        var pending = tasks.createPendingTask(taskRequest, publicId, idempotencyKey);
         LocalDateTime now = LocalDateTime.now();
-        long apiId;
+        long apiId = pending.task().getId();
         try {
-            jdbc.update("""
-                INSERT INTO review_api_run(public_id,idempotency_key,review_task_id,review_run_id,status,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?)""", publicId, idempotencyKey, pending.task().getId(), pending.run().getId(), "QUEUED", now, now);
-            apiId = jdbc.queryForObject("SELECT id FROM review_api_run WHERE public_id=?", Long.class, publicId);
+            jdbc.update("UPDATE review_api_run SET status=?, updated_at=? WHERE id=?", "PENDING", now, apiId);
         } catch (DuplicateKeyException ex) {
             return findByIdempotency(idempotencyKey);
         }
@@ -82,12 +79,12 @@ public class ReviewApiService {
           try {
             mark(apiId, "RUNNING", null, null);
             appendEvent(apiId, "RUN_STARTED", "RUNNING", "Worker started the review pipeline.", null);
-            ReviewTaskResponse response = tasks.executeExistingTask(taskId, runId);
+            ReviewTaskResponse response = tasks.executeExistingTask(apiId, apiId);
             if (response.getStatus() == null || !"SUCCESS".equals(response.getStatus().name())) {
                 mark(apiId, "FAILED", response.getErrorCode(), response.getErrorMessage());
                 appendEvent(apiId, "RUN_FAILED", "FAILED", "Review pipeline failed.", response.getErrorCode());
             } else {
-                mark(apiId, "SUCCEEDED", null, null);
+                mark(apiId, "SUCCESS", null, null);
                 appendEvent(apiId, "RUN_SUCCEEDED", "SUCCEEDED", "Review completed with evidence-backed results.", null);
             }
           } catch (Exception ex) {
@@ -102,12 +99,12 @@ public class ReviewApiService {
     @Scheduled(fixedDelayString = "${codereviewx.review-api.recovery-interval-ms:5000}")
     public void recoverPending() {
         jdbc.query("""
-            SELECT id,public_id,review_task_id,review_run_id FROM review_api_run
+            SELECT id,public_id FROM review_api_run
             WHERE status='QUEUED' OR (status='RUNNING' AND updated_at < ?)
-            ORDER BY created_at LIMIT 4""", (rs, n) -> new Object[] {rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getLong(4)},
+            ORDER BY created_at LIMIT 4""", (rs, n) -> new Object[] {rs.getLong(1), rs.getString(2)},
                 LocalDateTime.now().minusMinutes(2)).forEach(row ->
                 runAsync(((Number) row[0]).longValue(), (String) row[1],
-                        ((Number) row[2]).longValue(), ((Number) row[3]).longValue()));
+                        ((Number) row[0]).longValue(), ((Number) row[0]).longValue()));
     }
 
     @Transactional
@@ -115,7 +112,7 @@ public class ReviewApiService {
         var row = row(publicId);
         if (!"FAILED".equals(row.status())) throw new ReviewRequestInvalidException("Only failed runs can be retried");
         resetProjections(row);
-        mark(row.apiId(), "QUEUED", null, null);
+        mark(row.apiId(), "PENDING", null, null);
         appendEvent(row.apiId(), "RUN_RETRY_QUEUED", "QUEUED", "Retry requested by the user.", null);
         enqueueAfterCommit(row.apiId(), publicId, row.taskId(), row.runId());
         return snapshot(publicId);
@@ -181,7 +178,7 @@ public class ReviewApiService {
         List<RetrievalTraceResponse.Evidence> result = jdbc.query(
                 "SELECT e.citation_label,e.path,e.start_line,e.end_line,e.evidence_excerpt,e.retrieval_rank,e.retrieval_score " +
                         "FROM review_issue_evidence e JOIN review_issue i ON i.id=e.review_issue_id " +
-                        "WHERE i.review_run_id=? AND i.issue_key=? ORDER BY e.retrieval_rank,e.citation_label",
+                        "WHERE i.review_api_run_id=? AND i.issue_key=? ORDER BY e.retrieval_rank,e.citation_label",
                 (rs, n) -> new RetrievalTraceResponse.Evidence(rs.getString(1), rs.getString(2), rs.getInt(3),
                         rs.getInt(4), RagSecurityPolicy.redactOutbound(rs.getString(5)), rs.getInt(6), rs.getDouble(7)),
                 row.runId(), issueKey);
@@ -193,7 +190,7 @@ public class ReviewApiService {
         Row row = row(publicId);
         List<RetrievalTraceResponse> result = jdbc.query(
                 "SELECT degraded,latency_ms,vector_candidate_count+lexical_candidate_count,selected_count " +
-                        "FROM rag_retrieval_trace WHERE review_run_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
+                        "FROM rag_retrieval_trace WHERE review_api_run_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
                 (rs, n) -> new RetrievalTraceResponse(rs.getBoolean(1), rs.getBoolean(1) ? "RETRIEVAL_DEGRADED" : null,
                         rs.getLong(2), rs.getInt(3), rs.getInt(4), null, List.of()), row.runId());
         if (result.isEmpty()) throw new ReviewRequestInvalidException("Retrieval trace not found");
@@ -205,18 +202,25 @@ public class ReviewApiService {
         return ids.isEmpty() ? null : snapshot(ids.get(0));
     }
     private void mark(long id, String status, String code, String message) {
-        jdbc.update("UPDATE review_api_run SET status=?,error_code=?,error_message=?,updated_at=? WHERE id=?", status, code, safe(message), LocalDateTime.now(), id);
+        String executionStatus = switch (status) {
+            case "PENDING" -> "PENDING";
+            case "RUNNING" -> "REVIEWING";
+            case "SUCCESS" -> "SUCCESS";
+            case "FAILED" -> "FAILED";
+            default -> throw new IllegalArgumentException("Unsupported review status: " + status);
+        };
+        jdbc.update("UPDATE review_api_run SET status=?,execution_status=?,error_code=?,error_message=?,updated_at=? WHERE id=?",
+                status, executionStatus, code, safe(message), LocalDateTime.now(), id);
     }
     private void resetProjections(Row row) {
-        try { jdbc.update("DELETE FROM review_issue_evidence WHERE review_issue_id IN (SELECT id FROM review_issue WHERE review_run_id=?)", row.runId()); }
+        try { jdbc.update("DELETE FROM review_issue_evidence WHERE review_issue_id IN (SELECT id FROM review_issue WHERE review_api_run_id=?)", row.runId()); }
         catch (RuntimeException ignored) { }
-        jdbc.update("DELETE FROM review_comment_preview WHERE review_run_id=?", row.runId());
-        jdbc.update("DELETE FROM review_issue WHERE review_run_id=?", row.runId());
-        jdbc.update("DELETE FROM review_provider_trace WHERE review_run_id=?", row.runId());
-        jdbc.update("DELETE FROM review_tool_trace WHERE review_run_id=?", row.runId());
-        jdbc.update("DELETE FROM review_input_snapshot WHERE review_run_id=?", row.runId());
-        jdbc.update("UPDATE review_run SET status='PENDING',error_code=NULL,error_message=NULL,finished_at=NULL,updated_at=? WHERE id=?", LocalDateTime.now(), row.runId());
-        jdbc.update("UPDATE review_task SET status='RUNNING',summary=NULL,error_message=NULL,updated_at=? WHERE id=?", LocalDateTime.now(), row.taskId());
+        jdbc.update("DELETE FROM review_comment_preview WHERE review_api_run_id=?", row.runId());
+        jdbc.update("DELETE FROM review_issue WHERE review_api_run_id=?", row.runId());
+        jdbc.update("DELETE FROM review_provider_trace WHERE review_api_run_id=?", row.runId());
+        jdbc.update("DELETE FROM review_tool_trace WHERE review_api_run_id=?", row.runId());
+        jdbc.update("DELETE FROM review_input_snapshot WHERE review_api_run_id=?", row.runId());
+        jdbc.update("UPDATE review_api_run SET status='RUNNING',execution_status='PENDING',summary=NULL,error_code=NULL,error_message=NULL,finished_at=NULL,updated_at=? WHERE id=?", LocalDateTime.now(), row.apiId());
     }
     private void appendEvent(long id, String type, String status, String summary, String code) {
         Long next = jdbc.queryForObject("SELECT COALESCE(MAX(sequence_number),0)+1 FROM review_api_event WHERE review_api_run_id=?", Long.class, id);
@@ -224,7 +228,7 @@ public class ReviewApiService {
     }
     private Row row(String publicId) {
         try {
-            return jdbc.queryForObject("SELECT r.id,r.public_id,r.status,r.error_code,r.error_message,r.review_task_id,r.review_run_id,t.repo_url,t.pr_number FROM review_api_run r JOIN review_task t ON t.id=r.review_task_id WHERE r.public_id=?", (rs, n) -> new Row(rs.getLong(1),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getLong(6),rs.getLong(7),rs.getString(8),rs.getInt(9)), publicId);
+            return jdbc.queryForObject("SELECT id,public_id,status,error_code,error_message,id, id,repo_url,pr_number FROM review_api_run WHERE public_id=?", (rs, n) -> new Row(rs.getLong(1),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getLong(6),rs.getLong(7),rs.getString(8),rs.getInt(9)), publicId);
         } catch (Exception ex) { throw new ReviewRequestInvalidException("Review run not found"); }
     }
     private String safe(String value) { return value == null ? null : value.length() > 900 ? value.substring(0, 900) : value; }

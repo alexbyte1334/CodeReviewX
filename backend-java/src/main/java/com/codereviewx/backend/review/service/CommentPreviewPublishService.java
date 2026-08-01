@@ -34,7 +34,7 @@ public class CommentPreviewPublishService {
     }
 
     public ReviewCommentPreviewEntity publishOne(Long runId, Long previewId) {
-        ReviewCommentPreviewEntity preview = commentPreviewRepository.findByIdAndReviewRunId(previewId, runId)
+        ReviewCommentPreviewEntity preview = commentPreviewRepository.findByIdAndReviewApiRunId(previewId, runId)
                 .orElseThrow(() -> new CommentPreviewNotFoundException(previewId, runId));
         requireSelectedForPublish(preview);
         if (preview.getPublishStatus() == PublishStatus.PUBLISHED) {
@@ -47,7 +47,7 @@ public class CommentPreviewPublishService {
 
     public List<ReviewCommentPreviewEntity> publishSelected(Long runId) {
         List<ReviewCommentPreviewEntity> selectedPreviews =
-                commentPreviewRepository.findByReviewRunIdAndSelectedForPublishTrueOrderByIdAsc(runId);
+                commentPreviewRepository.findByReviewApiRunIdAndSelectedForPublishTrueOrderByIdAsc(runId);
         if (selectedPreviews.isEmpty()) {
             throw new ReviewRequestInvalidException("Select at least one comment preview before publishing");
         }
@@ -57,11 +57,11 @@ public class CommentPreviewPublishService {
                 .filter(preview -> preview.getPublishStatus() != PublishStatus.PUBLISHED)
                 .forEach(preview -> validatePublishTarget(snapshot, preview));
         selectedPreviews.forEach(preview -> publishPreview(snapshot, preview));
-        return commentPreviewRepository.findByReviewRunIdOrderByIdAsc(runId);
+        return commentPreviewRepository.findByReviewApiRunIdOrderByIdAsc(runId);
     }
 
     private ReviewInputSnapshotEntity loadPublishSnapshot(Long runId) {
-        return inputSnapshotRepository.findByReviewRunId(runId)
+        return inputSnapshotRepository.findByReviewApiRunId(runId)
                 .orElseThrow(() -> new ReviewRequestInvalidException(
                         "GitHub input snapshot is required before publishing PR comments"
                 ));

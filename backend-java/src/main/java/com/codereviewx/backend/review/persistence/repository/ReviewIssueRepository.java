@@ -10,15 +10,15 @@ import java.util.List;
 
 public interface ReviewIssueRepository extends JpaRepository<ReviewIssueEntity, Long> {
 
-    List<ReviewIssueEntity> findByReviewTaskIdOrderByIdAsc(Long reviewTaskId);
+    List<ReviewIssueEntity> findByReviewApiRunIdOrderByIdAsc(Long reviewApiRunId);
 
     @Query("""
             select issue
             from ReviewIssueEntity issue
-            where issue.reviewTask.id in :reviewTaskIds
-            order by issue.reviewTask.id asc, issue.id asc
+            where issue.reviewApiRun.id in :reviewApiRunIds
+            order by issue.reviewApiRun.id asc, issue.id asc
             """)
-    List<ReviewIssueEntity> findAllByReviewTaskIdsOrderByTaskIdAndId(
-            @Param("reviewTaskIds") Collection<Long> reviewTaskIds
+    List<ReviewIssueEntity> findAllByReviewApiRunIdsOrderByTaskIdAndId(
+            @Param("reviewApiRunIds") Collection<Long> reviewApiRunIds
     );
 }

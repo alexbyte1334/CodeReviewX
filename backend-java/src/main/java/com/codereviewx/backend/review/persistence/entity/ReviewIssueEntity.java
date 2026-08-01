@@ -27,11 +27,11 @@ public class ReviewIssueEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "review_task_id", nullable = false)
-    private ReviewTaskEntity reviewTask;
+    @JoinColumn(name = "review_api_run_id", nullable = false)
+    private ReviewApiRunEntity reviewApiRun;
 
-    @Column(name = "review_run_id")
-    private Long reviewRunId;
+    @Column(name = "review_api_run_id", insertable = false, updatable = false)
+    private Long reviewApiRunId;
 
     /**
      * Public API issue id (e.g. "ISSUE-1"). Distinct from the internal database id.
@@ -89,21 +89,22 @@ public class ReviewIssueEntity {
         this.id = id;
     }
 
-    public ReviewTaskEntity getReviewTask() {
-        return reviewTask;
+    public ReviewApiRunEntity getReviewApiRun() {
+        return reviewApiRun;
     }
 
-    public void setReviewTask(ReviewTaskEntity reviewTask) {
-        this.reviewTask = reviewTask;
+    public void setReviewApiRun(ReviewApiRunEntity reviewApiRun) {
+        this.reviewApiRun = reviewApiRun;
     }
 
-    public Long getReviewRunId() {
-        return reviewRunId;
+    public Long getReviewApiRunId() {
+        return reviewApiRunId;
     }
 
-    public void setReviewRunId(Long reviewRunId) {
-        this.reviewRunId = reviewRunId;
+    public void setReviewApiRunId(Long reviewApiRunId) {
+        this.reviewApiRunId = reviewApiRunId;
     }
+
 
     public String getIssueKey() {
         return issueKey;

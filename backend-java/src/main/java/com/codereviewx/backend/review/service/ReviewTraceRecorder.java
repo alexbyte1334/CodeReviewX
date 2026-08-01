@@ -7,7 +7,7 @@ import com.codereviewx.backend.review.github.GithubPrMetadataLoadResult;
 import com.codereviewx.backend.review.github.GithubPrMetadataLoader;
 import com.codereviewx.backend.review.github.GithubProperties;
 import com.codereviewx.backend.review.persistence.entity.ReviewProviderTraceEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewToolTraceEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
@@ -43,16 +43,16 @@ public class ReviewTraceRecorder {
     }
 
     public int countToolTraces(Long runId) {
-        return toolTraceRepository.countByReviewRunId(runId);
+        return toolTraceRepository.countByReviewApiRunId(runId);
     }
 
     public void recordMetadataLoad(Long runId,
-                                   ReviewTaskEntity task,
+                                   ReviewApiRunEntity task,
                                    GithubPrMetadataLoadResult result,
                                    LocalDateTime startedAt,
                                    LocalDateTime finishedAt) {
         ReviewToolTraceEntity trace = new ReviewToolTraceEntity();
-        trace.setReviewRunId(runId);
+        trace.setReviewApiRunId(runId);
         trace.setSequenceNumber(1);
         trace.setToolName(GithubPrMetadataLoader.TOOL_NAME);
         trace.setStatus(result.isSuccess() ? ToolTraceStatus.SUCCESS : ToolTraceStatus.FAILED);
@@ -72,12 +72,12 @@ public class ReviewTraceRecorder {
     }
 
     public void recordDiffLoad(Long runId,
-                               ReviewTaskEntity task,
+                               ReviewApiRunEntity task,
                                GithubPrDiffLoadResult result,
                                LocalDateTime startedAt,
                                LocalDateTime finishedAt) {
         ReviewToolTraceEntity trace = new ReviewToolTraceEntity();
-        trace.setReviewRunId(runId);
+        trace.setReviewApiRunId(runId);
         trace.setSequenceNumber(2);
         trace.setToolName(GithubPrDiffLoader.TOOL_NAME);
         trace.setStatus(result.isSuccess() ? ToolTraceStatus.SUCCESS : ToolTraceStatus.FAILED);
@@ -126,7 +126,7 @@ public class ReviewTraceRecorder {
                                 LocalDateTime startedAt,
                                 LocalDateTime finishedAt) {
         ReviewToolTraceEntity trace = new ReviewToolTraceEntity();
-        trace.setReviewRunId(runId);
+        trace.setReviewApiRunId(runId);
         trace.setSequenceNumber(sequenceNumber);
         trace.setToolName(toolName);
         trace.setStatus(status);
@@ -142,12 +142,12 @@ public class ReviewTraceRecorder {
     }
 
     public void recordProviderTrace(Long runId,
-                                    ReviewTaskEntity task,
+                                    ReviewApiRunEntity task,
                                     ReviewProviderResult providerResult,
                                     LocalDateTime startedAt,
                                     LocalDateTime finishedAt) {
         ReviewProviderTraceEntity trace = new ReviewProviderTraceEntity();
-        trace.setReviewRunId(runId);
+        trace.setReviewApiRunId(runId);
         trace.setRequestedProvider(providerResult.getRequestedProvider());
         trace.setProviderUsed(providerResult.getProviderUsed());
         trace.setProviderHit(providerResult.isProviderHit());

@@ -10,7 +10,7 @@ import com.codereviewx.backend.review.enums.PublishStatus;
 import com.codereviewx.backend.review.persistence.entity.ReviewCommentPreviewEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewInputSnapshotEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewProviderTraceEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewRunEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewToolTraceEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository;
@@ -31,21 +31,21 @@ public class ReviewRunResponseAssembler {
         this.providerTraceRepository = providerTraceRepository;
     }
 
-    public ReviewRunResponse toRunResponse(ReviewRunEntity run) {
+    public ReviewRunResponse toRunResponse(ReviewApiRunEntity run) {
         ReviewRunResponse response = new ReviewRunResponse();
         response.setId(run.getId());
-        response.setTaskId(run.getReviewTaskId());
-        response.setStatus(run.getStatus());
+        response.setTaskId(run.getId());
+        response.setStatus(run.getExecutionStatus());
         response.setReviewMode(run.getReviewMode());
         response.setStartedAt(run.getStartedAt());
         response.setFinishedAt(run.getFinishedAt());
         response.setErrorCode(run.getErrorCode());
         response.setErrorMessage(run.getErrorMessage());
 
-        inputSnapshotRepository.findByReviewRunId(run.getId())
+        inputSnapshotRepository.findByReviewApiRunId(run.getId())
                 .ifPresent(snapshot -> response.setInputSnapshotSummary(toInputSnapshotSummary(snapshot)));
 
-        providerTraceRepository.findByReviewRunId(run.getId())
+        providerTraceRepository.findByReviewApiRunId(run.getId())
                 .ifPresent(trace -> response.setProviderSummary(toProviderSummary(trace)));
 
         return response;

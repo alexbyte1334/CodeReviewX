@@ -30,7 +30,7 @@ public class CommentPreviewBuilder {
                                                         ReviewIssueEntity issue,
                                                         LocalDateTime now) {
         ReviewCommentPreviewEntity preview = new ReviewCommentPreviewEntity();
-        preview.setReviewRunId(runId);
+        preview.setReviewApiRunId(runId);
         preview.setReviewIssueId(issue.getId());
         preview.setIssueKey(issue.getIssueKey());
         preview.setFilePath(issue.getFilePath());

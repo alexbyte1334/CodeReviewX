@@ -20,8 +20,8 @@ public class ReviewCommentPreviewEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "review_run_id", nullable = false)
-    private Long reviewRunId;
+    @Column(name = "review_api_run_id", nullable = false)
+    private Long reviewApiRunId;
 
     @Column(name = "review_issue_id")
     private Long reviewIssueId;
@@ -83,12 +83,12 @@ public class ReviewCommentPreviewEntity {
         this.id = id;
     }
 
-    public Long getReviewRunId() {
-        return reviewRunId;
+    public Long getReviewApiRunId() {
+        return reviewApiRunId;
     }
 
-    public void setReviewRunId(Long reviewRunId) {
-        this.reviewRunId = reviewRunId;
+    public void setReviewApiRunId(Long reviewApiRunId) {
+        this.reviewApiRunId = reviewApiRunId;
     }
 
     public Long getReviewIssueId() {

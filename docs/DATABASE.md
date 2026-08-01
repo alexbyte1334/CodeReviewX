@@ -34,9 +34,8 @@ the Flyway schema.
 
 | Table | Purpose |
 |---|---|
-| `review_task` | user-created review target and latest task-level status |
+| `review_api_run` | sole durable Review API aggregate root and workflow status |
 | `review_issue` | normalized structured findings |
-| `review_run` | one execution attempt for a task |
 | `review_input_snapshot` | sanitized GitHub PR metadata and diff summary |
 | `review_tool_trace` | ordered GitHub/tool/agent step timeline |
 | `review_provider_trace` | provider request/used/hit summary |
@@ -49,50 +48,33 @@ the Flyway schema.
 | `rag_retrieval_trace` | sanitized retrieval metrics and degraded status |
 | `review_issue_evidence` | validated bounded evidence attached to an issue |
 
-## 3. `review_task`
+## 3. `review_api_run`
 
-Stores the user-visible review task.
+Stores the user-visible Review API request and its single current execution.
+Every child projection is owned by `review_api_run_id`. A fresh v1 database is
+required; V12 intentionally replaces the legacy task/run tables and does not
+provide an old-runtime data migration.
 
 Important fields:
 
 | Column | Meaning |
 |---|---|
-| `id` | internal task id |
+| `id` | internal aggregate id |
+| `public_id` | Review API UUID exposed to clients |
+| `idempotency_key` | unique request key |
 | `repo_url` | GitHub repository URL supplied by user |
 | `pr_number` | pull request number |
 | `diff_text` | optional pasted manual diff; not returned by public APIs |
 | `review_mode` | `MANUAL_DIFF` or `GITHUB_PR` |
-| `latest_run_id` | latest associated `review_run` |
 | `status` | `PENDING`, `RUNNING`, `SUCCESS`, `FAILED` |
+| `execution_status` | stage-level status such as `REVIEWING` or `BUILDING_PREVIEW` |
 | `summary` | user-facing completion summary |
 | `requested_provider` | currently `mimo` for new tasks |
 | `provider_used` | provider that produced findings |
 | `provider_hit` | whether requested provider was used |
 | `error_message` | user-readable task failure message |
 
-## 4. `review_run`
-
-Stores execution-level state for a task run.
-
-Important fields:
-
-| Column | Meaning |
-|---|---|
-| `review_task_id` | owning task |
-| `run_number` | run sequence per task |
-| `review_mode` | `MANUAL_DIFF` or `GITHUB_PR` |
-| `status` | run stage: ingesting, reviewing, building preview, success, failed |
-| `requested_provider` | requested provider |
-| `provider_used` | provider used |
-| `provider_hit` | provider match flag |
-| `error_code` | stable failure code |
-| `error_message` | safe failure message |
-| `started_at` / `finished_at` | run timing |
-
-Current implementation creates one run per task. The schema is ready for later
-retry/re-run support.
-
-## 5. `review_issue`
+## 4. `review_issue`
 
 Stores normalized issues generated from approved provider output.
 
@@ -100,8 +82,7 @@ Important fields:
 
 | Column | Meaning |
 |---|---|
-| `review_task_id` | owning task |
-| `review_run_id` | run that produced the issue |
+| `review_api_run_id` | owning Review API aggregate |
 | `issue_key` | public stable id such as `MIMO-ISSUE-1` |
 | `severity` | `HIGH`, `MEDIUM`, `LOW` |
 | `category` | bug/security/performance/maintainability/style/test |
@@ -114,7 +95,7 @@ Important fields:
 `issueSummary` is not persisted as a separate table. It is computed from
 persisted issues when responses are assembled.
 
-## 6. `review_input_snapshot`
+## 5. `review_input_snapshot`
 
 Stores sanitized GitHub PR metadata and diff summary for `GITHUB_PR` mode.
 
@@ -125,7 +106,7 @@ The `snapshot_json` field stores a sanitized file summary. It intentionally
 does not store GitHub tokens, Authorization headers, prompts, model output, or
 raw full diff text.
 
-## 7. `review_tool_trace`
+## 6. `review_tool_trace`
 
 Stores ordered execution events such as:
 
@@ -150,7 +131,7 @@ RAG-disabled/degraded reviews record `repository.context.index` instead of the
 five `rag.*` steps. Each row stores safe input/output summaries, status, error
 code, and timing, never raw prompts, full source, or credentials.
 
-## 8. `review_provider_trace`
+## 7. `review_provider_trace`
 
 Stores provider-level observability:
 
@@ -164,7 +145,7 @@ Stores provider-level observability:
 | `normalization_summary` | safe summary of mapping |
 | `fallback_reason` | reserved; current MiMo-only path should not fallback |
 
-## 9. `review_comment_preview`
+## 8. `review_comment_preview`
 
 Stores local draft comments generated from issues.
 
@@ -172,7 +153,7 @@ Important fields:
 
 | Column | Meaning |
 |---|---|
-| `review_run_id` | owning run |
+| `review_api_run_id` | owning Review API aggregate |
 | `review_issue_id` / `issue_key` | source issue |
 | `file_path` / `line_number` / `side` | GitHub review comment target |
 | `draft_body` | local comment body |
@@ -185,7 +166,7 @@ Important fields:
 Publishing requires a stored input snapshot with GitHub owner, repo, PR number,
 and head SHA.
 
-## 10. Production RAG Tables and Retention
+## 9. Production RAG Tables and Retention
 
 V4 creates repository, job, document, chunk, retrieval-trace, and issue-evidence
 tables. V5 adds `rag_index_snapshot` and backfills only a provable active READY
@@ -215,7 +196,7 @@ snapshots newer than 30 days plus the latest five per repository. It does not
 delete retrieval traces. Back up PostgreSQL before cleanup and never delete the
 active snapshot before a replacement is READY.
 
-## 11. Index Job and Snapshot Lifecycle
+## 10. Index Job and Snapshot Lifecycle
 
 ```text
 QUEUED -> RUNNING -> READY

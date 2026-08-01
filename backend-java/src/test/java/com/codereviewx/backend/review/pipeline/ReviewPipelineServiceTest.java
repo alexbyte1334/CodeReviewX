@@ -5,7 +5,7 @@ import com.codereviewx.backend.review.enums.IssueSeverity;
 import com.codereviewx.backend.review.enums.IssueSource;
 import com.codereviewx.backend.review.enums.IssueStatus;
 import com.codereviewx.backend.review.persistence.entity.ReviewIssueEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -55,7 +55,7 @@ class ReviewPipelineServiceTest {
                 new ReviewContext(1L, "https://github.com/example/repo", 1, LocalDateTime.now())
         );
 
-        assertThat(result).isNotInstanceOf(ReviewTaskEntity.class);
+        assertThat(result).isNotInstanceOf(ReviewApiRunEntity.class);
         assertThat(result).isNotInstanceOf(ReviewIssueEntity.class);
         assertThat(result.getFindings()).isEmpty();
     }

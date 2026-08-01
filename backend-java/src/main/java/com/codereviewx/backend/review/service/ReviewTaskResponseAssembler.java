@@ -11,12 +11,11 @@ import com.codereviewx.backend.review.enums.ToolTraceStatus;
 import com.codereviewx.backend.review.persistence.entity.ReviewIssueEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewInputSnapshotEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewProviderTraceEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewRunEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewCommentPreviewRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
 import com.codereviewx.backend.review.persistence.repository.RunCountProjection;
 import org.springframework.stereotype.Component;
@@ -31,29 +30,29 @@ import java.util.stream.Collectors;
 @Component
 public class ReviewTaskResponseAssembler {
 
-    private final ReviewRunRepository reviewRunRepository;
+    private final ReviewApiRunRepository reviewApiRunRepository;
     private final ReviewInputSnapshotRepository inputSnapshotRepository;
     private final ReviewToolTraceRepository toolTraceRepository;
     private final ReviewProviderTraceRepository providerTraceRepository;
     private final ReviewCommentPreviewRepository commentPreviewRepository;
 
-    public ReviewTaskResponseAssembler(ReviewRunRepository reviewRunRepository,
+    public ReviewTaskResponseAssembler(ReviewApiRunRepository reviewApiRunRepository,
                                        ReviewInputSnapshotRepository inputSnapshotRepository,
                                        ReviewToolTraceRepository toolTraceRepository,
                                        ReviewProviderTraceRepository providerTraceRepository,
                                        ReviewCommentPreviewRepository commentPreviewRepository) {
-        this.reviewRunRepository = reviewRunRepository;
+        this.reviewApiRunRepository = reviewApiRunRepository;
         this.inputSnapshotRepository = inputSnapshotRepository;
         this.toolTraceRepository = toolTraceRepository;
         this.providerTraceRepository = providerTraceRepository;
         this.commentPreviewRepository = commentPreviewRepository;
     }
 
-    public ReviewTaskResponse toResponse(ReviewTaskEntity task, List<ReviewIssueEntity> issueEntities) {
+    public ReviewTaskResponse toResponse(ReviewApiRunEntity task, List<ReviewIssueEntity> issueEntities) {
         return toResponse(task, issueEntities, loadStage2SummaryContext(Collections.singletonList(task)));
     }
 
-    public List<ReviewTaskResponse> toResponses(List<ReviewTaskEntity> tasks,
+    public List<ReviewTaskResponse> toResponses(List<ReviewApiRunEntity> tasks,
                                                 Map<Long, List<ReviewIssueEntity>> issuesByTaskId) {
         if (tasks.isEmpty()) {
             return Collections.emptyList();
@@ -67,7 +66,7 @@ public class ReviewTaskResponseAssembler {
                 .collect(Collectors.toList());
     }
 
-    private ReviewTaskResponse toResponse(ReviewTaskEntity task,
+    private ReviewTaskResponse toResponse(ReviewApiRunEntity task,
                                           List<ReviewIssueEntity> issueEntities,
                                           Stage2SummaryContext context) {
         List<ReviewIssueResponse> issueResponses = issueEntities.stream()
@@ -91,7 +90,7 @@ public class ReviewTaskResponseAssembler {
         response.setRequestedProvider(task.getRequestedProvider());
         response.setProviderUsed(task.getProviderUsed());
         response.setProviderHit(task.getProviderHit());
-        response.setLatestRunId(task.getLatestRunId());
+        response.setLatestRunId(task.getId());
         response.setReviewMode(task.getReviewMode());
         populateRunErrorCode(response, task, context);
         populateStage2Summaries(response, task, context);
@@ -144,22 +143,22 @@ public class ReviewTaskResponseAssembler {
     }
 
     private void populateRunErrorCode(ReviewTaskResponse response,
-                                      ReviewTaskEntity task,
+                                      ReviewApiRunEntity task,
                                       Stage2SummaryContext context) {
-        Long latestRunId = task.getLatestRunId();
+        Long latestRunId = task.getId();
         if (latestRunId == null) {
             return;
         }
-        ReviewRunEntity run = context.runsById.get(latestRunId);
+        ReviewApiRunEntity run = context.runsById.get(latestRunId);
         if (run != null) {
             response.setErrorCode(run.getErrorCode());
         }
     }
 
     private void populateStage2Summaries(ReviewTaskResponse response,
-                                         ReviewTaskEntity task,
+                                         ReviewApiRunEntity task,
                                          Stage2SummaryContext context) {
-        Long latestRunId = task.getLatestRunId();
+        Long latestRunId = task.getId();
         if (latestRunId == null) {
             response.setCommentPreviewCount(0);
             return;
@@ -190,9 +189,9 @@ public class ReviewTaskResponseAssembler {
         response.setTraceSummary(new TraceSummaryResponse(toolCount, failedToolCount, providerFallback));
     }
 
-    private Stage2SummaryContext loadStage2SummaryContext(List<ReviewTaskEntity> tasks) {
+    private Stage2SummaryContext loadStage2SummaryContext(List<ReviewApiRunEntity> tasks) {
         List<Long> runIds = tasks.stream()
-                .map(ReviewTaskEntity::getLatestRunId)
+                .map(ReviewApiRunEntity::getId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .collect(Collectors.toList());
@@ -200,20 +199,20 @@ public class ReviewTaskResponseAssembler {
             return Stage2SummaryContext.empty();
         }
 
-        Map<Long, ReviewRunEntity> runsById = reviewRunRepository.findAllById(runIds)
+        Map<Long, ReviewApiRunEntity> runsById = reviewApiRunRepository.findAllById(runIds)
                 .stream()
-                .collect(Collectors.toMap(ReviewRunEntity::getId, Function.identity()));
-        Map<Long, ReviewInputSnapshotEntity> snapshotsByRunId = inputSnapshotRepository.findByReviewRunIdIn(runIds)
+                .collect(Collectors.toMap(ReviewApiRunEntity::getId, Function.identity()));
+        Map<Long, ReviewInputSnapshotEntity> snapshotsByRunId = inputSnapshotRepository.findByReviewApiRunIdIn(runIds)
                 .stream()
-                .collect(Collectors.toMap(ReviewInputSnapshotEntity::getReviewRunId, Function.identity()));
-        Map<Long, ReviewProviderTraceEntity> providerTracesByRunId = providerTraceRepository.findByReviewRunIdIn(runIds)
+                .collect(Collectors.toMap(ReviewInputSnapshotEntity::getReviewApiRunId, Function.identity()));
+        Map<Long, ReviewProviderTraceEntity> providerTracesByRunId = providerTraceRepository.findByReviewApiRunIdIn(runIds)
                 .stream()
-                .collect(Collectors.toMap(ReviewProviderTraceEntity::getReviewRunId, Function.identity()));
+                .collect(Collectors.toMap(ReviewProviderTraceEntity::getReviewApiRunId, Function.identity()));
         Map<Long, Long> commentPreviewCountsByRunId =
-                toCountMap(commentPreviewRepository.countByReviewRunIds(runIds));
-        Map<Long, Long> toolCountsByRunId = toCountMap(toolTraceRepository.countByReviewRunIds(runIds));
+                toCountMap(commentPreviewRepository.countByReviewApiRunIds(runIds));
+        Map<Long, Long> toolCountsByRunId = toCountMap(toolTraceRepository.countByReviewApiRunIds(runIds));
         Map<Long, Long> failedToolCountsByRunId = toCountMap(
-                toolTraceRepository.countByReviewRunIdsAndStatus(runIds, ToolTraceStatus.FAILED));
+                toolTraceRepository.countByReviewApiRunIdsAndStatus(runIds, ToolTraceStatus.FAILED));
         return new Stage2SummaryContext(
                 runsById,
                 snapshotsByRunId,
@@ -226,7 +225,7 @@ public class ReviewTaskResponseAssembler {
 
     private Map<Long, Long> toCountMap(List<RunCountProjection> counts) {
         return counts.stream()
-                .collect(Collectors.toMap(RunCountProjection::getReviewRunId, RunCountProjection::getItemCount));
+                .collect(Collectors.toMap(RunCountProjection::getReviewApiRunId, RunCountProjection::getItemCount));
     }
 
     private int toInt(Long value) {
@@ -237,7 +236,7 @@ public class ReviewTaskResponseAssembler {
     }
 
     private record Stage2SummaryContext(
-            Map<Long, ReviewRunEntity> runsById,
+            Map<Long, ReviewApiRunEntity> runsById,
             Map<Long, ReviewInputSnapshotEntity> snapshotsByRunId,
             Map<Long, ReviewProviderTraceEntity> providerTracesByRunId,
             Map<Long, Long> commentPreviewCountsByRunId,

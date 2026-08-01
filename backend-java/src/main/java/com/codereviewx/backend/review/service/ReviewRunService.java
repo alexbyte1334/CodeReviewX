@@ -10,9 +10,9 @@ import com.codereviewx.backend.review.dto.UpdateCommentPreviewSelectionRequest;
 import com.codereviewx.backend.review.exception.ReviewRunNotFoundException;
 import com.codereviewx.backend.review.exception.ReviewRequestInvalidException;
 import com.codereviewx.backend.review.persistence.entity.ReviewCommentPreviewEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewRunEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewCommentPreviewRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,18 +26,18 @@ import java.util.stream.Collectors;
 @Service
 public class ReviewRunService {
 
-    private final ReviewRunRepository reviewRunRepository;
+    private final ReviewApiRunRepository reviewApiRunRepository;
     private final ReviewToolTraceRepository toolTraceRepository;
     private final ReviewCommentPreviewRepository commentPreviewRepository;
     private final CommentPreviewPublishService commentPreviewPublishService;
     private final ReviewRunResponseAssembler responseAssembler;
 
-    public ReviewRunService(ReviewRunRepository reviewRunRepository,
+    public ReviewRunService(ReviewApiRunRepository reviewApiRunRepository,
                             ReviewToolTraceRepository toolTraceRepository,
                             ReviewCommentPreviewRepository commentPreviewRepository,
                             CommentPreviewPublishService commentPreviewPublishService,
                             ReviewRunResponseAssembler responseAssembler) {
-        this.reviewRunRepository = reviewRunRepository;
+        this.reviewApiRunRepository = reviewApiRunRepository;
         this.toolTraceRepository = toolTraceRepository;
         this.commentPreviewRepository = commentPreviewRepository;
         this.commentPreviewPublishService = commentPreviewPublishService;
@@ -46,7 +46,7 @@ public class ReviewRunService {
 
     @Transactional(readOnly = true)
     public ReviewRunResponse getRun(Long runId) {
-        ReviewRunEntity run = reviewRunRepository.findById(runId)
+        ReviewApiRunEntity run = reviewApiRunRepository.findById(runId)
                 .orElseThrow(() -> new ReviewRunNotFoundException(runId));
         return responseAssembler.toRunResponse(run);
     }
@@ -55,7 +55,7 @@ public class ReviewRunService {
     public ToolTraceListResponse getTrace(Long runId) {
         requireRunExists(runId);
         List<ToolTraceItemResponse> items = toolTraceRepository
-                .findByReviewRunIdOrderBySequenceNumberAsc(runId)
+                .findByReviewApiRunIdOrderBySequenceNumberAsc(runId)
                 .stream()
                 .map(responseAssembler::toToolTraceItem)
                 .collect(Collectors.toList());
@@ -66,7 +66,7 @@ public class ReviewRunService {
     public CommentPreviewListResponse getCommentPreviews(Long runId) {
         requireRunExists(runId);
         List<CommentPreviewItemResponse> items = commentPreviewRepository
-                .findByReviewRunIdOrderByIdAsc(runId)
+                .findByReviewApiRunIdOrderByIdAsc(runId)
                 .stream()
                 .map(responseAssembler::toCommentPreviewItem)
                 .collect(Collectors.toList());
@@ -78,7 +78,7 @@ public class ReviewRunService {
                                                                     UpdateCommentPreviewSelectionRequest request) {
         requireSelectionRequest(request);
         requireRunExists(runId);
-        List<ReviewCommentPreviewEntity> previews = commentPreviewRepository.findByReviewRunIdOrderByIdAsc(runId);
+        List<ReviewCommentPreviewEntity> previews = commentPreviewRepository.findByReviewApiRunIdOrderByIdAsc(runId);
         Set<Long> availableIds = previews.stream()
                 .map(ReviewCommentPreviewEntity::getId)
                 .collect(Collectors.toSet());
@@ -126,7 +126,7 @@ public class ReviewRunService {
     }
 
     private void requireRunExists(Long runId) {
-        if (!reviewRunRepository.existsById(runId)) {
+        if (!reviewApiRunRepository.existsById(runId)) {
             throw new ReviewRunNotFoundException(runId);
         }
     }

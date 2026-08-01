@@ -16,14 +16,14 @@ import com.codereviewx.backend.review.github.GithubPrMetadata;
 import com.codereviewx.backend.review.github.GithubPrMetadataLoadResult;
 import com.codereviewx.backend.review.github.GithubPrMetadataLoader;
 import com.codereviewx.backend.review.persistence.entity.ReviewInputSnapshotEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.entity.ReviewToolTraceEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewCommentPreviewRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewIssueRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
 import com.codereviewx.backend.review.pipeline.provider.mimo.TestMiMoAgentResponses;
 import com.codereviewx.backend.review.pipeline.provider.mimo.ReviewPromptBuilder;
@@ -45,13 +45,13 @@ import org.mockito.ArgumentCaptor;
 
 @SpringBootTest
 @TestPropertySource(properties = "codereviewx.github.token=test-token")
-class ReviewTaskServiceGithubPrTest {
+class ReviewWorkflowServiceGithubPrTest {
 
     @Autowired
-    private ReviewTaskService service;
+    private ReviewWorkflowService service;
 
     @Autowired
-    private ReviewTaskRepository reviewTaskRepository;
+    private ReviewApiRunRepository reviewTaskRepository;
 
     @Autowired
     private ReviewIssueRepository reviewIssueRepository;
@@ -69,7 +69,7 @@ class ReviewTaskServiceGithubPrTest {
     private ReviewInputSnapshotRepository inputSnapshotRepository;
 
     @Autowired
-    private ReviewRunRepository reviewRunRepository;
+    private ReviewApiRunRepository reviewRunRepository;
 
     @MockBean
     private GithubPrMetadataLoader githubPrMetadataLoader;
@@ -144,7 +144,7 @@ class ReviewTaskServiceGithubPrTest {
         assertThat(response.getCommentPreviewCount()).isEqualTo(4);
 
         List<ReviewToolTraceEntity> traces =
-                toolTraceRepository.findByReviewRunIdOrderBySequenceNumberAsc(response.getLatestRunId());
+                toolTraceRepository.findByReviewApiRunIdOrderBySequenceNumberAsc(response.getLatestRunId());
         assertThat(traces).hasSize(9);
         assertThat(traces.get(0).getToolName()).isEqualTo(GithubPrMetadataLoader.TOOL_NAME);
         assertThat(traces.get(0).getStatus()).isEqualTo(ToolTraceStatus.SUCCESS);
@@ -175,7 +175,7 @@ class ReviewTaskServiceGithubPrTest {
                     assertThat(trace.getDurationMs()).isNotNull();
                 });
 
-        ReviewInputSnapshotEntity snapshot = inputSnapshotRepository.findByReviewRunId(response.getLatestRunId())
+        ReviewInputSnapshotEntity snapshot = inputSnapshotRepository.findByReviewApiRunId(response.getLatestRunId())
                 .orElseThrow();
         assertThat(snapshot.getOwner()).isEqualTo("example");
         assertThat(snapshot.getRepo()).isEqualTo("repo");
@@ -189,10 +189,10 @@ class ReviewTaskServiceGithubPrTest {
         assertThat(snapshot.getSnapshotJson()).doesNotContain("test-token");
         assertThat(snapshot.getSnapshotJson()).doesNotContainIgnoringCase("Authorization");
 
-        ReviewTaskEntity task = reviewTaskRepository.findById(response.getId()).orElseThrow();
+        ReviewApiRunEntity task = reviewTaskRepository.findById(response.getId()).orElseThrow();
         assertThat(task.getDiffText()).isNull();
 
-        assertThat(providerTraceRepository.findByReviewRunId(response.getLatestRunId()))
+        assertThat(providerTraceRepository.findByReviewApiRunId(response.getLatestRunId()))
                 .isPresent()
                 .get()
                 .satisfies(trace -> {
@@ -201,7 +201,7 @@ class ReviewTaskServiceGithubPrTest {
                     assertThat(trace.getProviderHit()).isTrue();
                     assertThat(trace.getFindingCount()).isEqualTo(3);
                 });
-        assertThat(commentPreviewRepository.findByReviewRunIdOrderByIdAsc(response.getLatestRunId()))
+        assertThat(commentPreviewRepository.findByReviewApiRunIdOrderByIdAsc(response.getLatestRunId()))
                 .hasSize(4)
                 .allSatisfy(preview -> assertThat(preview.getDraftBody()).contains("Suggestion:"));
 
@@ -228,10 +228,10 @@ class ReviewTaskServiceGithubPrTest {
         assertThat(response.getStatus()).isEqualTo(ReviewTaskStatus.FAILED);
         assertThat(response.getErrorCode()).isEqualTo(com.codereviewx.backend.review.ReviewErrorCodes.GITHUB_DIFF_TOO_LARGE);
         assertThat(response.getIssues()).isEmpty();
-        assertThat(inputSnapshotRepository.findByReviewRunId(response.getLatestRunId())).isEmpty();
+        assertThat(inputSnapshotRepository.findByReviewApiRunId(response.getLatestRunId())).isEmpty();
 
         List<ReviewToolTraceEntity> traces =
-                toolTraceRepository.findByReviewRunIdOrderBySequenceNumberAsc(response.getLatestRunId());
+                toolTraceRepository.findByReviewApiRunIdOrderBySequenceNumberAsc(response.getLatestRunId());
         assertThat(traces).hasSize(2);
         assertThat(traces.get(0).getStatus()).isEqualTo(ToolTraceStatus.SUCCESS);
         assertThat(traces.get(1).getToolName()).isEqualTo(GithubPrDiffLoader.TOOL_NAME);

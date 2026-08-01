@@ -20,8 +20,8 @@ public class ReviewToolTraceEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "review_run_id", nullable = false)
-    private Long reviewRunId;
+    @Column(name = "review_api_run_id", nullable = false)
+    private Long reviewApiRunId;
 
     @Column(name = "sequence_number", nullable = false)
     private Integer sequenceNumber;
@@ -68,12 +68,12 @@ public class ReviewToolTraceEntity {
         this.id = id;
     }
 
-    public Long getReviewRunId() {
-        return reviewRunId;
+    public Long getReviewApiRunId() {
+        return reviewApiRunId;
     }
 
-    public void setReviewRunId(Long reviewRunId) {
-        this.reviewRunId = reviewRunId;
+    public void setReviewApiRunId(Long reviewApiRunId) {
+        this.reviewApiRunId = reviewApiRunId;
     }
 
     public Integer getSequenceNumber() {

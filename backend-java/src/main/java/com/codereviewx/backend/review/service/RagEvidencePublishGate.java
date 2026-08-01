@@ -22,7 +22,7 @@ public class RagEvidencePublishGate {
 
     public void validate(ReviewCommentPreviewEntity preview) {
         if (!properties.isRequireEvidence() || !isModelFinding(preview.getSource())) return;
-        if (preview.getReviewRunId() == null || !successfulRagRun(preview.getReviewRunId())) return;
+        if (preview.getReviewApiRunId() == null || !successfulRagRun(preview.getReviewApiRunId())) return;
         if (preview.getReviewIssueId() == null) throw missingEvidence();
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM review_issue_evidence WHERE review_issue_id = ?",
                 Integer.class, preview.getReviewIssueId());
@@ -30,7 +30,7 @@ public class RagEvidencePublishGate {
     }
 
     private boolean successfulRagRun(Long runId) {
-        return traces.findByReviewRunIdAndToolName(runId, "rag.context.assemble").stream()
+        return traces.findByReviewApiRunIdAndToolName(runId, "rag.context.assemble").stream()
                 .anyMatch(trace -> trace.getStatus() == ToolTraceStatus.SUCCESS
                         && trace.getOutputSummary() != null);
     }

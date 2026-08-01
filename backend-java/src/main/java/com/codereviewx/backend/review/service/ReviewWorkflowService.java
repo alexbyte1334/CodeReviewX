@@ -14,11 +14,11 @@ import com.codereviewx.backend.review.github.GithubPrDiffLoadResult;
 import com.codereviewx.backend.review.github.GithubPrDiffLoader;
 import com.codereviewx.backend.review.github.GithubPrMetadataLoader;
 import com.codereviewx.backend.review.persistence.entity.ReviewIssueEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewRunEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewIssueRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
 import com.codereviewx.backend.review.pipeline.ReviewContext;
 import com.codereviewx.backend.review.pipeline.ReviewFinding;
 import com.codereviewx.backend.review.pipeline.ReviewPipelineService;
@@ -37,11 +37,10 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
-public class ReviewTaskService {
+public class ReviewWorkflowService {
 
-    private final ReviewTaskRepository reviewTaskRepository;
     private final ReviewIssueRepository reviewIssueRepository;
-    private final ReviewRunRepository reviewRunRepository;
+    private final ReviewApiRunRepository reviewApiRunRepository;
     private final ReviewPipelineService reviewPipelineService;
     private final GithubPrMetadataLoader githubPrMetadataLoader;
     private final GithubPrDiffLoader githubPrDiffLoader;
@@ -54,9 +53,8 @@ public class ReviewTaskService {
     private final ReviewEvidenceValidator evidenceValidator;
     private final ReviewIssueEvidencePersister evidencePersister;
 
-    public ReviewTaskService(ReviewTaskRepository reviewTaskRepository,
-                             ReviewIssueRepository reviewIssueRepository,
-                             ReviewRunRepository reviewRunRepository,
+    public ReviewWorkflowService(ReviewIssueRepository reviewIssueRepository,
+                             ReviewApiRunRepository reviewApiRunRepository,
                              ReviewPipelineService reviewPipelineService,
                              GithubPrMetadataLoader githubPrMetadataLoader,
                              GithubPrDiffLoader githubPrDiffLoader,
@@ -68,9 +66,8 @@ public class ReviewTaskService {
                              RagReviewContextFacade ragReviewContextFacade,
                              ReviewEvidenceValidator evidenceValidator,
                              ReviewIssueEvidencePersister evidencePersister) {
-        this.reviewTaskRepository = reviewTaskRepository;
         this.reviewIssueRepository = reviewIssueRepository;
-        this.reviewRunRepository = reviewRunRepository;
+        this.reviewApiRunRepository = reviewApiRunRepository;
         this.reviewPipelineService = reviewPipelineService;
         this.githubPrMetadataLoader = githubPrMetadataLoader;
         this.githubPrDiffLoader = githubPrDiffLoader;
@@ -85,14 +82,14 @@ public class ReviewTaskService {
     }
 
     /**
-     * Creates review_task and review_run, then executes MANUAL_DIFF provider path or bounded GITHUB_PR ingestion.
+     * Creates the review_api_run aggregate, then executes MANUAL_DIFF provider path or bounded GITHUB_PR ingestion.
      */
     @Transactional
     public ReviewTaskResponse createTask(CreateReviewTaskRequest request) {
         validateCreateRequest(request);
         PendingTask pending = createPendingTask(request);
-        ReviewTaskEntity savedTask = pending.task();
-        ReviewRunEntity savedRun = pending.run();
+        ReviewApiRunEntity savedTask = pending.task();
+        ReviewApiRunEntity savedRun = pending.run();
         String normalizedDiffText = pending.normalizedDiffText();
         String normalizedProvider = normalizeProvider(request.getProvider());
 
@@ -111,11 +108,18 @@ public class ReviewTaskService {
     /** Creates only the durable task/run rows; callers may execute them asynchronously. */
     @Transactional
     public PendingTask createPendingTask(CreateReviewTaskRequest request) {
+        return createPendingTask(request, java.util.UUID.randomUUID().toString(), "internal-" + java.util.UUID.randomUUID());
+    }
+
+    @Transactional
+    public PendingTask createPendingTask(CreateReviewTaskRequest request, String publicId, String idempotencyKey) {
         validateCreateRequest(request);
         LocalDateTime now = LocalDateTime.now();
         String normalizedDiffText = normalizeDiffText(request.getDiffText());
         ReviewMode reviewMode = resolveReviewMode(request, normalizedDiffText);
-        ReviewTaskEntity task = new ReviewTaskEntity();
+        ReviewApiRunEntity task = new ReviewApiRunEntity();
+        task.setPublicId(publicId);
+        task.setIdempotencyKey(idempotencyKey);
         task.setRepoUrl(request.getRepoUrl());
         task.setPrNumber(request.getPrNumber());
         task.setDiffText(normalizedDiffText);
@@ -123,21 +127,20 @@ public class ReviewTaskService {
         task.setStatus(ReviewTaskStatus.PENDING);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
-        ReviewTaskEntity savedTask = reviewTaskRepository.save(task);
-        ReviewRunEntity savedRun = reviewRunRepository.save(newInitialRun(savedTask.getId(), reviewMode, now));
-        savedTask.setLatestRunId(savedRun.getId());
-        savedTask.setStatus(ReviewTaskStatus.RUNNING);
-        savedTask = reviewTaskRepository.save(savedTask);
-        return new PendingTask(savedTask, savedRun, normalizedDiffText);
+        task.setRunNumber(1);
+        task.setExecutionStatus(ReviewRunStatus.PENDING);
+        task.setStatus(ReviewTaskStatus.RUNNING);
+        ReviewApiRunEntity saved = reviewApiRunRepository.save(task);
+        return new PendingTask(saved, saved, normalizedDiffText);
     }
 
     /** Executes a persisted review outside the request transaction. */
     public ReviewTaskResponse executeExistingGithubTask(Long taskId, Long runId) {
-        ReviewTaskEntity task = reviewTaskRepository.findById(taskId)
+        ReviewApiRunEntity task = reviewApiRunRepository.findById(taskId)
                 .orElseThrow(() -> new ReviewTaskNotFoundException(taskId));
-        ReviewRunEntity run = reviewRunRepository.findById(runId)
+        ReviewApiRunEntity run = reviewApiRunRepository.findById(runId)
                 .orElseThrow(() -> new ReviewRequestInvalidException("Review run not found"));
-        if (!taskId.equals(run.getReviewTaskId()) || !runId.equals(task.getLatestRunId())) {
+        if (!taskId.equals(run.getId()) || !runId.equals(task.getId())) {
             throw new ReviewRequestInvalidException("Review task/run ownership mismatch");
         }
         if (task.getReviewMode() != ReviewMode.GITHUB_PR || run.getReviewMode() != ReviewMode.GITHUB_PR) {
@@ -145,22 +148,22 @@ public class ReviewTaskService {
         }
         task.setStatus(ReviewTaskStatus.RUNNING);
         task.setUpdatedAt(LocalDateTime.now());
-        reviewTaskRepository.save(task);
+        reviewApiRunRepository.save(task);
         return completeGithubPrIngestion(task, run, "mimo");
     }
 
     /** Executes a previously created task without holding the HTTP request transaction. */
     public ReviewTaskResponse executeExistingTask(Long taskId, Long runId) {
-        ReviewTaskEntity task = reviewTaskRepository.findById(taskId)
+        ReviewApiRunEntity task = reviewApiRunRepository.findById(taskId)
                 .orElseThrow(() -> new ReviewTaskNotFoundException(taskId));
-        ReviewRunEntity run = reviewRunRepository.findById(runId)
+        ReviewApiRunEntity run = reviewApiRunRepository.findById(runId)
                 .orElseThrow(() -> new ReviewRequestInvalidException("Review run not found"));
-        if (!taskId.equals(run.getReviewTaskId()) || !runId.equals(task.getLatestRunId())) {
+        if (!taskId.equals(run.getId()) || !runId.equals(task.getId())) {
             throw new ReviewRequestInvalidException("Review task/run ownership mismatch");
         }
         task.setStatus(ReviewTaskStatus.RUNNING);
         task.setUpdatedAt(LocalDateTime.now());
-        reviewTaskRepository.save(task);
+        reviewApiRunRepository.save(task);
         if (task.getReviewMode() == ReviewMode.GITHUB_PR) {
             return completeGithubPrIngestion(task, run, "mimo");
         }
@@ -171,7 +174,7 @@ public class ReviewTaskService {
         return completeProviderReview(task, run, diff, "mimo", staticFindings, null, null);
     }
 
-    public record PendingTask(ReviewTaskEntity task, ReviewRunEntity run, String normalizedDiffText) {}
+    public record PendingTask(ReviewApiRunEntity task, ReviewApiRunEntity run, String normalizedDiffText) {}
 
     private void validateCreateRequest(CreateReviewTaskRequest request) {
         if (request == null) {
@@ -200,25 +203,13 @@ public class ReviewTaskService {
         }
     }
 
-    private ReviewRunEntity newInitialRun(Long taskId, ReviewMode reviewMode, LocalDateTime now) {
-        ReviewRunEntity run = new ReviewRunEntity();
-        run.setReviewTaskId(taskId);
-        run.setRunNumber(1);
-        run.setReviewMode(reviewMode);
-        run.setStatus(ReviewRunStatus.PENDING);
-        run.setStartedAt(now);
-        run.setCreatedAt(now);
-        run.setUpdatedAt(now);
-        return run;
-    }
-
-    private ReviewTaskResponse completeGithubPrIngestion(ReviewTaskEntity task,
-                                                         ReviewRunEntity run,
+    private ReviewTaskResponse completeGithubPrIngestion(ReviewApiRunEntity task,
+                                                         ReviewApiRunEntity run,
                                                          String normalizedProvider) {
         LocalDateTime ingestionStartedAt = LocalDateTime.now();
-        run.setStatus(ReviewRunStatus.INGESTING);
+        run.setExecutionStatus(ReviewRunStatus.INGESTING);
         run.setUpdatedAt(ingestionStartedAt);
-        reviewRunRepository.save(run);
+        reviewApiRunRepository.save(run);
 
         GithubPrMetadataLoadResult result = githubPrMetadataLoader.load(task.getRepoUrl(), task.getPrNumber());
         LocalDateTime ingestionFinishedAt = LocalDateTime.now();
@@ -270,17 +261,17 @@ public class ReviewTaskService {
         );
     }
 
-    private ReviewTaskResponse completeFailedGithubPrIngestion(ReviewTaskEntity task,
-                                                               ReviewRunEntity run,
+    private ReviewTaskResponse completeFailedGithubPrIngestion(ReviewApiRunEntity task,
+                                                               ReviewApiRunEntity run,
                                                                String errorCode,
                                                                String errorMessage,
                                                                LocalDateTime now) {
-        run.setStatus(ReviewRunStatus.FAILED);
+        run.setExecutionStatus(ReviewRunStatus.FAILED);
         run.setErrorCode(errorCode);
         run.setErrorMessage(errorMessage);
         run.setFinishedAt(now);
         run.setUpdatedAt(now);
-        reviewRunRepository.save(run);
+        reviewApiRunRepository.save(run);
 
         task.setStatus(ReviewTaskStatus.FAILED);
         task.setErrorMessage(errorMessage);
@@ -289,22 +280,22 @@ public class ReviewTaskService {
         task.setProviderUsed(null);
         task.setProviderHit(null);
         task.setUpdatedAt(now);
-        ReviewTaskEntity completedTask = reviewTaskRepository.save(task);
+        ReviewApiRunEntity completedTask = reviewApiRunRepository.save(task);
 
         return responseAssembler.toResponse(completedTask, Collections.emptyList());
     }
 
-    private ReviewTaskResponse completeProviderReview(ReviewTaskEntity task,
-                                                      ReviewRunEntity run,
+    private ReviewTaskResponse completeProviderReview(ReviewApiRunEntity task,
+                                                      ReviewApiRunEntity run,
                                                       String normalizedDiffText,
                                                       String normalizedProvider,
                                                       List<ReviewFinding> supplementalFindings,
                                                       RagEvidenceBundle evidenceBundle,
                                                       GithubPrDiff githubDiff) {
         LocalDateTime reviewStartedAt = LocalDateTime.now();
-        run.setStatus(ReviewRunStatus.REVIEWING);
+        run.setExecutionStatus(ReviewRunStatus.REVIEWING);
         run.setUpdatedAt(reviewStartedAt);
-        reviewRunRepository.save(run);
+        reviewApiRunRepository.save(run);
 
         ReviewContext context = new ReviewContext(
                 task.getId(),
@@ -333,7 +324,7 @@ public class ReviewTaskService {
         run.setProviderUsed(providerResult.getProviderUsed());
         run.setProviderHit(providerResult.isProviderHit());
         run.setUpdatedAt(reviewFinishedAt);
-        reviewRunRepository.save(run);
+        reviewApiRunRepository.save(run);
 
         List<ReviewFinding> providerFindings = providerResult.getFindings();
         if (evidenceBundle != null) {
@@ -350,7 +341,7 @@ public class ReviewTaskService {
         task.setProviderHit(providerResult.isProviderHit());
         task.setErrorMessage(null);
         task.setUpdatedAt(reviewFinishedAt);
-        ReviewTaskEntity completedTask = reviewTaskRepository.save(task);
+        ReviewApiRunEntity completedTask = reviewApiRunRepository.save(task);
 
         Long runId = run.getId();
         List<ReviewIssueEntity> issueEntities = allFindings.stream()
@@ -368,12 +359,12 @@ public class ReviewTaskService {
         }
 
         LocalDateTime previewStartedAt = LocalDateTime.now();
-        run.setStatus(ReviewRunStatus.BUILDING_PREVIEW);
+        run.setExecutionStatus(ReviewRunStatus.BUILDING_PREVIEW);
         run.setUpdatedAt(previewStartedAt);
-        reviewRunRepository.save(run);
+        reviewApiRunRepository.save(run);
 
         List<ReviewIssueEntity> persistedIssues =
-                reviewIssueRepository.findByReviewTaskIdOrderByIdAsc(completedTask.getId());
+                reviewIssueRepository.findByReviewApiRunIdOrderByIdAsc(completedTask.getId());
         commentPreviewBuilder.buildForRun(runId, persistedIssues, previewStartedAt);
         LocalDateTime previewFinishedAt = LocalDateTime.now();
         reviewTraceRecorder.recordToolTrace(runId,
@@ -387,20 +378,20 @@ public class ReviewTaskService {
                 previewFinishedAt);
 
         LocalDateTime completedAt = LocalDateTime.now();
-        run.setStatus(ReviewRunStatus.SUCCESS);
+        run.setExecutionStatus(ReviewRunStatus.SUCCESS);
         run.setFinishedAt(completedAt);
         run.setUpdatedAt(completedAt);
-        reviewRunRepository.save(run);
+        reviewApiRunRepository.save(run);
 
         return responseAssembler.toResponse(completedTask, persistedIssues);
     }
 
-    private ReviewTaskResponse completeFailedProviderReview(ReviewTaskEntity task,
-                                                            ReviewRunEntity run,
+    private ReviewTaskResponse completeFailedProviderReview(ReviewApiRunEntity task,
+                                                            ReviewApiRunEntity run,
                                                             String errorCode,
                                                             String errorMessage,
                                                             LocalDateTime now) {
-        run.setStatus(ReviewRunStatus.FAILED);
+        run.setExecutionStatus(ReviewRunStatus.FAILED);
         run.setRequestedProvider("mimo");
         run.setProviderUsed(null);
         run.setProviderHit(false);
@@ -408,7 +399,7 @@ public class ReviewTaskService {
         run.setErrorMessage(errorMessage);
         run.setFinishedAt(now);
         run.setUpdatedAt(now);
-        reviewRunRepository.save(run);
+        reviewApiRunRepository.save(run);
 
         task.setStatus(ReviewTaskStatus.FAILED);
         task.setSummary(null);
@@ -417,7 +408,7 @@ public class ReviewTaskService {
         task.setProviderHit(false);
         task.setErrorMessage(errorMessage);
         task.setUpdatedAt(now);
-        ReviewTaskEntity failedTask = reviewTaskRepository.save(task);
+        ReviewApiRunEntity failedTask = reviewApiRunRepository.save(task);
 
         return responseAssembler.toResponse(failedTask, Collections.emptyList());
     }
@@ -457,37 +448,37 @@ public class ReviewTaskService {
 
     @Transactional(readOnly = true)
     public List<ReviewTaskResponse> listTasks() {
-        List<ReviewTaskEntity> tasks = reviewTaskRepository.findAllByOrderByCreatedAtDesc();
+        List<ReviewApiRunEntity> tasks = reviewApiRunRepository.findAllByOrderByCreatedAtDesc();
         if (tasks.isEmpty()) {
             return Collections.emptyList();
         }
 
         List<Long> taskIds = tasks.stream()
-                .map(ReviewTaskEntity::getId)
+                .map(ReviewApiRunEntity::getId)
                 .collect(Collectors.toList());
         Map<Long, List<ReviewIssueEntity>> issuesByTaskId = reviewIssueRepository
-                .findAllByReviewTaskIdsOrderByTaskIdAndId(taskIds)
+                .findAllByReviewApiRunIdsOrderByTaskIdAndId(taskIds)
                 .stream()
-                .collect(Collectors.groupingBy(issue -> issue.getReviewTask().getId()));
+                .collect(Collectors.groupingBy(issue -> issue.getReviewApiRun().getId()));
 
         return responseAssembler.toResponses(tasks, issuesByTaskId);
     }
 
     @Transactional(readOnly = true)
     public ReviewTaskResponse getTask(Long id) {
-        ReviewTaskEntity task = reviewTaskRepository.findById(id)
+        ReviewApiRunEntity task = reviewApiRunRepository.findById(id)
                 .orElseThrow(() -> new ReviewTaskNotFoundException(id));
-        List<ReviewIssueEntity> issues = reviewIssueRepository.findByReviewTaskIdOrderByIdAsc(id);
+        List<ReviewIssueEntity> issues = reviewIssueRepository.findByReviewApiRunIdOrderByIdAsc(id);
         return responseAssembler.toResponse(task, issues);
     }
 
     private ReviewIssueEntity toIssueEntity(ReviewFinding finding,
-                                            ReviewTaskEntity task,
-                                            Long reviewRunId,
+                                            ReviewApiRunEntity task,
+                                            Long reviewApiRunId,
                                             LocalDateTime now) {
         ReviewIssueEntity entity = new ReviewIssueEntity();
-        entity.setReviewTask(task);
-        entity.setReviewRunId(reviewRunId);
+        entity.setReviewApiRun(task);
+        entity.setReviewApiRunId(reviewApiRunId);
         entity.setIssueKey(finding.getIssueKey());
         entity.setSeverity(finding.getSeverity());
         entity.setCategory(finding.getCategory());

@@ -84,8 +84,8 @@ public class RagReviewContextFacade {
         return prepare(metadata, diff, runId, runId);
     }
 
-    public PreparedContext prepare(GithubPrMetadata metadata, GithubPrDiff diff, Long reviewTaskId, Long runId) {
-        if (reviewTaskId == null || !properties.shouldUseRag(reviewTaskId)) {
+    public PreparedContext prepare(GithubPrMetadata metadata, GithubPrDiff diff, Long reviewApiRunId, Long runId) {
+        if (reviewApiRunId == null || !properties.shouldUseRag(reviewApiRunId)) {
             return legacy(metadata, diff, runId, "RAG disabled or rollout bucket excluded");
         }
         RagIndexService index = indexServices.getIfAvailable();

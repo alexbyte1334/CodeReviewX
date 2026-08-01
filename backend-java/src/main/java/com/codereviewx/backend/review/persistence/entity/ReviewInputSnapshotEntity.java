@@ -18,8 +18,8 @@ public class ReviewInputSnapshotEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "review_run_id", nullable = false)
-    private Long reviewRunId;
+    @Column(name = "review_api_run_id", nullable = false)
+    private Long reviewApiRunId;
 
     @Column(name = "repo_url", nullable = false, length = 500)
     private String repoUrl;
@@ -64,7 +64,7 @@ public class ReviewInputSnapshotEntity {
     @Column(name = "context_truncated", nullable = false)
     private Boolean contextTruncated = false;
 
-    @Column(name = "snapshot_json", nullable = false, length = Length.LONG32)
+    @Column(name = "snapshot_json", nullable = false, columnDefinition = "TEXT")
     private String snapshotJson;
 
     @Column(name = "created_at", nullable = false)
@@ -78,12 +78,12 @@ public class ReviewInputSnapshotEntity {
         this.id = id;
     }
 
-    public Long getReviewRunId() {
-        return reviewRunId;
+    public Long getReviewApiRunId() {
+        return reviewApiRunId;
     }
 
-    public void setReviewRunId(Long reviewRunId) {
-        this.reviewRunId = reviewRunId;
+    public void setReviewApiRunId(Long reviewApiRunId) {
+        this.reviewApiRunId = reviewApiRunId;
     }
 
     public String getRepoUrl() {

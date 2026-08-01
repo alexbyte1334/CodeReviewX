@@ -9,7 +9,7 @@ import java.util.Optional;
 
 public interface ReviewInputSnapshotRepository extends JpaRepository<ReviewInputSnapshotEntity, Long> {
 
-    Optional<ReviewInputSnapshotEntity> findByReviewRunId(Long reviewRunId);
+    Optional<ReviewInputSnapshotEntity> findByReviewApiRunId(Long reviewApiRunId);
 
-    List<ReviewInputSnapshotEntity> findByReviewRunIdIn(Collection<Long> reviewRunIds);
+    List<ReviewInputSnapshotEntity> findByReviewApiRunIdIn(Collection<Long> reviewApiRunIds);
 }

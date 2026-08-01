@@ -88,8 +88,8 @@ public class RagProperties {
 
     public void setRequireEvidence(boolean requireEvidence) { this.requireEvidence = requireEvidence; }
 
-    public boolean shouldUseRag(long reviewTaskId) {
-        return enabled && Math.floorMod(reviewTaskId, 100) < reviewPercentage;
+    public boolean shouldUseRag(long reviewApiRunId) {
+        return enabled && Math.floorMod(reviewApiRunId, 100) < reviewPercentage;
     }
 
     public String getEmbeddingBaseUrl() {

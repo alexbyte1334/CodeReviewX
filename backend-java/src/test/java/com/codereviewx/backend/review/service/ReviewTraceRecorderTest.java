@@ -4,7 +4,7 @@ import com.codereviewx.backend.review.enums.ReviewMode;
 import com.codereviewx.backend.review.enums.ReviewTaskStatus;
 import com.codereviewx.backend.review.github.GithubProperties;
 import com.codereviewx.backend.review.persistence.entity.ReviewProviderTraceEntity;
-import com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity;
+import com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity;
 import com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
 import com.codereviewx.backend.review.pipeline.ReviewProviderResult;
@@ -38,7 +38,7 @@ class ReviewTraceRecorderTest {
                 "mimo",
                 false
         );
-        ReviewTaskEntity task = new ReviewTaskEntity();
+        ReviewApiRunEntity task = new ReviewApiRunEntity();
         task.setRepoUrl("https://github.com/example/repo");
         task.setPrNumber(7);
         task.setReviewMode(ReviewMode.MANUAL_DIFF);

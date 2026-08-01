@@ -17,8 +17,8 @@ import com.codereviewx.backend.review.persistence.repository.ReviewCommentPrevie
 import com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewIssueRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewRunRepository;
-import com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
+import com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository;
 import com.codereviewx.backend.review.persistence.repository.ReviewToolTraceRepository;
 import com.codereviewx.backend.review.pipeline.provider.mimo.TestMiMoAgentResponses;
 import com.codereviewx.backend.review.pipeline.provider.mimo.XiaomiMiMoClient;
@@ -34,13 +34,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
-class ReviewTaskServiceTest {
+class ReviewWorkflowServiceTest {
 
     @Autowired
-    private ReviewTaskService service;
+    private ReviewWorkflowService service;
 
     @Autowired
-    private ReviewTaskRepository reviewTaskRepository;
+    private ReviewApiRunRepository reviewTaskRepository;
 
     @Autowired
     private ReviewIssueRepository reviewIssueRepository;
@@ -58,7 +58,7 @@ class ReviewTaskServiceTest {
     private ReviewInputSnapshotRepository inputSnapshotRepository;
 
     @Autowired
-    private ReviewRunRepository reviewRunRepository;
+    private ReviewApiRunRepository reviewRunRepository;
 
     @MockBean
     private XiaomiMiMoClient xiaomiMiMoClient;
@@ -361,7 +361,7 @@ class ReviewTaskServiceTest {
     void createTask_persistsThreeIssuesToDatabase() {
         ReviewTaskResponse response = service.createTask(manualDiffRequest(42));
 
-        List<?> issues = reviewIssueRepository.findByReviewTaskIdOrderByIdAsc(response.getId());
+        List<?> issues = reviewIssueRepository.findByReviewApiRunIdOrderByIdAsc(response.getId());
         assertThat(issues).hasSize(3);
     }
 
@@ -399,7 +399,7 @@ class ReviewTaskServiceTest {
         assertThat(reviewTaskRepository.findById(response.getId()))
                 .isPresent()
                 .get()
-                .extracting(com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity::getDiffText)
+                .extracting(com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity::getDiffText)
                 .isEqualTo("diff --git a/src/App.tsx b/src/App.tsx\n+const x = 1;");
     }
 
@@ -416,7 +416,7 @@ class ReviewTaskServiceTest {
         assertThat(reviewTaskRepository.findById(response.getId()))
                 .isPresent()
                 .get()
-                .extracting(com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity::getDiffText)
+                .extracting(com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity::getDiffText)
                 .isNull();
     }
 
@@ -433,7 +433,7 @@ class ReviewTaskServiceTest {
         assertThat(reviewTaskRepository.findById(response.getId()))
                 .isPresent()
                 .get()
-                .extracting(com.codereviewx.backend.review.persistence.entity.ReviewTaskEntity::getDiffText)
+                .extracting(com.codereviewx.backend.review.persistence.entity.ReviewApiRunEntity::getDiffText)
                 .isNull();
     }
 
@@ -468,7 +468,7 @@ class ReviewTaskServiceTest {
             assertThat(issue.getSource()).isEqualTo(IssueSource.SEMGREP);
             assertThat(issue.getTitle()).contains("Secret-like request parameter");
         });
-        assertThat(reviewIssueRepository.findByReviewTaskIdOrderByIdAsc(response.getId())).hasSize(4);
+        assertThat(reviewIssueRepository.findByReviewApiRunIdOrderByIdAsc(response.getId())).hasSize(4);
     }
 
     @Test
@@ -495,9 +495,9 @@ class ReviewTaskServiceTest {
         ReviewTaskResponse response = service.createTask(manualDiffRequest(10));
 
         assertThat(response.getLatestRunId()).isNotNull();
-        List<ReviewIssueEntity> issues = reviewIssueRepository.findByReviewTaskIdOrderByIdAsc(response.getId());
+        List<ReviewIssueEntity> issues = reviewIssueRepository.findByReviewApiRunIdOrderByIdAsc(response.getId());
         assertThat(issues).hasSize(3);
-        assertThat(issues.get(0).getReviewRunId()).isEqualTo(response.getLatestRunId());
+        assertThat(issues.get(0).getReviewApiRunId()).isEqualTo(response.getLatestRunId());
     }
 
     @Test

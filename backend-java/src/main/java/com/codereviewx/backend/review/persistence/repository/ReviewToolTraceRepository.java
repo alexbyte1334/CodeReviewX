@@ -11,30 +11,30 @@ import java.util.List;
 
 public interface ReviewToolTraceRepository extends JpaRepository<ReviewToolTraceEntity, Long> {
 
-    List<ReviewToolTraceEntity> findByReviewRunIdOrderBySequenceNumberAsc(Long reviewRunId);
+    List<ReviewToolTraceEntity> findByReviewApiRunIdOrderBySequenceNumberAsc(Long reviewApiRunId);
 
-    int countByReviewRunId(Long reviewRunId);
+    int countByReviewApiRunId(Long reviewApiRunId);
 
-    int countByReviewRunIdAndStatus(Long reviewRunId, ToolTraceStatus status);
+    int countByReviewApiRunIdAndStatus(Long reviewApiRunId, ToolTraceStatus status);
 
-    List<ReviewToolTraceEntity> findByReviewRunIdAndToolName(Long reviewRunId, String toolName);
+    List<ReviewToolTraceEntity> findByReviewApiRunIdAndToolName(Long reviewApiRunId, String toolName);
 
     @Query("""
-            select trace.reviewRunId as reviewRunId, count(trace) as itemCount
+            select trace.reviewApiRunId as reviewApiRunId, count(trace) as itemCount
             from ReviewToolTraceEntity trace
-            where trace.reviewRunId in :reviewRunIds
-            group by trace.reviewRunId
+            where trace.reviewApiRunId in :reviewApiRunIds
+            group by trace.reviewApiRunId
             """)
-    List<RunCountProjection> countByReviewRunIds(@Param("reviewRunIds") Collection<Long> reviewRunIds);
+    List<RunCountProjection> countByReviewApiRunIds(@Param("reviewApiRunIds") Collection<Long> reviewApiRunIds);
 
     @Query("""
-            select trace.reviewRunId as reviewRunId, count(trace) as itemCount
+            select trace.reviewApiRunId as reviewApiRunId, count(trace) as itemCount
             from ReviewToolTraceEntity trace
-            where trace.reviewRunId in :reviewRunIds
+            where trace.reviewApiRunId in :reviewApiRunIds
               and trace.status = :status
-            group by trace.reviewRunId
+            group by trace.reviewApiRunId
             """)
-    List<RunCountProjection> countByReviewRunIdsAndStatus(
-            @Param("reviewRunIds") Collection<Long> reviewRunIds,
+    List<RunCountProjection> countByReviewApiRunIdsAndStatus(
+            @Param("reviewApiRunIds") Collection<Long> reviewApiRunIds,
             @Param("status") ToolTraceStatus status);
 }

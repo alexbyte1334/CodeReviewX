@@ -4,7 +4,7 @@ import com.codereviewx.backend.review.ReviewErrorCodes;
 import com.codereviewx.backend.review.dto.CreateReviewTaskRequest;
 import com.codereviewx.backend.review.dto.ReviewTaskResponse;
 import com.codereviewx.backend.review.enums.ReviewTaskStatus;
-import com.codereviewx.backend.review.service.ReviewTaskService;
+import com.codereviewx.backend.review.service.ReviewWorkflowService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ReviewPipelineFailFastIntegrationTest {
 
     @Autowired
-    private ReviewTaskService reviewTaskService;
+    private ReviewWorkflowService reviewTaskService;
 
     @BeforeEach
     void setUp(@Autowired com.codereviewx.backend.review.persistence.repository.ReviewCommentPreviewRepository commentPreviewRepository,
@@ -29,8 +29,8 @@ class ReviewPipelineFailFastIntegrationTest {
                @Autowired com.codereviewx.backend.review.persistence.repository.ReviewProviderTraceRepository providerTraceRepository,
                @Autowired com.codereviewx.backend.review.persistence.repository.ReviewInputSnapshotRepository inputSnapshotRepository,
                @Autowired com.codereviewx.backend.review.persistence.repository.ReviewIssueRepository issueRepository,
-               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewRunRepository runRepository,
-               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewTaskRepository taskRepository) {
+               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository runRepository,
+               @Autowired com.codereviewx.backend.review.persistence.repository.ReviewApiRunRepository taskRepository) {
         commentPreviewRepository.deleteAll();
         toolTraceRepository.deleteAll();
         providerTraceRepository.deleteAll();

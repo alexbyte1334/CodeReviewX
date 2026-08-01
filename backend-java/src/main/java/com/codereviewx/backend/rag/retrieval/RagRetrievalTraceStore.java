@@ -23,7 +23,7 @@ public class RagRetrievalTraceStore {
     }
 
     @Transactional
-    public void save(long reviewRunId, long repositoryId, String commitSha, String query,
+    public void save(long reviewApiRunId, long repositoryId, String commitSha, String query,
                      RagRetrievalResult result, int selectedCount, int contextChars,
                      long latencyMs) {
         try {
@@ -32,12 +32,12 @@ public class RagRetrievalTraceStore {
                     "endLine", match.endLine(), "score", match.fusedScore())).toList());
             jdbc.update("""
                     INSERT INTO rag_retrieval_trace
-                    (review_run_id, repository_id, commit_sha, query_hash,
+                    (review_api_run_id, repository_id, commit_sha, query_hash,
                      vector_candidate_count, lexical_candidate_count, reranked_count,
                      selected_count, context_char_count, degraded, latency_ms,
                      result_summary_json, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, reviewRunId, repositoryId, commitSha, sha256(query),
+                    """, reviewApiRunId, repositoryId, commitSha, sha256(query),
                     result.vectorCandidateCount(), result.lexicalCandidateCount(), result.matches().size(),
                     selectedCount, contextChars, result.status() != RagRetrievalResult.Status.READY
                             || result.retrievalHealth() != RagRetrievalHealth.HEALTHY,

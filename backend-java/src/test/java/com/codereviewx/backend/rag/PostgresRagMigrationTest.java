@@ -50,7 +50,7 @@ class PostgresRagMigrationTest {
                     "embedding", "search_vector", "created_at"
             ),
             "rag_retrieval_trace", Set.of(
-                    "id", "review_run_id", "repository_id", "commit_sha", "query_hash",
+                    "id", "review_api_run_id", "repository_id", "commit_sha", "query_hash",
                     "vector_candidate_count", "lexical_candidate_count", "reranked_count", "selected_count",
                     "context_char_count", "degraded", "latency_ms", "result_summary_json", "created_at"
             ),
@@ -202,7 +202,7 @@ class PostgresRagMigrationTest {
                         "rag_document.id", "rag_document.repository_id", "rag_document.snapshot_id",
                         "rag_document.byte_size",
                         "rag_chunk.id", "rag_chunk.repository_id", "rag_chunk.snapshot_id", "rag_chunk.document_id",
-                        "rag_retrieval_trace.id", "rag_retrieval_trace.review_run_id",
+                        "rag_retrieval_trace.id", "rag_retrieval_trace.review_api_run_id",
                         "rag_retrieval_trace.repository_id", "rag_retrieval_trace.latency_ms",
                         "review_issue_evidence.id", "review_issue_evidence.review_issue_id",
                         "review_issue_evidence.rag_chunk_id");
@@ -246,7 +246,7 @@ class PostgresRagMigrationTest {
                         FROM information_schema.columns
                         WHERE table_schema = 'public'
                           AND (table_name, column_name) IN (
-                              ('review_task', 'diff_text'),
+                              ('review_api_run', 'diff_text'),
                               ('review_input_snapshot', 'snapshot_json')
                           )
                           AND data_type = 'text'
@@ -254,7 +254,7 @@ class PostgresRagMigrationTest {
                         """))
                         .as("legacy CLOB columns converted to base TEXT")
                         .containsExactlyInAnyOrder(
-                                "review_task.diff_text",
+                                "review_api_run.diff_text",
                                 "review_input_snapshot.snapshot_json"
                         );
                 assertColumnsOfType(softly, statement, "timestamp without time zone",
@@ -340,7 +340,7 @@ class PostgresRagMigrationTest {
                                 "fk_rag_chunk_repository:rag_chunk:repository_id:rag_repository:id:a",
                                 "fk_rag_chunk_document:rag_chunk:document_id:rag_document:id:c",
                                 "fk_rag_chunk_snapshot:rag_chunk:snapshot_id:rag_index_snapshot:id:a",
-                                "fk_rag_retrieval_trace_review_run:rag_retrieval_trace:review_run_id:review_run:id:a",
+                                "fk_rag_retrieval_trace_review_run:rag_retrieval_trace:review_api_run_id:review_api_run:id:a",
                                 "fk_rag_retrieval_trace_repository:rag_retrieval_trace:repository_id:rag_repository:id:a",
                                 "fk_review_issue_evidence_issue:review_issue_evidence:review_issue_id:review_issue:id:c",
                                 "fk_review_issue_evidence_chunk:review_issue_evidence:rag_chunk_id:rag_chunk:id:n"

@@ -52,7 +52,7 @@ import static org.mockito.Mockito.when;
 final class RagFindingProductionEvaluation {
     private static final String ENGINE = "java-production-review-pipeline";
 
-    private final ReviewTaskService service;
+    private final ReviewWorkflowService service;
     private final GithubPrMetadataLoader metadataLoader;
     private final GithubPrDiffLoader diffLoader;
     private final XiaomiMiMoClient mimoClient;
@@ -63,7 +63,7 @@ final class RagFindingProductionEvaluation {
     private final ReviewIssueEvidenceStore evidenceStore;
     private final ObjectMapper mapper;
 
-    RagFindingProductionEvaluation(ReviewTaskService service, GithubPrMetadataLoader metadataLoader,
+    RagFindingProductionEvaluation(ReviewWorkflowService service, GithubPrMetadataLoader metadataLoader,
                                    GithubPrDiffLoader diffLoader, XiaomiMiMoClient mimoClient,
                                    RagIndexService indexService, RagManifestSnapshotReader manifestReader,
                                    RagRetrievalService retrievalService,
@@ -349,7 +349,7 @@ final class RagFindingProductionEvaluation {
         report.put("engine", ENGINE);
         report.put("status", metrics.failures().isEmpty() ? "PASS" : "FAIL");
         report.put("fixtures", linkedMap("mimo", "deterministic-json", "network", false));
-        report.put("productionPath", List.of("ReviewTaskService", "XiaomiMiMoReviewProvider",
+        report.put("productionPath", List.of("ReviewWorkflowService", "XiaomiMiMoReviewProvider",
                 "MiMoAgentJsonParser", "MiMoIssueGenerator", "ReviewEvidenceValidator",
                 "ReviewIssueRepository", "ReviewIssueEvidencePersister"));
         report.put("metrics", linkedMap(

@@ -62,9 +62,9 @@ class RagRetentionServiceIntegrationTest {
 
     private long evidence(long chunk) {
         Timestamp now=Timestamp.valueOf(LocalDateTime.now());
-        long task=jdbc.queryForObject("INSERT INTO review_task(repo_url,pr_number,status,created_at,updated_at,review_mode) VALUES ('x',1,'RUNNING',?,?,'GITHUB_PR') RETURNING id",Long.class,now,now);
-        long run=jdbc.queryForObject("INSERT INTO review_run(review_task_id,run_number,review_mode,status,created_at,updated_at) VALUES (?,1,'GITHUB_PR','REVIEWING',?,?) RETURNING id",Long.class,task,now,now);
-        long issue=jdbc.queryForObject("INSERT INTO review_issue(review_task_id,review_run_id,issue_key,severity,category,source,status,file_path,start_line,end_line,title,description,recommendation,created_at,updated_at) VALUES (?,?,'R1','HIGH','BUG','MIMO','OPEN','src/X.java',7,9,'title','description','recommendation',?,?) RETURNING id",Long.class,task,run,now,now);
+        long task=jdbc.queryForObject("INSERT INTO review_api_run(repo_url,pr_number,status,created_at,updated_at,review_mode) VALUES ('x',1,'RUNNING',?,?,'GITHUB_PR') RETURNING id",Long.class,now,now);
+        long run=jdbc.queryForObject("INSERT INTO review_api_run(review_api_run_id,run_number,review_mode,status,created_at,updated_at) VALUES (?,1,'GITHUB_PR','REVIEWING',?,?) RETURNING id",Long.class,task,now,now);
+        long issue=jdbc.queryForObject("INSERT INTO review_issue(review_api_run_id,review_api_run_id,issue_key,severity,category,source,status,file_path,start_line,end_line,title,description,recommendation,created_at,updated_at) VALUES (?,?,'R1','HIGH','BUG','MIMO','OPEN','src/X.java',7,9,'title','description','recommendation',?,?) RETURNING id",Long.class,task,run,now,now);
         return jdbc.queryForObject("INSERT INTO review_issue_evidence(review_issue_id,rag_chunk_id,citation_label,path,start_line,end_line,content_hash,evidence_excerpt,retrieval_rank,retrieval_score,created_at) VALUES (?,?,'E1','src/X.java',7,9,'chunk-hash','immutable evidence snapshot',1,0.75,?) RETURNING id",Long.class,issue,chunk,now);
     }
 }
