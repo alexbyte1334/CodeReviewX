@@ -185,6 +185,7 @@ public class RagIndexWorker {
                     discovered = fileSource.apply(checkedOut);
                 }
             }
+            jobs.progress(job.id(), job.attemptCount(), "CHUNKING", discovered.size(), 0, 0);
             PreparedSnapshot snapshot = prepare(job, repository, resolvedSha, discovered);
             transactions.executeWithoutResult(ignored -> persist(job, repository, snapshot));
         } catch (Exception exception) {
@@ -210,10 +211,13 @@ public class RagIndexWorker {
                 : jobs.findSnapshot(repository.id(), repository.activeCommitSha(), repository.embeddingModel(),
                         repository.embeddingDimensions(), repository.indexVersion()).orElse(null);
         for (RepositoryFile file : files) {
+            ensureWithinDeadline(job);
             RagDocumentStore.DocumentRecord reusable = previousSnapshot == null ? null
                     : documents.find(previousSnapshot.id(), file.path(), file.contentHash()).orElse(null);
             if (reusable != null) {
                 prepared.add(new PreparedDocument(file, reusable.id(), List.of(), List.of()));
+                jobs.progress(job.id(), job.attemptCount(), "EMBEDDING", files.size(), prepared.size(),
+                        prepared.stream().mapToInt(value -> value.chunks().size() + value.reusedChunks().size()).sum());
                 continue;
             }
             List<CodeChunk> codeChunks = chunker.chunk(file);
@@ -234,6 +238,7 @@ public class RagIndexWorker {
             }
             List<EmbeddedChunk> embedded = new ArrayList<>(chunksToEmbed.size());
             for (int start = 0; start < chunksToEmbed.size(); start += RagChunkStore.MAX_BATCH_SIZE) {
+                ensureWithinDeadline(job);
                 int end = Math.min(start + RagChunkStore.MAX_BATCH_SIZE, chunksToEmbed.size());
                 List<CodeChunk> batch = chunksToEmbed.subList(start, end);
                 List<float[]> vectors;
@@ -253,6 +258,8 @@ public class RagIndexWorker {
                 }
             }
             prepared.add(new PreparedDocument(file, null, List.copyOf(reused), List.copyOf(embedded)));
+            jobs.progress(job.id(), job.attemptCount(), "EMBEDDING", files.size(), prepared.size(),
+                    prepared.stream().mapToInt(value -> value.chunks().size() + value.reusedChunks().size()).sum());
         }
         return new PreparedSnapshot(commitSha, List.copyOf(files), List.copyOf(prepared));
     }
@@ -316,6 +323,13 @@ public class RagIndexWorker {
         }
     }
 
+    private void ensureWithinDeadline(RagIndexJob job) {
+        if (job.deadlineAt() != null
+                && LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).isAfter(job.deadlineAt())) {
+            throw new IndexDeadlineExceededException();
+        }
+    }
+
     private ScheduledFuture<?> startHeartbeat(RagIndexJob job) {
         if (heartbeatExecutor == null) {
             return null;
@@ -337,7 +351,8 @@ public class RagIndexWorker {
                 String errorCode = exception instanceof ConfigurationMismatchException
                         ? "CONFIG_MISMATCH" : exception instanceof HeartbeatUnavailableException
                         ? "HEARTBEAT_UNAVAILABLE" : exception instanceof EmbeddingUnavailableException
-                        ? "EMBEDDING_UNAVAILABLE" : exception instanceof CheckoutFailureException
+                        ? "EMBEDDING_UNAVAILABLE" : exception instanceof IndexDeadlineExceededException
+                        ? "INDEX_DEADLINE_EXCEEDED" : exception instanceof CheckoutFailureException
                         ? "CHECKOUT_FAILED" : "INDEXING_FAILED";
                 jobs.fail(job.id(), job.attemptCount(), errorCode, safeMessage(errorCode));
                 repositories.markInitialFailure(repository.id());
@@ -361,6 +376,7 @@ public class RagIndexWorker {
             case "EMBEDDING_UNAVAILABLE" -> "Embedding service unavailable";
             case "CONFIG_MISMATCH" -> "Queued index configuration is incompatible";
             case "HEARTBEAT_UNAVAILABLE" -> "Index heartbeat unavailable";
+            case "INDEX_DEADLINE_EXCEEDED" -> "Index job exceeded its 10 minute deadline";
             default -> "RAG indexing failed";
         };
     }
@@ -395,5 +411,9 @@ public class RagIndexWorker {
         private CheckoutFailureException(Throwable cause) {
             super("Repository checkout failed", cause);
         }
+    }
+
+    private static final class IndexDeadlineExceededException extends IllegalStateException {
+        private IndexDeadlineExceededException() { super("Index job exceeded its deadline"); }
     }
 }

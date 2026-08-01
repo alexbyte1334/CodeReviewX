@@ -83,7 +83,7 @@ export interface ReviewTask {
 }
 
 export type RepositoryIndexState = 'NOT_INDEXED' | 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
-export interface RepositoryIndexStatus { status: RepositoryIndexState; commitSha?: string | null; indexedChunks?: number; errorCode?: string | null; errorMessage?: string | null; }
+export interface RepositoryIndexStatus { status: RepositoryIndexState; commitSha?: string | null; indexedChunks?: number; errorCode?: string | null; errorMessage?: string | null; phase?: string | null; processedFiles?: number | null; totalFiles?: number | null; lastProgressAt?: string | null; deadlineAt?: string | null; }
 export interface RepositoryIndexResponse { jobId: number; status: RepositoryIndexState; repository?: string; requestedRef?: string; }
 export interface RetrievalEvidence { citationLabel: string; path: string; startLine: number; endLine: number; excerpt: string; rank: number; score: number; }
 export interface RetrievalTrace { degraded: boolean; degradedReason?: string | null; latencyMs: number; candidateCount: number; selectedCount: number; model?: string | null; evidence: RetrievalEvidence[]; }

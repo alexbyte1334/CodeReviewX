@@ -106,7 +106,8 @@ public class RepositoryIndexController {
 
     private static RepositoryIndexStatusResponse statusResponse(RagIndexJob value) {
         return new RepositoryIndexStatusResponse(value.status().name(), value.resolvedCommitSha(), value.indexedChunkCount(),
-                value.errorCode(), safeErrorMessage(value.errorCode()));
+                value.errorCode(), safeErrorMessage(value.errorCode()), value.phase(), value.indexedFileCount(),
+                value.totalFileCount(), value.lastProgressAt(), value.deadlineAt());
     }
 
     private static boolean isActive(RagIndexJob job) {

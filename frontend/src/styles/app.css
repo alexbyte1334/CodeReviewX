@@ -1243,6 +1243,23 @@ body {
   .metric-cards { grid-template-columns: repeat(2, 1fr); }
 }
 
+.review-run-workspace { min-height: 100%; padding: clamp(1rem, 4vw, 3rem); max-width: 1100px; margin: 0 auto; }
+.review-run-header h1 { margin: .25rem 0 .5rem; font-size: clamp(1.8rem, 4vw, 3.2rem); letter-spacing: -.04em; }
+.review-run-header p { color: var(--text-muted, #83909d); max-width: 680px; }
+.eyebrow { color: #6ee7b7 !important; font-size: .72rem; letter-spacing: .16em; font-weight: 700; }
+.review-run-create { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: .75rem; align-items: end; margin: 2rem 0; padding: 1rem; border: 1px solid rgba(148,163,184,.2); border-radius: 18px; background: rgba(15,23,42,.55); }
+.review-run-create label { display: grid; gap: .35rem; color: #cbd5e1; font-size: .8rem; }
+.review-run-create input { min-height: 42px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #f8fafc; padding: 0 .75rem; }
+.review-run-create button, .review-run-card > button { min-height: 42px; border: 0; border-radius: 10px; padding: 0 1rem; background: #6ee7b7; color: #06251b; font-weight: 700; cursor: pointer; }
+.review-run-card { border: 1px solid rgba(148,163,184,.22); border-radius: 20px; padding: clamp(1rem, 3vw, 2rem); background: rgba(15,23,42,.62); }
+.review-run-status { display: flex; align-items: center; gap: .6rem; font-weight: 700; }
+.status-dot { width: .65rem; height: .65rem; border-radius: 50%; background: #fbbf24; }.status-dot--succeeded,.status-dot--success { background: #6ee7b7; }.status-dot--failed { background: #fb7185; }
+.review-run-id { margin-left: auto; color: #94a3b8; font-family: ui-monospace, monospace; font-size: .8rem; }
+.review-run-steps { display: flex; gap: .5rem; overflow-x: auto; list-style: none; padding: 1.25rem 0; margin: 0; }
+.review-run-steps li { flex: 0 0 auto; border: 1px solid #334155; color: #94a3b8; border-radius: 999px; padding: .45rem .7rem; font-size: .72rem; }.review-run-steps li.is-done { color: #6ee7b7; border-color: #34745f; }
+.review-run-result { border-top: 1px solid rgba(148,163,184,.16); padding-top: 1rem; }.review-run-result li { margin: .7rem 0; color: #cbd5e1; }.review-run-result code { color: #93c5fd; }
+@media (max-width: 640px) { .review-run-create { grid-template-columns: 1fr; } .review-run-create button { width: 100%; } .review-run-header h1 { font-size: 2rem; } }
+
 .metric-card {
   background: rgba(255, 255, 255, 0.55);
   backdrop-filter: blur(12px);

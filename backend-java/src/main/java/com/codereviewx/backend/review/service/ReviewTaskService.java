@@ -99,30 +99,13 @@ public class ReviewTaskService {
     @Transactional
     public ReviewTaskResponse createTask(CreateReviewTaskRequest request) {
         validateCreateRequest(request);
-        LocalDateTime now = LocalDateTime.now();
-        String normalizedDiffText = normalizeDiffText(request.getDiffText());
+        PendingTask pending = createPendingTask(request);
+        ReviewTaskEntity savedTask = pending.task();
+        ReviewRunEntity savedRun = pending.run();
+        String normalizedDiffText = pending.normalizedDiffText();
         String normalizedProvider = normalizeProvider(request.getProvider());
-        ReviewMode reviewMode = resolveReviewMode(request, normalizedDiffText);
 
-        ReviewTaskEntity task = new ReviewTaskEntity();
-        task.setRepoUrl(request.getRepoUrl());
-        task.setPrNumber(request.getPrNumber());
-        task.setDiffText(normalizedDiffText);
-        task.setReviewMode(reviewMode);
-        task.setStatus(ReviewTaskStatus.PENDING);
-        task.setCreatedAt(now);
-        task.setUpdatedAt(now);
-
-        ReviewTaskEntity savedTask = reviewTaskRepository.save(task);
-
-        ReviewRunEntity run = newInitialRun(savedTask.getId(), reviewMode, now);
-        ReviewRunEntity savedRun = reviewRunRepository.save(run);
-
-        savedTask.setLatestRunId(savedRun.getId());
-        savedTask.setStatus(ReviewTaskStatus.RUNNING);
-        savedTask = reviewTaskRepository.save(savedTask);
-
-        if (reviewMode == ReviewMode.GITHUB_PR) {
+        if (savedTask.getReviewMode() == ReviewMode.GITHUB_PR) {
             return completeGithubPrIngestion(savedTask, savedRun, normalizedProvider);
         }
 
@@ -132,6 +115,29 @@ public class ReviewTaskService {
         );
         return completeProviderReview(savedTask, savedRun, normalizedDiffText, normalizedProvider,
                 staticFindings, null, null);
+    }
+
+    /** Creates only the durable task/run rows; callers may execute them asynchronously. */
+    @Transactional
+    public PendingTask createPendingTask(CreateReviewTaskRequest request) {
+        validateCreateRequest(request);
+        LocalDateTime now = LocalDateTime.now();
+        String normalizedDiffText = normalizeDiffText(request.getDiffText());
+        ReviewMode reviewMode = resolveReviewMode(request, normalizedDiffText);
+        ReviewTaskEntity task = new ReviewTaskEntity();
+        task.setRepoUrl(request.getRepoUrl());
+        task.setPrNumber(request.getPrNumber());
+        task.setDiffText(normalizedDiffText);
+        task.setReviewMode(reviewMode);
+        task.setStatus(ReviewTaskStatus.PENDING);
+        task.setCreatedAt(now);
+        task.setUpdatedAt(now);
+        ReviewTaskEntity savedTask = reviewTaskRepository.save(task);
+        ReviewRunEntity savedRun = reviewRunRepository.save(newInitialRun(savedTask.getId(), reviewMode, now));
+        savedTask.setLatestRunId(savedRun.getId());
+        savedTask.setStatus(ReviewTaskStatus.RUNNING);
+        savedTask = reviewTaskRepository.save(savedTask);
+        return new PendingTask(savedTask, savedRun, normalizedDiffText);
     }
 
     /**
@@ -148,13 +154,37 @@ public class ReviewTaskService {
             throw new ReviewRequestInvalidException("Review task/run ownership mismatch");
         }
         if (task.getReviewMode() != ReviewMode.GITHUB_PR || run.getReviewMode() != ReviewMode.GITHUB_PR) {
-            throw new ReviewRequestInvalidException("Demo execution only supports GITHUB_PR");
+            throw new ReviewRequestInvalidException("Execution requires GITHUB_PR");
         }
         task.setStatus(ReviewTaskStatus.RUNNING);
         task.setUpdatedAt(LocalDateTime.now());
         reviewTaskRepository.save(task);
         return completeGithubPrIngestion(task, run, "mimo");
     }
+
+    /** Executes a previously created task without holding the HTTP request transaction. */
+    public ReviewTaskResponse executeExistingTask(Long taskId, Long runId) {
+        ReviewTaskEntity task = reviewTaskRepository.findById(taskId)
+                .orElseThrow(() -> new ReviewTaskNotFoundException(taskId));
+        ReviewRunEntity run = reviewRunRepository.findById(runId)
+                .orElseThrow(() -> new ReviewRequestInvalidException("Review run not found"));
+        if (!taskId.equals(run.getReviewTaskId()) || !runId.equals(task.getLatestRunId())) {
+            throw new ReviewRequestInvalidException("Review task/run ownership mismatch");
+        }
+        task.setStatus(ReviewTaskStatus.RUNNING);
+        task.setUpdatedAt(LocalDateTime.now());
+        reviewTaskRepository.save(task);
+        if (task.getReviewMode() == ReviewMode.GITHUB_PR) {
+            return completeGithubPrIngestion(task, run, "mimo");
+        }
+        String diff = normalizeDiffText(task.getDiffText());
+        List<ReviewFinding> staticFindings = staticAnalysisService.analyze(
+                new GithubPrDiff(diff, null, null, false, Collections.emptyList()),
+                RepositoryContextIndexResult.empty());
+        return completeProviderReview(task, run, diff, "mimo", staticFindings, null, null);
+    }
+
+    public record PendingTask(ReviewTaskEntity task, ReviewRunEntity run, String normalizedDiffText) {}
 
     private void validateCreateRequest(CreateReviewTaskRequest request) {
         if (request == null) {

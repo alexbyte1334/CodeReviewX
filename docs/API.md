@@ -320,3 +320,23 @@ returns `RAG_NOT_FOUND`; an existing repository with no matching job returns
 `RAG_NOT_FOUND`, `RAG_INVALID_REQUEST`, validation `400`, and the existing
 review errors listed above. Provider/index failures are represented by the
  returned safe error code/message.
+# Generic asynchronous review API
+
+Self-host mode exposes a durable public-UUID review surface. `Idempotency-Key`
+is required so retries from a browser or reverse proxy cannot create duplicate
+tasks:
+
+```http
+POST /api/reviews
+Idempotency-Key: <client-generated-uuid>
+Content-Type: application/json
+
+{"repositoryUrl":"https://github.com/owner/repo","prNumber":42,"inputMode":"GITHUB_PR"}
+```
+
+The endpoint returns `202` with `runId`, `snapshotUrl` and `eventsUrl` inside
+the snapshot response. `GET /api/reviews/{runId}` is safe to poll and
+`GET /api/reviews/{runId}/events?afterSequence=N` is resumable SSE. Failed,
+unpublished runs may be retried with `POST /api/reviews/{runId}/retry`; retry
+clears prior projections before executing again. Public-demo mode intentionally
+blocks this surface and exposes only the fixed DemoTarget story.

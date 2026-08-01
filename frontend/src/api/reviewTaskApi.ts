@@ -12,6 +12,20 @@ import type {
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
+export interface ReviewApiEvent { sequence: number; type: string; status: string; summary: string | null; errorCode: string | null; }
+export interface ReviewApiSnapshot {
+  runId: string; status: string; mode: 'LIVE' | 'REPLAY'; repositoryUrl: string; prNumber: number;
+  taskId: number; reviewRunId: number; review: ReviewTask; events: ReviewApiEvent[];
+  errorCode: string | null; errorMessage: string | null;
+}
+
+export async function createReview(request: { repositoryUrl: string; prNumber: number; diffText?: string }, idempotencyKey: string): Promise<ApiResponse<ReviewApiSnapshot>> {
+  return fetchJson<ReviewApiSnapshot>(`${BASE_URL}/api/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(request) });
+}
+export async function getReviewSnapshot(runId: string): Promise<ApiResponse<ReviewApiSnapshot>> { return fetchJson(`${BASE_URL}/api/reviews/${encodeURIComponent(runId)}`); }
+export async function retryReview(runId: string): Promise<ApiResponse<ReviewApiSnapshot>> { return fetchJson(`${BASE_URL}/api/reviews/${encodeURIComponent(runId)}/retry`, { method: 'POST' }); }
+export function reviewEventsUrl(runId: string, afterSequence: number): string { return `${BASE_URL}/api/reviews/${encodeURIComponent(runId)}/events?afterSequence=${afterSequence}`; }
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
   const response = await fetch(url, options);
   let json: ApiResponse<T>;

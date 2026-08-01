@@ -159,12 +159,12 @@ public class RagIndexJobStore {
                     LIMIT 1
                 )
                 UPDATE rag_index_job job
-                SET status='RUNNING', attempt_count=attempt_count+1, started_at=?,
-                    heartbeat_at=?, finished_at=NULL, error_code=NULL, error_message=NULL
+                SET status='RUNNING', phase='DISCOVERING', attempt_count=attempt_count+1, started_at=?,
+                    heartbeat_at=?, last_progress_at=?, deadline_at=?, finished_at=NULL, error_code=NULL, error_message=NULL
                 FROM candidate
                 WHERE job.id=candidate.id
                 RETURNING job.*
-                """, (result, row) -> map(result), now(), now());
+                """, (result, row) -> map(result), now(), now(), now(), now().plusMinutes(10));
         return claimed.stream().findFirst();
     }
 
@@ -205,9 +205,17 @@ public class RagIndexJobStore {
 
     public boolean heartbeat(long id, int expectedAttempt) {
         return jdbc.update("""
-                UPDATE rag_index_job SET heartbeat_at=?
+                UPDATE rag_index_job SET heartbeat_at=?,last_progress_at=?
                 WHERE id=? AND status='RUNNING' AND attempt_count=?
-                """, now(), id, expectedAttempt) == 1;
+                """, now(), now(), id, expectedAttempt) == 1;
+    }
+
+    public boolean progress(long id, int expectedAttempt, String phase, int discovered, int indexed, int chunks) {
+        return jdbc.update("""
+            UPDATE rag_index_job SET phase=?,discovered_file_count=?,total_file_count=?,indexed_file_count=?,
+              indexed_chunk_count=?,last_progress_at=?,heartbeat_at=?
+            WHERE id=? AND status='RUNNING' AND attempt_count=?""",
+            phase, discovered, discovered, indexed, chunks, now(), now(), id, expectedAttempt) == 1;
     }
 
     public boolean releaseForShutdown(long id, int expectedAttempt) {
@@ -253,7 +261,14 @@ public class RagIndexJobStore {
                 heartbeat == null ? null : heartbeat.toLocalDateTime(),
                 result.getString("error_code"), result.getString("error_message"),
                 result.getString("embedding_model"), result.getInt("embedding_dimensions"),
-                result.getInt("index_version"), result.getInt("indexed_chunk_count"));
+                result.getInt("index_version"), result.getInt("indexed_chunk_count"), result.getInt("indexed_file_count"),
+                result.getString("phase"), result.getInt("total_file_count"),
+                timestamp(result, "last_progress_at"), timestamp(result, "deadline_at"));
+    }
+
+    private static LocalDateTime timestamp(java.sql.ResultSet result, String column) throws java.sql.SQLException {
+        Timestamp value = result.getTimestamp(column);
+        return value == null ? null : value.toLocalDateTime();
     }
 
     private static String truncate(String value) {
