@@ -1,7 +1,6 @@
 FROM maven:3.9.9-eclipse-temurin-17 AS build
 WORKDIR /workspace
 COPY backend-java/pom.xml ./pom.xml
-RUN mvn -B -q dependency:go-offline
 COPY backend-java/src ./src
 RUN mvn -B -q -DskipTests package
 
