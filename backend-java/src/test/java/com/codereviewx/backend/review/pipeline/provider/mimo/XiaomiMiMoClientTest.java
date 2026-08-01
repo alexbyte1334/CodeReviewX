@@ -33,7 +33,8 @@ class XiaomiMiMoClientTest {
                           "model":"mimo-v2.5-pro",
                           "max_completion_tokens":2048,
                           "stream":false,
-                          "thinking":{"type":"disabled"}
+                          "thinking":{"type":"disabled"},
+                          "response_format":{"type":"json_object"}
                         }
                         """, false))
                 .andRespond(withSuccess("""

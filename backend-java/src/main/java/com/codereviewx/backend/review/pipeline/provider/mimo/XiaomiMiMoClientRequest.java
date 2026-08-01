@@ -13,6 +13,8 @@ public class XiaomiMiMoClientRequest {
     private int maxCompletionTokens;
     private boolean stream;
     private Thinking thinking;
+    @JsonProperty("response_format")
+    private ResponseFormat responseFormat;
 
     public XiaomiMiMoClientRequest() {
     }
@@ -25,6 +27,7 @@ public class XiaomiMiMoClientRequest {
         this.maxCompletionTokens = maxCompletionTokens;
         this.stream = false;
         this.thinking = new Thinking("disabled");
+        this.responseFormat = new ResponseFormat("json_object");
     }
 
     public String getModel() {
@@ -73,6 +76,34 @@ public class XiaomiMiMoClientRequest {
 
     public void setThinking(Thinking thinking) {
         this.thinking = thinking;
+    }
+
+    public ResponseFormat getResponseFormat() {
+        return responseFormat;
+    }
+
+    public void setResponseFormat(ResponseFormat responseFormat) {
+        this.responseFormat = responseFormat;
+    }
+
+    public static class ResponseFormat {
+
+        private String type;
+
+        public ResponseFormat() {
+        }
+
+        public ResponseFormat(String type) {
+            this.type = type;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type = type;
+        }
     }
 
     public static class Thinking {
