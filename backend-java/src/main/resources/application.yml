@@ -35,7 +35,7 @@ management:
 codereviewx:
   deployment-mode: self-host
   cors:
-    allowed-origins: ${CODEREVIEWX_ALLOWED_ORIGINS:http://localhost:5173}
+    allowed-origins: ${CODEREVIEWX_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   rag:
     retention:
       cleanup-cron: ${RAG_RETENTION_CLEANUP_CRON:0 15 2 * * *}
