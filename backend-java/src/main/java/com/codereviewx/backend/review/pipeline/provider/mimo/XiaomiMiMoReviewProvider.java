@@ -23,6 +23,13 @@ import java.util.function.Supplier;
 public class XiaomiMiMoReviewProvider implements ReviewProvider {
 
     public static final String PROVIDER_NAME = "XiaomiMiMoReviewProvider";
+    private static final String STRUCTURED_REPAIR_INSTRUCTION = """
+
+            The previous response failed local structured-output validation.
+            Retry once. Return exactly one compact JSON object matching the requested schema.
+            Include every required field with the requested JSON data type.
+            Do not include markdown, comments, trailing commas, or additional prose.
+            """;
 
     private final ReviewPromptBuilder promptBuilder;
     private final XiaomiMiMoClient client;
@@ -56,33 +63,33 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
 
         try {
             TaskPlan taskPlan = recordStep(context, "mimo.ai1.plan", () -> {
-                String planOutput = client.complete(
+                return requestStructured(
                         ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT,
                         promptBuilder.buildPlannerPrompt(context),
-                        properties.getPlannerApiKey()
+                        properties.getPlannerApiKey(),
+                        parser::parseTaskPlan
                 );
-                return parser.parseTaskPlan(planOutput);
             }, ignored -> "Planner produced a structured task plan.");
             String taskPlanJson = toJson(taskPlan);
 
             CandidateReview candidateReview = recordStep(context, "mimo.ai2.execute", () -> {
-                String candidateOutput = client.complete(
+                return requestStructured(
                         ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT,
                         promptBuilder.buildExecutorPrompt(context, taskPlanJson),
-                        properties.getExecutorApiKey()
+                        properties.getExecutorApiKey(),
+                        output -> parser.parseCandidateReview(output, context.getRagEvidenceBundle())
                 );
-                return parser.parseCandidateReview(candidateOutput, context.getRagEvidenceBundle());
             }, review -> "Executor produced a candidate review with "
                     + review.getFindings().size() + " finding(s).");
             String candidateReviewJson = toJson(candidateReview);
 
             GateDecision gateDecision = recordStep(context, "mimo.ai1.gate", () -> {
-                String gateOutput = client.complete(
+                GateDecision decision = requestStructured(
                         ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT,
                         promptBuilder.buildGatekeeperPrompt(taskPlanJson, candidateReviewJson, context),
-                        properties.getPlannerApiKey()
+                        properties.getPlannerApiKey(),
+                        parser::parseGateDecision
                 );
-                GateDecision decision = parser.parseGateDecision(gateOutput);
                 if (!Boolean.TRUE.equals(decision.getApproved())) {
                     throw new MiMoAgentException(ReviewErrorCodes.MIMO_GATE_REJECTED,
                             "MiMo gatekeeper rejected candidate review");
@@ -108,6 +115,27 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
             throw new MiMoAgentException(ReviewErrorCodes.MIMO_PROVIDER_ERROR,
                     "Unexpected MiMo provider failure", ex);
         }
+    }
+
+    private <T> T requestStructured(String systemPrompt,
+                                    String userPrompt,
+                                    String apiKey,
+                                    Function<String, T> parserFunction) {
+        try {
+            return parserFunction.apply(client.complete(systemPrompt, userPrompt, apiKey));
+        } catch (MiMoAgentException firstFailure) {
+            if (!isRepairableStructuredFailure(firstFailure)) {
+                throw firstFailure;
+            }
+            String repairPrompt = userPrompt + STRUCTURED_REPAIR_INSTRUCTION;
+            return parserFunction.apply(client.complete(systemPrompt, repairPrompt, apiKey));
+        }
+    }
+
+    private boolean isRepairableStructuredFailure(MiMoAgentException failure) {
+        return ReviewErrorCodes.MIMO_PLAN_INVALID.equals(failure.getErrorCode())
+                || ReviewErrorCodes.MIMO_REVIEW_INVALID.equals(failure.getErrorCode())
+                || ReviewErrorCodes.MIMO_GATE_INVALID.equals(failure.getErrorCode());
     }
 
     private <T> T recordStep(ReviewContext context,

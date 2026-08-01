@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 class XiaomiMiMoReviewProviderTest {
 
@@ -105,6 +106,30 @@ class XiaomiMiMoReviewProviderTest {
         assertThat(context.getAgentSteps().get(0).getStepName()).isEqualTo("mimo.ai1.plan");
         assertThat(context.getAgentSteps().get(0).getStatus()).isEqualTo(ToolTraceStatus.FAILED);
         assertThat(context.getAgentSteps().get(0).getErrorCode()).isEqualTo(ReviewErrorCodes.MIMO_PLAN_INVALID);
+        verify(client, times(2)).complete(
+                eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString());
+    }
+
+    @Test
+    void review_repairsOneInvalidStructuredPlannerResponseWithoutEchoingIt() {
+        org.mockito.Mockito.when(client.complete(
+                        eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn("{invalid-json", TestMiMoAgentResponses.taskPlanJson());
+        org.mockito.Mockito.when(client.complete(
+                        eq(ReviewPromptBuilder.EXECUTOR_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.candidateReviewJson());
+        org.mockito.Mockito.when(client.complete(
+                        eq(ReviewPromptBuilder.GATEKEEPER_SYSTEM_PROMPT), anyString(), anyString()))
+                .thenReturn(TestMiMoAgentResponses.approvedGateJson());
+        org.mockito.ArgumentCaptor<String> prompts = org.mockito.ArgumentCaptor.forClass(String.class);
+
+        assertThat(provider.review(context).isSuccessful()).isTrue();
+
+        verify(client, times(2)).complete(
+                eq(ReviewPromptBuilder.PLANNER_SYSTEM_PROMPT), prompts.capture(), eq("planner-key"));
+        assertThat(prompts.getAllValues().get(1))
+                .contains("Retry once", "Return exactly one compact JSON object")
+                .doesNotContain("{invalid-json");
     }
 
     @Test
