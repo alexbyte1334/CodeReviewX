@@ -76,6 +76,10 @@ function relativePath(filePath) {
 function isExcludedDir(dirPath) {
   const rel = relativePath(dirPath);
   if (rel === '') return false;
+  // Dependencies can exist below more than one package root (for example
+  // desktop/node_modules). Never scan vendored dependency trees as source.
+  const segments = rel.split('/');
+  if (segments.includes('node_modules')) return true;
   return [...excludedDirs].some((excluded) => rel === excluded || rel.startsWith(`${excluded}/`));
 }
 

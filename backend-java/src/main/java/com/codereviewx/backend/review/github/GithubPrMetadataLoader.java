@@ -8,7 +8,7 @@ public class GithubPrMetadataLoader {
 
     public static final String TOOL_NAME = "github.pr.metadata.load";
     public static final String AUTH_MISSING_MESSAGE =
-            "Local GitHub token is not configured. Set GITHUB_TOKEN to enable GitHub PR metadata ingestion.";
+            "GitHub service credential is not configured. Connect GitHub or configure the server-side fallback.";
     public static final String AUTH_FAILED_MESSAGE =
             "GitHub authentication failed while loading PR metadata.";
     public static final String PR_NOT_FOUND_MESSAGE =

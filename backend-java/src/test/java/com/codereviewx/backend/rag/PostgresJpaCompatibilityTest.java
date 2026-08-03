@@ -62,7 +62,7 @@ class PostgresJpaCompatibilityTest {
     void persistsLongTextAsTextAcrossRepositoryTransactionBoundaries() {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion())
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
         assertThat(jdbcTemplate.queryForList("""
                         SELECT table_name || '.' || column_name || '=' || data_type || ':'
                                || COALESCE(domain_name, '')

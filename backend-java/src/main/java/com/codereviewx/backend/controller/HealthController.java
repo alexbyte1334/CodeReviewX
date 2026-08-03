@@ -27,7 +27,10 @@ public class HealthController {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("status", "UP");
         data.put("service", "backend-java");
-        data.put("reviewProvider", "mimo");
+        data.put("reviewProvider", mimoProperties.getProvider());
+        data.put("modelProvider", mimoProperties.getProvider());
+        data.put("modelName", mimoProperties.getModel());
+        data.put("modelConfigured", mimoProperties.hasRoleApiKeys());
         data.put("mimoConfigured", mimoProperties.hasRoleApiKeys());
         DeliveryReadinessService.Snapshot snapshot = readiness.snapshot();
         data.put("ragReady", snapshot.ragReady());

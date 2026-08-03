@@ -16,9 +16,9 @@ spring:
 
 codereviewx:
   rag:
-    enabled: ${RAG_ENABLED:false}
-    review-percentage: ${RAG_REVIEW_PERCENTAGE:0}
-    fallback-enabled: ${RAG_FALLBACK_ENABLED:true}
+    enabled: ${RAG_ENABLED:true}
+    review-percentage: ${RAG_REVIEW_PERCENTAGE:100}
+    fallback-enabled: ${RAG_FALLBACK_ENABLED:false}
     require-evidence: ${RAG_REQUIRE_EVIDENCE:true}
     embedding-base-url: ${RAG_EMBEDDING_BASE_URL:}
     embedding-api-key: ${RAG_EMBEDDING_API_KEY:}

@@ -148,7 +148,7 @@ class ReviewWorkflowServiceGithubPrTest {
         assertThat(traces).hasSize(9);
         assertThat(traces.get(0).getToolName()).isEqualTo(GithubPrMetadataLoader.TOOL_NAME);
         assertThat(traces.get(0).getStatus()).isEqualTo(ToolTraceStatus.SUCCESS);
-        assertThat(traces.get(0).getInputSummary()).contains("tokenConfigured=true");
+        assertThat(traces.get(0).getInputSummary()).contains("credentialConfigured=true");
         assertThat(traces.get(0).getInputSummary()).doesNotContain("test-token");
         assertThat(traces.get(0).getInputSummary()).doesNotContainIgnoringCase("Authorization");
         assertThat(traces.get(1).getToolName()).isEqualTo(GithubPrDiffLoader.TOOL_NAME);
@@ -196,7 +196,7 @@ class ReviewWorkflowServiceGithubPrTest {
                 .isPresent()
                 .get()
                 .satisfies(trace -> {
-                    assertThat(trace.getRequestedProvider()).isEqualTo("mimo");
+                    assertThat(trace.getRequestedProvider()).isEqualTo("custom");
                     assertThat(trace.getProviderUsed()).isEqualTo("mimo");
                     assertThat(trace.getProviderHit()).isTrue();
                     assertThat(trace.getFindingCount()).isEqualTo(3);

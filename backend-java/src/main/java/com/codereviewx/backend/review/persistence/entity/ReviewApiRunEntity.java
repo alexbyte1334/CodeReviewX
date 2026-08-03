@@ -54,6 +54,15 @@ public class ReviewApiRunEntity {
     @Column(name = "provider_hit")
     private Boolean providerHit;
 
+    @Column(name = "github_credential_mode", length = 32)
+    private String githubCredentialMode;
+
+    @Column(name = "github_installation_id")
+    private Long githubInstallationId;
+
+    @Column(name = "github_repository_id")
+    private Long githubRepositoryId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "review_mode", nullable = false, length = 32)
     private ReviewMode reviewMode;
@@ -106,6 +115,12 @@ public class ReviewApiRunEntity {
     public void setProviderUsed(String providerUsed) { this.providerUsed = providerUsed; }
     public Boolean getProviderHit() { return providerHit; }
     public void setProviderHit(Boolean providerHit) { this.providerHit = providerHit; }
+    public String getGithubCredentialMode() { return githubCredentialMode; }
+    public void setGithubCredentialMode(String githubCredentialMode) { this.githubCredentialMode = githubCredentialMode; }
+    public Long getGithubInstallationId() { return githubInstallationId; }
+    public void setGithubInstallationId(Long githubInstallationId) { this.githubInstallationId = githubInstallationId; }
+    public Long getGithubRepositoryId() { return githubRepositoryId; }
+    public void setGithubRepositoryId(Long githubRepositoryId) { this.githubRepositoryId = githubRepositoryId; }
     public ReviewMode getReviewMode() { return reviewMode; }
     public void setReviewMode(ReviewMode reviewMode) { this.reviewMode = reviewMode; }
     public Integer getRunNumber() { return runNumber; }

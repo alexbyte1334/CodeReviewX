@@ -136,7 +136,7 @@ class ReviewWorkflowServiceTest {
         CreateReviewTaskRequest request = manualDiffRequest(1);
         request.setProvider("mock");
 
-        assertCreateTaskRejected(request, "provider must be mimo");
+        assertCreateTaskRejected(request, "provider must be a supported OpenAI-compatible provider");
     }
 
     @Test
@@ -160,7 +160,7 @@ class ReviewWorkflowServiceTest {
         assertThat(response.getSummary()).contains("Review completed for PR #123");
         assertThat(response.getSummary()).doesNotContainIgnoringCase("mock");
         assertThat(response.getErrorMessage()).isNull();
-        assertThat(response.getRequestedProvider()).isEqualTo("mimo");
+        assertThat(response.getRequestedProvider()).isEqualTo("custom");
         assertThat(response.getProviderUsed()).isEqualTo("mimo");
         assertThat(response.getProviderHit()).isTrue();
         assertThat(response.getLatestRunId()).isNotNull();
@@ -483,7 +483,7 @@ class ReviewWorkflowServiceTest {
         assertThat(response.getLatestRunId()).isNotNull();
         assertThat(response.getStatus()).isEqualTo(ReviewTaskStatus.FAILED);
         assertThat(response.getErrorCode()).isEqualTo("GITHUB_AUTH_MISSING");
-        assertThat(response.getErrorMessage()).contains("GITHUB_TOKEN");
+        assertThat(response.getErrorMessage()).contains("GitHub service credential");
         assertThat(response.getIssues()).isEmpty();
         assertThat(response.getTraceSummary().getToolCount()).isEqualTo(1);
         assertThat(response.getTraceSummary().getFailedToolCount()).isEqualTo(1);

@@ -6,16 +6,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import com.codereviewx.backend.review.pipeline.provider.ReviewModelProvider;
 
 import java.time.Duration;
 import java.util.List;
 
 /**
- * HTTP adapter for Xiaomi MiMo OpenAI-compatible chat completions.
+ * HTTP adapter for OpenAI-compatible chat completions. The legacy class name
+ * is retained for compatibility with existing pipeline tests and traces.
  * Never logs API keys, authorization headers, or raw request/response bodies.
  */
 @Component
-public class XiaomiMiMoClient {
+public class XiaomiMiMoClient implements ReviewModelProvider {
 
     private static final double DEFAULT_TEMPERATURE = 0.2;
     private static final int MAX_ATTEMPTS = 2;
@@ -44,14 +46,14 @@ public class XiaomiMiMoClient {
 
     public String complete(String systemPrompt, String userPrompt) {
         if (!properties.hasApiKey()) {
-            throw new XiaomiMiMoClientException("MiMo API key is not configured");
+            throw new XiaomiMiMoClientException("Model API key is not configured");
         }
         return complete(systemPrompt, userPrompt, properties.getApiKey());
     }
 
     public String complete(String systemPrompt, String userPrompt, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
-            throw new XiaomiMiMoClientException("MiMo API key is not configured");
+            throw new XiaomiMiMoClientException("Model API key is not configured");
         }
         XiaomiMiMoClientRequest request = new XiaomiMiMoClientRequest(
                 properties.getModel(),
@@ -120,7 +122,7 @@ public class XiaomiMiMoClient {
     private static XiaomiMiMoClientException emptyContentException(String finishReason) {
         if ("length".equals(finishReason)) {
             return new XiaomiMiMoClientException(
-                    "MiMo response exhausted max_completion_tokens before final content");
+                    "Model response exhausted max_completion_tokens before final content");
         }
         if ("content_filter".equals(finishReason)) {
             return new XiaomiMiMoClientException("MiMo response was blocked by content filtering");
@@ -133,7 +135,7 @@ public class XiaomiMiMoClient {
 
     private static String normalizeBaseUrl(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
-            throw new XiaomiMiMoClientException("MiMo base URL is not configured");
+            throw new XiaomiMiMoClientException("Model base URL is not configured");
         }
         return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }

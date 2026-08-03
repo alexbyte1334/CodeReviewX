@@ -15,7 +15,7 @@ class GithubPrCommentPublisherTest {
         GithubPrCommentPublishResult result = publisher.publish(request());
 
         assertThat(result.isSuccess()).isFalse();
-        assertThat(result.getErrorMessage()).contains("GITHUB_TOKEN");
+        assertThat(result.getErrorMessage()).contains("GitHub service credential");
         assertThat(client.called).isFalse();
     }
 

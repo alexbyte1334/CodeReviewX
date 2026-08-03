@@ -7,6 +7,7 @@ public class XiaomiMiMoProperties {
 
     private String baseUrl = "https://api.xiaomimimo.com/v1";
     private String model = "mimo-v2.5-pro";
+    private String provider = "custom";
     /** Legacy single-key compatibility only; new dual-agent flow requires role keys. */
     private String apiKey = "";
     private String plannerApiKey = "";
@@ -38,6 +39,9 @@ public class XiaomiMiMoProperties {
     public void setModel(String model) {
         this.model = model;
     }
+
+    public String getProvider() { return provider; }
+    public void setProvider(String provider) { this.provider = provider; }
 
     public String getApiKey() {
         return apiKey;
@@ -101,11 +105,11 @@ public class XiaomiMiMoProperties {
     }
 
     public boolean hasApiKey() {
-        return apiKey != null && !apiKey.isBlank();
+        return !blank(apiKey) || hasPlannerApiKey();
     }
 
     public String getPlannerApiKey() {
-        return plannerApiKey;
+        return blank(plannerApiKey) ? apiKey : plannerApiKey;
     }
 
     public void setPlannerApiKey(String plannerApiKey) {
@@ -113,7 +117,7 @@ public class XiaomiMiMoProperties {
     }
 
     public String getExecutorApiKey() {
-        return executorApiKey;
+        return blank(executorApiKey) ? apiKey : executorApiKey;
     }
 
     public void setExecutorApiKey(String executorApiKey) {
@@ -129,8 +133,10 @@ public class XiaomiMiMoProperties {
     }
 
     public boolean hasRoleApiKeys() {
-        return hasPlannerApiKey() && hasExecutorApiKey();
+        return !blank(getPlannerApiKey()) && !blank(getExecutorApiKey());
     }
+
+    private static boolean blank(String value) { return value == null || value.isBlank(); }
 
     @Override
     public String toString() {

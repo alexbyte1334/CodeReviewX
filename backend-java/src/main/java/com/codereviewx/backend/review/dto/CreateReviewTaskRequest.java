@@ -21,9 +21,10 @@ public class CreateReviewTaskRequest {
     private String diffText;
 
     /**
-     * Optional legacy provider field. The review pipeline is MiMo-only; only {@code mimo} is accepted.
+     * Optional provider preset. Runtime credentials and endpoint are configured locally.
      */
-    @Pattern(regexp = "(?i)^(mimo)?$", message = "provider must be mimo")
+    @Pattern(regexp = "(?i)^(mimo|openai|deepseek|qwen|moonshot|zhipu|custom|openai-compatible|open_ai_compatible)?$",
+            message = "provider must be a supported OpenAI-compatible provider")
     private String provider;
 
     /**

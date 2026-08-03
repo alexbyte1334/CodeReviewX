@@ -7,5 +7,5 @@ public record ReviewApiSnapshot(String runId, String status, String mode, String
                                 String snapshotUrl, String eventsUrl,
                                 ReviewTaskResponse review, List<ReviewApiEvent> events,
                                 String errorCode, String errorMessage) {
-    public record ReviewApiEvent(long sequence, String type, String status, String summary, String errorCode) {}
+    public record ReviewApiEvent(long sequence, String type, String status, String summary, String errorCode, String createdAt) {}
 }

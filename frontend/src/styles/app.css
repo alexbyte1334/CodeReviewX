@@ -4,6 +4,29 @@
   padding: 0;
 }
 
+.setup-page { min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; background: #07111d; color: #f0f6fc; }
+.setup-card { width: min(680px, 100%); padding: 32px; border: 1px solid #26384a; border-radius: 20px; background: #0d1621; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+.setup-card h1 { margin: 14px 0 8px; font-size: 32px; }
+.setup-card > p { margin-bottom: 26px; color: #aab4bf; line-height: 1.6; }
+.setup-card h2 { margin: 22px 0 10px; color: #79c0ff; font-size: 15px; }
+.setup-field { display: grid; gap: 6px; margin: 10px 0; color: #c9d1d9; font-size: 12px; font-weight: 650; }
+.setup-field input, .setup-field select { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid #26384a; border-radius: 9px; background: #07111d; color: #f0f6fc; font: inherit; font-weight: 400; }
+.setup-field input:focus, .setup-field select:focus { outline: 2px solid #388bfd; outline-offset: 1px; }
+.setup-submit { width: 100%; margin-top: 22px; }
+.setup-skip { width: 100%; margin-top: 12px; }
+.setup-status-list { display: grid; gap: 10px; margin: 20px 0; }
+.setup-status-list div { display: flex; justify-content: space-between; border-bottom: 1px solid #233247; padding: 10px 0; color: #b5c2d1; }
+.setup-status-list strong { color: #8be28b; font-size: .78rem; letter-spacing: .06em; }
+.setup-reconfigure { position: fixed; z-index: 10; top: 1rem; right: 1rem; border: 1px solid #314154; border-radius: 999px; background: #0e1b2a; color: #b5c2d1; padding: .45rem .75rem; cursor: pointer; }
+.story-config-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px; max-width: 920px; margin-top: 12px; padding: 11px 14px; border: 1px solid var(--story-border); border-radius: 11px; background: rgba(13,20,29,.72); color: var(--story-muted); font-size: 11px; }
+.story-config-strip > div { display: inline-flex; align-items: center; gap: 6px; }
+.story-config-strip strong { color: #d7e0e9; }
+.story-status-dot { width: 7px; height: 7px; border-radius: 50%; }
+.story-status-dot--ready { background: #3fb950; box-shadow: 0 0 8px rgba(63,185,80,.45); }
+.story-status-dot--optional { background: #d29922; }
+.story-status-dot--blocked { background: #f85149; }
+.story-config-refresh { margin-left: auto; border: 0; background: transparent; color: #79c0ff; cursor: pointer; font: inherit; }
+.story-config-refresh:disabled { opacity: .55; cursor: wait; }
 :root {
   /* Apple system palette */
   --apple-blue: #007aff;
