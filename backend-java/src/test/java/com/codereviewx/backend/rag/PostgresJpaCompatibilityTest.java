@@ -106,6 +106,7 @@ class PostgresJpaCompatibilityTest {
         run.setRunNumber(1);
         run.setReviewMode(ReviewMode.MANUAL_DIFF);
         run.setStatus(ReviewRunStatus.PENDING);
+        run.setExecutionStatus(ReviewRunStatus.PENDING);
         run.setCreatedAt(now);
         run.setUpdatedAt(now);
         Long runId = reviewRunRepository.saveAndFlush(run).getId();
