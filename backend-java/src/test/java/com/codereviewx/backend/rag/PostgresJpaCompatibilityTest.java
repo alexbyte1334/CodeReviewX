@@ -105,7 +105,7 @@ class PostgresJpaCompatibilityTest {
         run.setPrNumber(task.getPrNumber());
         run.setRunNumber(1);
         run.setReviewMode(ReviewMode.MANUAL_DIFF);
-        run.setStatus(ReviewRunStatus.PENDING);
+        run.setStatus(ReviewTaskStatus.PENDING);
         run.setExecutionStatus(ReviewRunStatus.PENDING);
         run.setCreatedAt(now);
         run.setUpdatedAt(now);
