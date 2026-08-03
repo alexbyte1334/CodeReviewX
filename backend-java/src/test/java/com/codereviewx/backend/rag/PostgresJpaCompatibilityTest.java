@@ -84,6 +84,8 @@ class PostgresJpaCompatibilityTest {
         LocalDateTime now = LocalDateTime.now();
 
         ReviewApiRunEntity task = new ReviewApiRunEntity();
+        task.setPublicId(UUID.randomUUID().toString());
+        task.setIdempotencyKey("postgres-jpa-task-" + UUID.randomUUID());
         task.setRepoUrl("https://github.com/example/postgres-jpa-compatibility");
         task.setPrNumber(42);
         task.setDiffText(diffText);
@@ -95,6 +97,8 @@ class PostgresJpaCompatibilityTest {
 
         ReviewApiRunEntity run = new ReviewApiRunEntity();
 
+        run.setPublicId(UUID.randomUUID().toString());
+        run.setIdempotencyKey("postgres-jpa-run-" + UUID.randomUUID());
         run.setRunNumber(1);
         run.setReviewMode(ReviewMode.MANUAL_DIFF);
         run.setStatus(ReviewRunStatus.PENDING);
