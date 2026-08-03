@@ -90,7 +90,9 @@ class PostgresJpaCompatibilityTest {
         task.setPrNumber(42);
         task.setDiffText(diffText);
         task.setStatus(ReviewTaskStatus.PENDING);
+        task.setExecutionStatus(ReviewRunStatus.PENDING);
         task.setReviewMode(ReviewMode.MANUAL_DIFF);
+        task.setRunNumber(1);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         Long taskId = reviewTaskRepository.saveAndFlush(task).getId();
