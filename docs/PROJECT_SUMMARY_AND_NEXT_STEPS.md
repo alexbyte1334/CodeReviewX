@@ -90,17 +90,17 @@ github.pr.metadata.load
   -> rag.rerank
   -> rag.context.assemble
   -> static.analysis.findings
-  -> mimo.ai1.plan
-  -> mimo.ai2.execute
-  -> mimo.ai1.gate
+  -> model.plan
+  -> model.execute
+  -> model.evidence_gate
   -> issue.generate
   -> evidence.validate
   -> comment.preview.build
 ```
 
-- Planner, Executor, and Gatekeeper use the configured OpenAI-compatible model.
+- All structured review stages use the configured OpenAI-compatible model.
 - Provider, Base URL, model name, timeout, and API key are configured locally.
-- MiMo remains a compatibility preset, not a business-code dependency.
+- Legacy provider values are accepted only for migration compatibility.
 - Request-time static findings are persisted with `SEMGREP` or `DEPENDENCY`
   source provenance.
 - New tasks do not silently fall back to mock results.
@@ -234,9 +234,8 @@ git diff --check
   asserted the complete RAG trace, non-empty evidence and preview, and rejected
   unconfirmed publishing with HTTP 400 without changing preview state.
 - The local embedding and rerank endpoints used deterministic fixture services
-  at `host.docker.internal:18081`. Xiaomi MiMo remained the live planner,
-  executor, and gatekeeper. One separate run failed closed with
-  `MIMO_REVIEW_INVALID` when the executor returned non-JSON; a later run passed.
+  at `host.docker.internal:18081`. The configured model handled the structured
+  review stages. One separate run failed closed on invalid JSON; a later run passed.
 - Semgrep scanned 216 targets with 0 findings. Secret and dependency scans had
   0 blocking issues; the expected H2 local-demo warning remains informational.
 - Local Definition of Done gates are complete, the delivery PR's GitHub Actions
@@ -247,7 +246,8 @@ git diff --check
 
 Use this project to explain:
 
-- how an AI agent workflow is decomposed into planner, executor, gatekeeper,
+- how a structured model workflow is decomposed into planning, execution,
+  evidence gating,
   deterministic normalization, and explicit action steps;
 - why raw model output should not directly mutate application state;
 - how trace and snapshot tables make the review workflow observable without
@@ -262,13 +262,13 @@ Use this project to explain:
 ### Controlled Rollout
 
 Remote CI is green. Keep `RAG_REVIEW_PERCENTAGE=0` until a human approves the
-10% rollout, then follow the documented 10% / 50% / 100% gates. Track MiMo
+10% rollout, then follow the documented 10% / 50% / 100% gates. Track model
 invalid-output rate and retrieval degraded rate separately; do not hide either
 behind fallback.
 
 ### Live Model Eval Capture
 
-Capture sanitized real backend/MiMo outputs into an ignored or reviewed eval
+Capture sanitized real backend/model outputs into an ignored or reviewed eval
 artifact folder, then compare prompt/model changes over time.
 
 ### Richer Static Analysis in Review Runs

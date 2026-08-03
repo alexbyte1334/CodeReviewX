@@ -157,7 +157,7 @@ public class ReviewTraceRecorder {
         trace.setOutputSummary(providerResult.getFindings().size()
                 + " findings normalized from provider response.");
         trace.setFindingCount(providerResult.getFindings().size());
-        trace.setNormalizationSummary("Approved MiMo candidate review mapped by IssueGenerator.");
+        trace.setNormalizationSummary("Approved model candidate review mapped by IssueGenerator.");
         if (!providerResult.isProviderHit()) {
             trace.setFallbackReason(buildProviderMissReason(providerResult));
         }

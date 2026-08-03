@@ -3,7 +3,7 @@ import type { HistoricalReviewProvider } from '../types/reviewTask';
 export function formatProviderSlug(provider?: string | null): string {
   if (!provider) return '—';
   const normalized = provider.toLowerCase();
-  if (normalized === 'mimo') return 'MiMo';
+  if (normalized === 'mimo') return 'Configured model';
   if (normalized === 'mock') return 'Historical Mock';
   return 'Unknown Provider';
 }

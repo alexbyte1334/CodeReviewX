@@ -44,10 +44,8 @@ CodeReviewX addresses these problems:
 - Default GitHub PR mode when no diff is supplied.
 - GitHub PR metadata and bounded files patch loading.
 - Bounded changed-file repository context index for GitHub PR mode.
-- Xiaomi MiMo dual-agent review:
-  - AI-1 Planner,
-  - AI-2 Executor,
-  - AI-1 Gatekeeper.
+- OpenAI-compatible model review workflow with structured planning, execution,
+  and evidence gating performed through the configured model.
 - Request-time Semgrep-style and dependency hygiene findings merged into review
   task results with explicit source provenance.
 - Deterministic issue generation from approved structured output.

@@ -28,7 +28,7 @@ Spring Boot 3 + Java 17
        ├── PostgreSQL 16 + pgvector
        ├── Embedding API
        ├── Rerank API
-       └── Xiaomi MiMo Planner / Executor / Gatekeeper
+       └── OpenAI-compatible model provider
 ```
 
 主要技术及其职责如下：
@@ -43,7 +43,7 @@ Spring Boot 3 + Java 17
 | RAG | 为模型提供仓库级上下文 | 混合检索、RRF、重排、上下文预算 |
 | GitHub REST API | 读取 PR 元数据、补丁和仓库文件 | 外部 API、令牌安全、输入限制 |
 | SSE | 向前端实时推送评审状态 | 事件 ID、断线重放、Last-Event-ID |
-| MiMo | 生成计划、执行代码审查、进行质量门禁 | 结构化 JSON、模型输出校验 |
+| Model provider | 生成计划、执行代码审查、进行证据门禁 | 结构化 JSON、模型输出校验 |
 | Flyway | 管理数据库 schema 迁移 | 可重复部署、版本演进 |
 | Docker Compose | 本地启动 PostgreSQL、后端和前端 | 环境一致性和服务健康检查 |
 
@@ -68,7 +68,7 @@ CodeReviewX 不是同步接口收到请求后立即返回结果，而是创建�
   ↓
 运行静态检查
   ↓
-MiMo Planner → Executor → Gatekeeper
+Structured model review → Evidence Gate
   ↓
 校验证据、生成结构化 Issue
   ↓
@@ -169,7 +169,7 @@ index_version
 
 只要任何一项失败，finding 就不会进入可发布评论。这是我对 AI 项目“确定性校验”的一次重要实践：模型负责提出候选结论，程序负责决定结论是否满足发布条件。
 
-## 六、MiMo 双 Agent 流程
+## 六、结构化模型评审流程
 
 项目不是直接把一段 prompt 发给模型，而是拆成三个角色：
 
@@ -183,9 +183,9 @@ Executor 根据计划逐项检查代码，输出候选 findings。每个 finding
 
 ### 6.3 Gatekeeper
 
-Gatekeeper 对计划和候选结果进行复核，检查是否越界、是否有证据、是否违反评审规则。通过后才交给 `MiMoIssueGenerator` 转换为内部 issue。
+Evidence Gate 对计划和候选结果进行复核，检查是否越界、是否有证据、是否违反评审规则。通过后才转换为内部 issue。
 
-在 Java 中，`ReviewPipelineService` 负责调用配置好的 `ReviewProvider` 并检查返回值是否为空或格式非法；MiMo provider 内部负责 prompt 构造、HTTP 调用、JSON 解析和结果转换。这样做的好处是业务流程不绑定具体模型，未来可以替换 provider。
+在 Java 中，`ReviewPipelineService` 负责调用配置好的 `ReviewProvider` 并检查返回值是否为空或格式非法；模型 provider 负责 prompt 构造、HTTP 调用、JSON 解析和结果转换。这样做的好处是业务流程不绑定具体模型，未来可以替换 provider。
 
 ### 6.4 我遇到的模型接口问题
 
@@ -288,7 +288,7 @@ git diff --check
 | 重复请求创建多个任务 | 网络重试和用户重复点击 | Idempotency-Key | 所有可重试写操作都要考虑幂等 |
 | SSE 断线后进度丢失 | 事件只在内存中 | 数据库持久化事件并支持 Last-Event-ID 重放 | 实时体验也需要可靠存储 |
 | 原生 tool-call 接口兼容性不足 | 厂商兼容声明不覆盖全部细节 | 使用结构化 JSON 协议并做 contract test | 不要未经验证依赖模型协议假设 |
-| 真实 MiMo 评测遇到 HTTP 402 | 外部额度或账户条件不足 | 使用 Fake Provider 验证 plumbing 和安全边界，保留 live gate 未完成状态 | Fake 测试不能冒充真实模型验收 |
+| 真实模型评测遇到外部额度限制 | 外部额度或账户条件不足 | 使用 Fake Provider 验证 plumbing 和安全边界，保留 live gate 未完成状态 | Fake 测试不能冒充真实模型验收 |
 | Railway 生产 smoke 无法完成 | 缺少 CLI、登录、项目或 secrets 条件 | 记录明确阻塞项，不宣称生产部署通过 | 外部验收必须如实报告 |
 
 ## 十二、关于“动态 Agent”的反思

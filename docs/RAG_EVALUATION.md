@@ -62,7 +62,7 @@ gate cannot pass vacuously. The committed report is
 
 This gate covers only retrieval quality: Recall@10 >= 0.85, MRR@10 >= 0.70,
 nDCG@10 >= 0.75, forbidden hits = 0, cross-commit contamination = 0 and context
-budget violations = 0. It deliberately excludes MiMo finding generation,
+budget violations = 0. It deliberately excludes model finding generation,
 finding quality, evidence-validation pass rate, grounded finding precision and
 network model latency. A mutation test changes the relevant key and proves the
 quality thresholds fail instead of producing an unconditional PASS.
@@ -70,11 +70,10 @@ quality thresholds fail instead of producing an unconditional PASS.
 ## Java production finding and evidence gate
 
 `RagFindingQualityAcceptanceTest` reuses the committed cases, corpus and
-deterministic MiMo JSON fixtures without network calls. It invokes the
-production `ReviewTaskService`, `XiaomiMiMoReviewProvider`,
-`MiMoAgentJsonParser`, `MiMoIssueGenerator`, `ReviewEvidenceValidator`, issue
+deterministic structured-model JSON fixtures without network calls. It invokes the
+production review provider, structured-output parser, issue generator, evidence
 repository and `ReviewIssueEvidencePersister` boundary. GitHub, retrieval,
-rerank and MiMo HTTP are deterministic external-boundary fixtures; finding
+rerank and model HTTP are deterministic external-boundary fixtures; finding
 parsing, generation, validation, filtering and issue persistence are not
 reimplemented by the evaluator.
 
@@ -93,7 +92,7 @@ must each fail the production gate. The baseline also covers dependency hygiene
 on a RAG-enabled changed `package.json`, where legacy repository context is
 intentionally empty.
 
-This gate excludes live MiMo quality and network behavior, real GitHub loading,
+This gate excludes live model quality and network behavior, real GitHub loading,
 and PostgreSQL retrieval ranking; those belong to live evaluation, smoke and
 the Java retrieval/performance gates respectively. CI runs both Java gates,
 regenerates their committed reports and rejects any baseline diff or untracked
@@ -130,7 +129,7 @@ changed chunks while reusing 9,980. The incremental worker processing gate is
 Incremental timing deliberately excludes network JGit fetch and remote file
 discovery: a controlled `RepositoryFile` provider supplies both commits. RAG
 additional-context p95 includes query embedding fixture, PostgreSQL vector/FTS,
-RRF, deterministic rerank and `RagContextAssembler`, but excludes MiMo
+RRF, deterministic rerank and `RagContextAssembler`, but excludes model
 generation and network model latency. The report status is `PASS` only when all
 covered gates pass.
 

@@ -17,7 +17,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * Xiaomi MiMo dual-agent review provider.
+ * Legacy compatibility implementation for the structured OpenAI-compatible review workflow.
  */
 @Component
 public class XiaomiMiMoReviewProvider implements ReviewProvider {
@@ -56,9 +56,9 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
     public ReviewProviderResult review(ReviewContext context) {
         if (!properties.hasRoleApiKeys()) {
             recordFailedStep(context, "mimo.auth.check", ReviewErrorCodes.MIMO_AUTH_MISSING,
-                    "MiMo planner and executor API keys are required");
+                    "A model API key is required");
             throw new MiMoAgentException(ReviewErrorCodes.MIMO_AUTH_MISSING,
-                    "MiMo planner and executor API keys are required");
+                    "A model API key is required");
         }
 
         try {
@@ -92,13 +92,13 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
                 );
                 if (!Boolean.TRUE.equals(decision.getApproved())) {
                     throw new MiMoAgentException(ReviewErrorCodes.MIMO_GATE_REJECTED,
-                            "MiMo gatekeeper rejected candidate review");
+                            "Model evidence gate rejected candidate review");
                 }
                 return decision;
             }, ignored -> "Gatekeeper approved the candidate review.");
             if (!Boolean.TRUE.equals(gateDecision.getApproved())) {
                 throw new MiMoAgentException(ReviewErrorCodes.MIMO_GATE_REJECTED,
-                        "MiMo gatekeeper rejected candidate review");
+                    "Model evidence gate rejected candidate review");
             }
 
             List<ReviewFinding> findings = recordStep(context, "issue.generate",
@@ -110,10 +110,10 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
             throw ex;
         } catch (XiaomiMiMoClientException ex) {
             throw new MiMoAgentException(ReviewErrorCodes.MIMO_PROVIDER_ERROR,
-                    "MiMo provider request failed", ex);
+                    "Model provider request failed", ex);
         } catch (RuntimeException ex) {
             throw new MiMoAgentException(ReviewErrorCodes.MIMO_PROVIDER_ERROR,
-                    "Unexpected MiMo provider failure", ex);
+                    "Unexpected model provider failure", ex);
         }
     }
 
@@ -187,9 +187,9 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
                     ToolTraceStatus.FAILED,
                     startedAt,
                     finishedAt,
-                    "MiMo provider step failed before producing a valid structured result.",
+                    "Model provider step failed before producing a valid structured result.",
                     ReviewErrorCodes.MIMO_PROVIDER_ERROR,
-                    "MiMo provider step failed"
+                    "Model provider step failed"
             ));
             throw ex;
         }
@@ -213,7 +213,7 @@ public class XiaomiMiMoReviewProvider implements ReviewProvider {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException ex) {
             throw new MiMoAgentException(ReviewErrorCodes.MIMO_PROVIDER_ERROR,
-                    "Failed to serialize MiMo agent payload", ex);
+                    "Failed to serialize structured model payload", ex);
         }
     }
 }

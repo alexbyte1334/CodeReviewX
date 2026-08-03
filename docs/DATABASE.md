@@ -69,7 +69,7 @@ Important fields:
 | `status` | `PENDING`, `RUNNING`, `SUCCESS`, `FAILED` |
 | `execution_status` | stage-level status such as `REVIEWING` or `BUILDING_PREVIEW` |
 | `summary` | user-facing completion summary |
-| `requested_provider` | currently `mimo` for new tasks |
+| `requested_provider` | configured model provider slug for the review |
 | `provider_used` | provider that produced findings |
 | `provider_hit` | whether requested provider was used |
 | `error_message` | user-readable task failure message |
@@ -83,10 +83,10 @@ Important fields:
 | Column | Meaning |
 |---|---|
 | `review_api_run_id` | owning Review API aggregate |
-| `issue_key` | public stable id such as `MIMO-ISSUE-1` |
+| `issue_key` | public stable id such as `MODEL-ISSUE-1` |
 | `severity` | `HIGH`, `MEDIUM`, `LOW` |
 | `category` | bug/security/performance/maintainability/style/test |
-| `source` | `MIMO`, `SEMGREP`, or `DEPENDENCY` finding provenance |
+| `source` | configured model, `SEMGREP`, or `DEPENDENCY` finding provenance |
 | `status` | currently `OPEN`; reserved for future workflows |
 | `file_path` | target file path |
 | `start_line` / `end_line` | target line range |
@@ -119,9 +119,9 @@ rag.retrieve.hybrid
 rag.rerank
 rag.context.assemble
 static.analysis.findings
-mimo.ai1.plan
-mimo.ai2.execute
-mimo.ai1.gate
+model.plan
+model.execute
+model.evidence_gate
 issue.generate
 evidence.validate
 comment.preview.build
@@ -143,7 +143,7 @@ Stores provider-level observability:
 | `model_name` | model name when recorded |
 | `finding_count` | number of normalized findings |
 | `normalization_summary` | safe summary of mapping |
-| `fallback_reason` | reserved; current MiMo-only path should not fallback |
+| `fallback_reason` | safe reason recorded when the configured model path is degraded |
 
 ## 8. `review_comment_preview`
 

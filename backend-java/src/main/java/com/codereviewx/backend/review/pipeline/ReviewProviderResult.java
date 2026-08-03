@@ -12,7 +12,7 @@ public class ReviewProviderResult {
     private final String providerName;
     private final boolean successful;
     private final String message;
-    /** Requested provider slug. New review tasks currently use {@code mimo}. */
+    /** Requested provider slug. Legacy values remain readable for migration compatibility. */
     private final String requestedProvider;
     /** Whether the requested provider was actually used (no fallback). */
     private final boolean providerHit;
