@@ -101,6 +101,8 @@ class PostgresJpaCompatibilityTest {
 
         run.setPublicId(UUID.randomUUID().toString());
         run.setIdempotencyKey("postgres-jpa-run-" + UUID.randomUUID());
+        run.setRepoUrl(task.getRepoUrl());
+        run.setPrNumber(task.getPrNumber());
         run.setRunNumber(1);
         run.setReviewMode(ReviewMode.MANUAL_DIFF);
         run.setStatus(ReviewRunStatus.PENDING);
