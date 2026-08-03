@@ -58,7 +58,7 @@ public class ReviewTraceRecorder {
         trace.setStatus(result.isSuccess() ? ToolTraceStatus.SUCCESS : ToolTraceStatus.FAILED);
         trace.setInputSummary("repoUrl=" + task.getRepoUrl()
                 + ", prNumber=" + task.getPrNumber()
-                + ", tokenConfigured=" + githubProperties.hasToken());
+                + ", credentialConfigured=" + githubProperties.hasToken());
         trace.setOutputSummary(result.isSuccess()
                 ? "Loaded PR title, head/base refs, and changed file counts."
                 : result.getErrorMessage());
@@ -83,7 +83,7 @@ public class ReviewTraceRecorder {
         trace.setStatus(result.isSuccess() ? ToolTraceStatus.SUCCESS : ToolTraceStatus.FAILED);
         trace.setInputSummary("repoUrl=" + task.getRepoUrl()
                 + ", prNumber=" + task.getPrNumber()
-                + ", tokenConfigured=" + githubProperties.hasToken()
+                + ", credentialConfigured=" + githubProperties.hasToken()
                 + ", maxChangedFiles=" + githubProperties.getMaxChangedFiles()
                 + ", maxDiffBytes=" + githubProperties.getMaxDiffBytes()
                 + ", perFilePatchMaxBytes=" + githubProperties.getPerFilePatchMaxBytes());

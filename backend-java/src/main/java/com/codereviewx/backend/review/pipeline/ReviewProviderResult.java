@@ -70,6 +70,9 @@ public class ReviewProviderResult {
         if (normalizedProviderName.contains("mimo")) {
             return "mimo";
         }
+        if (normalizedProviderName.contains("openai") || normalizedProviderName.contains("compatible")) {
+            return "openai-compatible";
+        }
         if (normalizedProviderName.contains("mock")) {
             return "mock";
         }

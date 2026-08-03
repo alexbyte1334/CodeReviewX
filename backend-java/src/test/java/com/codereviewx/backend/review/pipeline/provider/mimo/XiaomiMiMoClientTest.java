@@ -166,7 +166,7 @@ class XiaomiMiMoClientTest {
 
         assertThatThrownBy(() -> client.complete("system", "user"))
                 .isInstanceOf(XiaomiMiMoClientException.class)
-                .hasMessage("MiMo response exhausted max_completion_tokens before final content")
+                .hasMessage("Model response exhausted max_completion_tokens before final content")
                 .hasMessageNotContaining("sensitive internal reasoning");
         server.verify();
     }

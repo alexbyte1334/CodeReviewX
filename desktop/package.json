@@ -1,0 +1,33 @@
+{
+  "name": "codereviewx-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CodeReviewX personal macOS desktop application",
+  "author": "CodeReviewX",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac dmg --arm64"
+  },
+  "devDependencies": {
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.codereviewx.personal",
+    "productName": "CodeReviewX",
+    "asar": true,
+    "files": ["main.cjs", "preload.cjs"],
+    "extraResources": [
+      {"from": "../frontend/dist", "to": "frontend"},
+      {"from": "../backend-java/target/backend-java-0.0.1-SNAPSHOT.jar", "to": "backend/app.jar"},
+      {"from": "runtime/jre", "to": "jre"},
+      {"from": "runtime/postgresql", "to": "postgresql"},
+      {"from": "../README.md", "to": "README.md"},
+      {"from": "../docs/INSTALL_PERSONAL_MAC.md", "to": "INSTALL.md"},
+      {"from": "../LICENSE", "to": "LICENSE"}
+    ],
+    "mac": {"target": [{"target": "dmg", "arch": ["arm64"]}], "category": "public.app-category.developer-tools"},
+    "dmg": {"title": "CodeReviewX Personal"}
+  }
+}

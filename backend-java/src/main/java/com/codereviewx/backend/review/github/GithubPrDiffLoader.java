@@ -12,7 +12,7 @@ public class GithubPrDiffLoader {
 
     public static final String TOOL_NAME = "github.pr.diff.load";
     public static final String AUTH_MISSING_MESSAGE =
-            "Local GitHub token is not configured. Set GITHUB_TOKEN to enable GitHub PR diff ingestion.";
+            "GitHub service credential is not configured. Connect GitHub or configure the server-side fallback.";
     public static final String AUTH_FAILED_MESSAGE =
             "GitHub authentication failed while loading PR diff.";
     public static final String DIFF_FAILED_MESSAGE =

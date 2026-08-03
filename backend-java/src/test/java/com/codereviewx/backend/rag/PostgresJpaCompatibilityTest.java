@@ -62,7 +62,7 @@ class PostgresJpaCompatibilityTest {
     void persistsLongTextAsTextAcrossRepositoryTransactionBoundaries() {
         assertThat(flyway.info().applied())
                 .extracting(info -> info.getVersion().getVersion())
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14");
         assertThat(jdbcTemplate.queryForList("""
                         SELECT table_name || '.' || column_name || '=' || data_type || ':'
                                || COALESCE(domain_name, '')
@@ -84,20 +84,29 @@ class PostgresJpaCompatibilityTest {
         LocalDateTime now = LocalDateTime.now();
 
         ReviewApiRunEntity task = new ReviewApiRunEntity();
+        task.setPublicId(UUID.randomUUID().toString());
+        task.setIdempotencyKey("postgres-jpa-task-" + UUID.randomUUID());
         task.setRepoUrl("https://github.com/example/postgres-jpa-compatibility");
         task.setPrNumber(42);
         task.setDiffText(diffText);
         task.setStatus(ReviewTaskStatus.PENDING);
+        task.setExecutionStatus(ReviewRunStatus.PENDING);
         task.setReviewMode(ReviewMode.MANUAL_DIFF);
+        task.setRunNumber(1);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         Long taskId = reviewTaskRepository.saveAndFlush(task).getId();
 
         ReviewApiRunEntity run = new ReviewApiRunEntity();
 
+        run.setPublicId(UUID.randomUUID().toString());
+        run.setIdempotencyKey("postgres-jpa-run-" + UUID.randomUUID());
+        run.setRepoUrl(task.getRepoUrl());
+        run.setPrNumber(task.getPrNumber());
         run.setRunNumber(1);
         run.setReviewMode(ReviewMode.MANUAL_DIFF);
-        run.setStatus(ReviewRunStatus.PENDING);
+        run.setStatus(ReviewTaskStatus.PENDING);
+        run.setExecutionStatus(ReviewRunStatus.PENDING);
         run.setCreatedAt(now);
         run.setUpdatedAt(now);
         Long runId = reviewRunRepository.saveAndFlush(run).getId();

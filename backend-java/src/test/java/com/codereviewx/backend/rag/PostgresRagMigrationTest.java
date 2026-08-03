@@ -38,7 +38,8 @@ class PostgresRagMigrationTest {
                     "id", "repository_id", "requested_ref", "resolved_commit_sha", "trigger_type", "status",
                     "attempt_count", "discovered_file_count", "indexed_file_count", "indexed_chunk_count",
                     "skipped_file_count", "error_code", "error_message", "started_at", "finished_at", "created_at",
-                    "embedding_model", "embedding_dimensions", "index_version", "heartbeat_at"
+                    "embedding_model", "embedding_dimensions", "index_version", "heartbeat_at",
+                    "phase", "total_file_count", "last_progress_at", "deadline_at"
             ),
             "rag_document", Set.of(
                     "id", "repository_id", "snapshot_id", "commit_sha", "path", "language", "content_hash", "byte_size",
@@ -164,6 +165,8 @@ class PostgresRagMigrationTest {
                                 "rag_index_job.indexed_file_count=0",
                                 "rag_index_job.indexed_chunk_count=0",
                                 "rag_index_job.skipped_file_count=0",
+                                "rag_index_job.phase='QUEUED'::character varying",
+                                "rag_index_job.total_file_count=0",
                                 "rag_document.id=nextval('rag_document_id_seq'::regclass)",
                                 "rag_chunk.id=nextval('rag_chunk_id_seq'::regclass)",
                                 "rag_retrieval_trace.id=nextval('rag_retrieval_trace_id_seq'::regclass)",
@@ -189,6 +192,8 @@ class PostgresRagMigrationTest {
                                 "rag_index_job.started_at",
                                 "rag_index_job.finished_at",
                                 "rag_index_job.heartbeat_at",
+                                "rag_index_job.last_progress_at",
+                                "rag_index_job.deadline_at",
                                 "rag_document.snapshot_id",
                                 "rag_chunk.snapshot_id",
                                 "rag_chunk.symbol_name",
@@ -211,7 +216,7 @@ class PostgresRagMigrationTest {
                         "rag_index_job.index_version", "rag_index_job.embedding_dimensions",
                         "rag_index_job.attempt_count", "rag_index_job.discovered_file_count",
                         "rag_index_job.indexed_file_count", "rag_index_job.indexed_chunk_count",
-                        "rag_index_job.skipped_file_count",
+                        "rag_index_job.skipped_file_count", "rag_index_job.total_file_count",
                         "rag_chunk.start_line", "rag_chunk.end_line", "rag_chunk.token_count",
                         "rag_retrieval_trace.vector_candidate_count",
                         "rag_retrieval_trace.lexical_candidate_count", "rag_retrieval_trace.reranked_count",
@@ -220,7 +225,7 @@ class PostgresRagMigrationTest {
                         "review_issue_evidence.retrieval_rank");
                 assertColumnsOfType(softly, statement, "character varying(32)",
                         "rag_repository.provider", "rag_repository.index_status",
-                        "rag_index_job.trigger_type", "rag_index_job.status",
+                        "rag_index_job.trigger_type", "rag_index_job.status", "rag_index_job.phase",
                         "review_issue_evidence.citation_label");
                 assertColumnsOfType(softly, statement, "character varying(64)",
                         "rag_repository.active_commit_sha", "rag_index_job.resolved_commit_sha",
@@ -260,6 +265,7 @@ class PostgresRagMigrationTest {
                 assertColumnsOfType(softly, statement, "timestamp without time zone",
                         "rag_repository.last_indexed_at", "rag_repository.created_at", "rag_repository.updated_at",
                         "rag_index_job.started_at", "rag_index_job.finished_at", "rag_index_job.heartbeat_at",
+                        "rag_index_job.last_progress_at", "rag_index_job.deadline_at",
                         "rag_index_job.created_at",
                         "rag_document.created_at", "rag_chunk.created_at", "rag_retrieval_trace.created_at",
                         "review_issue_evidence.created_at");

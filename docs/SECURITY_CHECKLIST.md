@@ -25,18 +25,20 @@ The static scan runs secret scan, dependency hygiene scan, and Semgrep when avai
 
 ## Token Permissions
 
-Use local environment variables only:
+Use the desktop Keychain or local environment variables only:
 
 ```text
-GITHUB_TOKEN
-MIMO_PLANNER_API_KEY
-MIMO_EXECUTOR_API_KEY
+GitHub personal access token (`GITHUB_TOKEN`)
+MODEL_API_KEY
+RAG_EMBEDDING_API_KEY
+RAG_RERANK_API_KEY
 ```
 
 Recommended GitHub token permissions for private repository review and PR comment publishing:
 
 - Contents: read
-- Pull requests: read/write
+- Pull requests: read
+- Issues / pull request comments: write (only when publishing is enabled)
 - Metadata: read
 
 Do not grant broad account, organization admin, workflow, package, or secret-management permissions for this local MVP.
@@ -46,7 +48,7 @@ Do not grant broad account, organization admin, workflow, package, or secret-man
 Public API responses must not include:
 
 - GitHub token
-- MiMo API keys
+- model, Embedding, and Rerank API keys
 - Authorization header
 - raw prompt
 - raw model output

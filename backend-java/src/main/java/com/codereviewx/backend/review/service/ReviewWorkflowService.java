@@ -52,6 +52,7 @@ public class ReviewWorkflowService {
     private final RagReviewContextFacade ragReviewContextFacade;
     private final ReviewEvidenceValidator evidenceValidator;
     private final ReviewIssueEvidencePersister evidencePersister;
+    private ReviewApiEventRecorder apiEvents;
 
     public ReviewWorkflowService(ReviewIssueRepository reviewIssueRepository,
                              ReviewApiRunRepository reviewApiRunRepository,
@@ -79,6 +80,13 @@ public class ReviewWorkflowService {
         this.ragReviewContextFacade = ragReviewContextFacade;
         this.evidenceValidator = evidenceValidator;
         this.evidencePersister = evidencePersister;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setApiEvents(ReviewApiEventRecorder apiEvents) { this.apiEvents = apiEvents; }
+
+    private void stage(Long runId, String type, String summary) {
+        if (apiEvents != null && runId != null) apiEvents.record(runId, type, "RUNNING", summary);
     }
 
     /**
@@ -194,13 +202,19 @@ public class ReviewWorkflowService {
         }
         if (request.getProvider() != null
                 && !request.getProvider().trim().isEmpty()
-                && !"mimo".equalsIgnoreCase(request.getProvider().trim())) {
-            throw new ReviewRequestInvalidException("provider must be mimo");
+                && !isSupportedProvider(request.getProvider().trim())) {
+            throw new ReviewRequestInvalidException("provider must be a supported OpenAI-compatible provider");
         }
         if (request.getReviewMode() == ReviewMode.MANUAL_DIFF
                 && normalizeDiffText(request.getDiffText()) == null) {
             throw new ReviewRequestInvalidException("MANUAL_DIFF requires non-blank diffText");
         }
+    }
+
+    private boolean isSupportedProvider(String provider) {
+        return List.of("mimo", "openai", "deepseek", "qwen", "moonshot", "zhipu",
+                        "custom", "openai-compatible", "open_ai_compatible")
+                .contains(provider.toLowerCase());
     }
 
     private ReviewTaskResponse completeGithubPrIngestion(ReviewApiRunEntity task,
@@ -210,6 +224,7 @@ public class ReviewWorkflowService {
         run.setExecutionStatus(ReviewRunStatus.INGESTING);
         run.setUpdatedAt(ingestionStartedAt);
         reviewApiRunRepository.save(run);
+        stage(run.getId(), "STAGE_INGEST", "Loading GitHub PR metadata and diff.");
 
         GithubPrMetadataLoadResult result = githubPrMetadataLoader.load(task.getRepoUrl(), task.getPrNumber());
         LocalDateTime ingestionFinishedAt = LocalDateTime.now();
@@ -231,6 +246,7 @@ public class ReviewWorkflowService {
 
         reviewInputSnapshotService.persistGithubPrSnapshot(
                 run.getId(), task, result.getMetadata(), diffResult.getDiff(), diffFinishedAt);
+        stage(run.getId(), "STAGE_INDEX", "Preparing repository context and commit-scoped index.");
 
         RagReviewContextFacade.PreparedContext prepared =
                 ragReviewContextFacade.prepare(result.getMetadata(), diffResult.getDiff(), task.getId(), run.getId());
@@ -249,6 +265,8 @@ public class ReviewWorkflowService {
                 null,
                 staticStartedAt,
                 staticFinishedAt);
+        stage(run.getId(), "STAGE_RETRIEVE", prepared.evidenceBundle() == null
+                ? "RAG is unavailable; using bounded fallback context." : "Repository evidence retrieved.");
 
         return completeProviderReview(
                 task,
@@ -296,6 +314,7 @@ public class ReviewWorkflowService {
         run.setExecutionStatus(ReviewRunStatus.REVIEWING);
         run.setUpdatedAt(reviewStartedAt);
         reviewApiRunRepository.save(run);
+        stage(run.getId(), "STAGE_PLAN", "Planning bounded review steps.");
 
         ReviewContext context = new ReviewContext(
                 task.getId(),
@@ -319,6 +338,7 @@ public class ReviewWorkflowService {
         LocalDateTime reviewFinishedAt = LocalDateTime.now();
         reviewTraceRecorder.recordAgentSteps(run.getId(), context.getAgentSteps(), agentStepStartSequence);
         reviewTraceRecorder.recordProviderTrace(run.getId(), task, providerResult, reviewStartedAt, reviewFinishedAt);
+        stage(run.getId(), "STAGE_EXECUTE", "Review model completed bounded execution.");
 
         run.setRequestedProvider(providerResult.getRequestedProvider());
         run.setProviderUsed(providerResult.getProviderUsed());
@@ -331,6 +351,8 @@ public class ReviewWorkflowService {
             providerFindings = providerFindings.stream()
                     .filter(finding -> evidenceValidator.isGrounded(finding, evidenceBundle, githubDiff)).toList();
         }
+        stage(run.getId(), "STAGE_EVIDENCE", evidenceBundle == null
+                ? "No Evidence available; publishing will be blocked." : "Evidence validated for findings.");
         List<ReviewFinding> allFindings = new ArrayList<>(providerFindings);
         allFindings.addAll(supplementalFindings == null ? Collections.emptyList() : supplementalFindings);
 
@@ -362,6 +384,7 @@ public class ReviewWorkflowService {
         run.setExecutionStatus(ReviewRunStatus.BUILDING_PREVIEW);
         run.setUpdatedAt(previewStartedAt);
         reviewApiRunRepository.save(run);
+        stage(run.getId(), "STAGE_PREVIEW", "Building local comment previews.");
 
         List<ReviewIssueEntity> persistedIssues =
                 reviewIssueRepository.findByReviewApiRunIdOrderByIdAsc(completedTask.getId());
@@ -422,7 +445,7 @@ public class ReviewWorkflowService {
     }
 
     private String normalizeProvider(String provider) {
-        return "mimo";
+        return provider == null || provider.isBlank() ? "openai-compatible" : provider.trim().toLowerCase();
     }
 
     private String augmentReviewContext(String diffText, RepositoryContextIndexResult repositoryContext) {

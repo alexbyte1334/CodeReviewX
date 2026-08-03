@@ -23,6 +23,7 @@ spring:
 
 server:
   port: ${BACKEND_PORT:8080}
+  address: ${SERVER_ADDRESS:0.0.0.0}
 
 management:
   endpoints.web.exposure.include: ${MANAGEMENT_ENDPOINTS_EXPOSED:health}
@@ -51,12 +52,14 @@ codereviewx:
     max-context-bytes: ${GITHUB_MAX_CONTEXT_BYTES:48000}
   ai:
     mimo:
-      base-url: ${MIMO_BASE_URL:https://api.xiaomimimo.com/v1}
-      model: ${MIMO_MODEL:mimo-v2.5-pro}
+      provider: ${MODEL_PROVIDER:mimo}
+      base-url: ${MODEL_BASE_URL:${MIMO_BASE_URL:https://api.xiaomimimo.com/v1}}
+      model: ${MODEL_NAME:${MIMO_MODEL:mimo-v2.5-pro}}
+      api-key: ${MODEL_API_KEY:}
       planner-api-key: ${MIMO_PLANNER_API_KEY:}
       executor-api-key: ${MIMO_EXECUTOR_API_KEY:}
-      timeout-seconds: ${MIMO_TIMEOUT_SECONDS:45}
-      max-completion-tokens: ${MIMO_MAX_COMPLETION_TOKENS:2048}
-      planner-max-completion-tokens: ${MIMO_PLANNER_MAX_COMPLETION_TOKENS:1024}
-      executor-max-completion-tokens: ${MIMO_EXECUTOR_MAX_COMPLETION_TOKENS:2048}
-      gatekeeper-max-completion-tokens: ${MIMO_GATEKEEPER_MAX_COMPLETION_TOKENS:384}
+      timeout-seconds: ${MODEL_TIMEOUT_SECONDS:${MIMO_TIMEOUT_SECONDS:45}}
+      max-completion-tokens: ${MODEL_MAX_COMPLETION_TOKENS:${MIMO_MAX_COMPLETION_TOKENS:2048}}
+      planner-max-completion-tokens: ${MODEL_PLANNER_MAX_COMPLETION_TOKENS:${MIMO_PLANNER_MAX_COMPLETION_TOKENS:1024}}
+      executor-max-completion-tokens: ${MODEL_EXECUTOR_MAX_COMPLETION_TOKENS:${MIMO_EXECUTOR_MAX_COMPLETION_TOKENS:2048}}
+      gatekeeper-max-completion-tokens: ${MODEL_GATEKEEPER_MAX_COMPLETION_TOKENS:${MIMO_GATEKEEPER_MAX_COMPLETION_TOKENS:384}}

@@ -22,7 +22,10 @@ public class RagEvidencePublishGate {
 
     public void validate(ReviewCommentPreviewEntity preview) {
         if (!properties.isRequireEvidence() || !isModelFinding(preview.getSource())) return;
-        if (preview.getReviewApiRunId() == null || !successfulRagRun(preview.getReviewApiRunId())) return;
+        if (!properties.isEnabled()) throw missingEvidence("RAG is not configured; model comments cannot be published");
+        if (preview.getReviewApiRunId() == null || !successfulRagRun(preview.getReviewApiRunId())) {
+            throw missingEvidence("RAG evidence is unavailable; model comments cannot be published");
+        }
         if (preview.getReviewIssueId() == null) throw missingEvidence();
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM review_issue_evidence WHERE review_issue_id = ?",
                 Integer.class, preview.getReviewIssueId());
@@ -41,5 +44,9 @@ public class RagEvidencePublishGate {
 
     private ReviewRequestInvalidException missingEvidence() {
         return new ReviewRequestInvalidException("RAG model comment requires persisted evidence before publishing");
+    }
+
+    private ReviewRequestInvalidException missingEvidence(String message) {
+        return new ReviewRequestInvalidException(message);
     }
 }

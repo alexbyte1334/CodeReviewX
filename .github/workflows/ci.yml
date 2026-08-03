@@ -131,6 +131,7 @@ jobs:
         working-directory: backend-java
         run: >-
           mvn -B -Ppostgres-integration
+          -Dcodereviewx.rag.enabled=false
           -Drag.performance.enabled=true
           -Dtest=PostgresRagMigrationTest,PostgresJpaCompatibilityTest,RagRetrievalQualityAcceptanceTest,RagFindingQualityAcceptanceTest,RagPerformanceAcceptanceTest
           verify

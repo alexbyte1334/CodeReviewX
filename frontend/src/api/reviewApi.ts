@@ -10,7 +10,7 @@ import type {
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
-export interface ReviewApiEvent { sequence: number; type: string; status: string; summary: string | null; errorCode: string | null; }
+export interface ReviewApiEvent { sequence: number; type: string; status: string; summary: string | null; errorCode: string | null; createdAt: string | null; }
 export type ReviewApiReview = Omit<ReviewTask, 'id' | 'latestRunId'>;
 export interface ReviewApiSnapshot {
   runId: string; status: string; mode: 'LIVE' | 'REPLAY'; repositoryUrl: string; prNumber: number;
@@ -36,6 +36,22 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<ApiResp
 export async function getHealth(): Promise<ApiResponse<HealthData>> {
   return fetchJson<HealthData>(`${BASE_URL}/api/health`);
 }
+
+export interface LocalConfigStatus { model: string; github: string; embedding: string; rerank: string; database: string; mode: string; evidenceAvailable: boolean; publishAllowed: boolean; reason: string; }
+export interface LocalConfigRequest {
+  provider: string; modelBaseUrl: string; modelName: string; modelApiKey: string; githubToken: string;
+  embeddingBaseUrl: string; embeddingApiKey: string; embeddingModel: string;
+  rerankBaseUrl: string; rerankApiKey: string; rerankModel: string;
+}
+export async function getLocalConfigStatus(): Promise<ApiResponse<LocalConfigStatus>> { return fetchJson(`${BASE_URL}/api/local/config/status`); }
+export async function getModelPresets(): Promise<ApiResponse<Record<string, {label:string; baseUrl:string; model:string}>>> { return fetchJson(`${BASE_URL}/api/local/config/presets`); }
+export async function applyLocalConfig(config: LocalConfigRequest): Promise<ApiResponse<LocalConfigStatus>> {
+  return fetchJson(`${BASE_URL}/api/local/config/apply`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(config) });
+}
+export async function testLocalModel(request: {provider:string; baseUrl:string; model:string; apiKey:string}): Promise<ApiResponse<{model:string; reason?:string}>> { return fetchJson(`${BASE_URL}/api/local/config/test-model`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(request) }); }
+export async function testLocalGithub(request: {baseUrl:string; token:string}): Promise<ApiResponse<{github:string; reason?:string}>> { return fetchJson(`${BASE_URL}/api/local/config/test-github`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(request) }); }
+export type LocalRagTestRequest = Pick<LocalConfigRequest, 'embeddingBaseUrl' | 'embeddingApiKey' | 'embeddingModel' | 'rerankBaseUrl' | 'rerankApiKey' | 'rerankModel'>;
+export async function testLocalRag(request: LocalRagTestRequest): Promise<ApiResponse<{embedding:string; rerank:string; embeddingReason?:string; rerankReason?:string}>> { return fetchJson(`${BASE_URL}/api/local/config/test-rag`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(request) }); }
 
 export async function getCommentPreviews(
   runId: string,

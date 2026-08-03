@@ -134,9 +134,9 @@ public class ReviewApiService {
         Row row = row(publicId);
         ReviewTaskResponse review = tasks.getTask(row.taskId());
         List<ReviewApiSnapshot.ReviewApiEvent> events = jdbc.query("""
-            SELECT sequence_number,event_type,status,summary,error_code FROM review_api_event
+            SELECT sequence_number,event_type,status,summary,error_code,created_at FROM review_api_event
             WHERE review_api_run_id=? ORDER BY sequence_number""", (rs, n) ->
-            new ReviewApiSnapshot.ReviewApiEvent(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)), row.apiId());
+            new ReviewApiSnapshot.ReviewApiEvent(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)), row.apiId());
         String path = "/api/reviews/" + row.publicId();
         return new ReviewApiSnapshot(row.publicId(), row.status(), "LIVE", row.repoUrl(), row.prNumber(),
                 path, path + "/events", review, events, row.errorCode(), row.errorMessage());
@@ -145,9 +145,9 @@ public class ReviewApiService {
     public List<ReviewApiSnapshot.ReviewApiEvent> events(String publicId, long after) {
         Row row = row(publicId);
         return jdbc.query("""
-            SELECT sequence_number,event_type,status,summary,error_code FROM review_api_event
+            SELECT sequence_number,event_type,status,summary,error_code,created_at FROM review_api_event
             WHERE review_api_run_id=? AND sequence_number>? ORDER BY sequence_number""", (rs, n) ->
-            new ReviewApiSnapshot.ReviewApiEvent(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)), row.apiId(), after);
+            new ReviewApiSnapshot.ReviewApiEvent(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)), row.apiId(), after);
     }
 
     public ToolTraceListResponse trace(String publicId) {

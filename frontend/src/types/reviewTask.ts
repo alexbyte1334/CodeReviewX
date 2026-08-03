@@ -134,4 +134,7 @@ export interface HealthData {
   service: string;
   reviewProvider?: string;
   mimoConfigured?: boolean;
+  modelProvider?: string;
+  modelName?: string;
+  modelConfigured?: boolean;
 }

@@ -363,7 +363,7 @@ final class RagFindingProductionEvaluation {
         report.put("failures", metrics.failures());
         report.put("cases", cases);
         Files.createDirectories(jsonPath.getParent());
-        mapper.writerWithDefaultPrettyPrinter().writeValue(jsonPath.toFile(), report);
+        Files.writeString(jsonPath, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(report) + "\n");
         Files.writeString(markdownPath, "# Java production finding and evidence eval\n\n"
                 + "Result: " + (metrics.failures().isEmpty() ? "PASS" : "FAIL") + "\n\n"
                 + "- evidenceValidationPassRate: " + format(metrics.evidenceValidationPassRate()) + "\n"

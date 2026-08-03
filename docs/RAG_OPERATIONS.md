@@ -34,7 +34,7 @@ no retry after the deadline.
 The implementation accepts any integer 0–100 technically, but operators may
 advance only through these gates:
 
-1. Set `RAG_ENABLED=true`, `RAG_FALLBACK_ENABLED=true`,
+1. Set `RAG_ENABLED=true`, `RAG_REVIEW_PERCENTAGE=100`, `RAG_FALLBACK_ENABLED=false`,
    `RAG_REQUIRE_EVIDENCE=true`, and percentage `0`; capture baseline review
    metrics and trace evidence.
 2. Set percentage `10`; observe at least 20 completed reviews from the review
@@ -84,7 +84,7 @@ same dimension/contract passes, and retain the previous provider for rollback.
 ## Incident degradation and rollback
 
 Immediately set `RAG_REVIEW_PERCENTAGE=0` and restart; this deterministically
-restores bounded legacy context. Keep `RAG_FALLBACK_ENABLED=true` for graceful
+restores bounded legacy context. Production must keep `RAG_FALLBACK_ENABLED=false`; use
 index/model degradation, or set it false to fail closed when evidence is
 required. Do not run a V4 down migration or delete index data. If PostgreSQL is
 unavailable, stop new RAG reviews, preserve existing data, and keep the H2 local development

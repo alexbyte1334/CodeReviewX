@@ -6,7 +6,7 @@
     "mimo" : "deterministic-json",
     "network" : false
   },
-  "productionPath" : [ "ReviewTaskService", "XiaomiMiMoReviewProvider", "MiMoAgentJsonParser", "MiMoIssueGenerator", "ReviewEvidenceValidator", "ReviewIssueRepository", "ReviewIssueEvidencePersister" ],
+  "productionPath" : [ "ReviewWorkflowService", "XiaomiMiMoReviewProvider", "MiMoAgentJsonParser", "MiMoIssueGenerator", "ReviewEvidenceValidator", "ReviewIssueRepository", "ReviewIssueEvidencePersister" ],
   "metrics" : {
     "evidenceValidationPassRate" : 1.0,
     "groundedFindingPrecision" : 1.0,

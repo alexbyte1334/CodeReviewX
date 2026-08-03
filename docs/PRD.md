@@ -94,7 +94,7 @@ pasting diff text so that the backend loads bounded PR context from GitHub.
 
 Acceptance:
 
-- missing `GITHUB_TOKEN` fails with a clear `GITHUB_AUTH_MISSING` error,
+- missing GitHub service credential fails with a clear `GITHUB_AUTH_MISSING` error,
 - PR metadata and files patch are represented in sanitized snapshots,
 - changed-file contents are fetched under strict file and byte limits,
 - overly large or unavailable diffs fail or truncate according to configured

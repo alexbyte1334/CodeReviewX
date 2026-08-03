@@ -6,46 +6,44 @@
 
 ## 1. Positioning
 
-CodeReviewX is a locally runnable AI code review agent MVP for pull request
-review workflows. It demonstrates a complete engineering loop:
+CodeReviewX is a locally runnable personal AI code review workspace for pull
+request review workflows. It demonstrates a complete engineering loop:
 
 1. Create a review task from a GitHub PR or pasted unified diff.
 2. Load bounded GitHub PR metadata and the files patch at the PR head SHA.
 3. Ensure an immutable full-repository snapshot is indexed in PostgreSQL with
    pgvector, then retrieve commit-scoped evidence through vector search,
    PostgreSQL FTS, RRF fusion, reranking, and context-budget assembly.
-4. Run request-time Semgrep-style and dependency hygiene finding checks.
-5. Run a Xiaomi MiMo dual-agent review workflow against the evidence bundle.
+4. Run request-time static and dependency hygiene finding checks.
+5. Run a bounded review workflow through an OpenAI-compatible model provider.
 6. Validate every model evidence reference before persisting issues or previews.
 7. Generate local comment previews.
-8. Let the user select and explicitly confirm comments before publishing them
-   back to GitHub.
+8. Let the user select and explicitly confirm Evidence-backed comments before
+   publishing them back to GitHub.
 9. Preserve safe trace, snapshot, retrieval, and provider summaries for
    observability.
 
 The project is not positioned as a production SaaS: multi-user authentication
-and GitHub App installation remain out of scope. The production profile now
-provides bounded repository clone/indexing and semantic/vector RAG on
-PostgreSQL/pgvector; the default H2 local development profile intentionally does not.
+and GitHub App installation remain out of scope. The Personal Edition starts
+the backend locally, uses a personal GitHub PAT, and supports degraded Review
+when optional RAG services are not configured.
 
 ## 2. Current Runtime Shape
 
 ```text
-React frontend
+Electron + React frontend
   -> Spring Boot backend-java
-     -> PostgreSQL 16 + pgvector (production RAG profile)
-     -> H2 (RAG-disabled local development profile)
-     -> GitHub REST API
-     -> OpenAI-compatible embedding and rerank APIs
-     -> Xiaomi MiMo planner / executor / gatekeeper APIs
+     -> bundled PostgreSQL 17 + pgvector
+     -> GitHub REST API using a personal PAT
+     -> OpenAI-compatible model API
+     -> optional external embedding and rerank APIs
 ```
 
 There is no active Python service in the current runtime. The active runtime is
-fully implemented in `backend-java`. The production profile includes
-restart-safe indexing, PostgreSQL/pgvector hybrid retrieval, reranking, evidence
-persistence, rollout switches, and an explicit legacy fallback. Local Docker,
-production-path quality, performance, and smoke gates passed, and the complete
-delivery was merged into `main` after GitHub Actions passed.
+fully implemented in `backend-java`; the Personal Edition binds it to
+`127.0.0.1`. RAG is optional in the first release. Without RAG, basic Review
+and local Preview remain available while GitHub comment publishing is blocked
+by the Evidence Gate.
 
 ## 3. Implemented Capabilities
 
@@ -53,7 +51,7 @@ delivery was merged into `main` after GitHub Actions passed.
 
 - Spring Boot 3 + Java 17 + Maven.
 - H2 file database for local runtime persistence.
-- PostgreSQL 16 + pgvector for production RAG snapshots, jobs, chunks,
+- PostgreSQL 17 + pgvector for production RAG snapshots, jobs, chunks,
   embeddings, FTS, evidence, and retrieval traces.
 - Flyway-managed H2 and PostgreSQL schemas.
 - ReviewTask create/list/detail APIs.
@@ -81,7 +79,7 @@ delivery was merged into `main` after GitHub Actions passed.
 - Sanitized input snapshot persistence; raw full diff and tokens are not
   exposed through public APIs.
 
-### MiMo Dual-Agent Review
+### Model and Review Workflow
 
 ```text
 github.pr.metadata.load
@@ -100,10 +98,9 @@ github.pr.metadata.load
   -> comment.preview.build
 ```
 
-- AI-1 Planner creates the task plan.
-- AI-2 Executor performs the review.
-- AI-1 Gatekeeper accepts or rejects the candidate review.
-- MiMoIssueGenerator maps approved JSON into deterministic structured issues.
+- Planner, Executor, and Gatekeeper use the configured OpenAI-compatible model.
+- Provider, Base URL, model name, timeout, and API key are configured locally.
+- MiMo remains a compatibility preset, not a business-code dependency.
 - Request-time static findings are persisted with `SEMGREP` or `DEPENDENCY`
   source provenance.
 - New tasks do not silently fall back to mock results.
@@ -125,8 +122,8 @@ github.pr.metadata.load
 - Task history and detail view.
 - Risk summary, issue list, provider status, trace timeline, and comment
   preview publishing states.
-- MiMo readiness feedback to prevent starting reviews when the backend is not
-  configured.
+- Model/GitHub readiness feedback to prevent starting reviews when the local
+  configuration is not complete.
 - Repository index status, safe reindex actions, polling, and duplicate-job
   conflict handling.
 - Retrieval health/degraded state and per-issue evidence inspection.
@@ -150,7 +147,7 @@ Keep these invariants true:
   files.
 - `.env`, local H2 data, build output, dependency folders, and local key notes
   are ignored or absent from the public repository.
-- Public APIs do not return GitHub tokens, MiMo keys, Authorization headers,
+- Public APIs do not return GitHub tokens, model keys, Authorization headers,
   raw prompts, raw model output, or raw full diff.
 - GitHub comment publishing requires selected previews and explicit owner
   authorization for public or legacy HTTP routes.

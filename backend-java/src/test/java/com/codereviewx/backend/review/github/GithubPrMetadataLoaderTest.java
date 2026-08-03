@@ -17,7 +17,7 @@ class GithubPrMetadataLoaderTest {
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorCode()).isEqualTo(ReviewErrorCodes.GITHUB_AUTH_MISSING);
-        assertThat(result.getErrorMessage()).contains("GITHUB_TOKEN");
+        assertThat(result.getErrorMessage()).contains("GitHub service credential");
         assertThat(client.called).isFalse();
     }
 

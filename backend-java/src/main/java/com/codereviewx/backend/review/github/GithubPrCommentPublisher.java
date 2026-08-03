@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 public class GithubPrCommentPublisher {
 
     public static final String AUTH_MISSING_MESSAGE =
-            "Local GitHub token is not configured. Set GITHUB_TOKEN to publish GitHub PR comments.";
+            "GitHub service credential is not configured. Connect GitHub or configure the server-side fallback.";
     public static final String AUTH_FAILED_MESSAGE =
             "GitHub authentication failed while publishing PR comment.";
     public static final String RATE_LIMITED_MESSAGE =

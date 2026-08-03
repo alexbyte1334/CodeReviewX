@@ -14,7 +14,7 @@ import static org.mockito.Mockito.*;
 
 class RagEvidencePublishGateTest {
     @Test void successfulAssemblyRequiresEvidenceValidationTrace() {
-        RagProperties properties = new RagProperties(); properties.setRequireEvidence(true);
+        RagProperties properties = new RagProperties(); properties.setRequireEvidence(true); properties.setEnabled(true);
         ReviewToolTraceRepository traces = mock(ReviewToolTraceRepository.class);
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         RagEvidencePublishGate gate = new RagEvidencePublishGate(properties, traces, jdbc);
@@ -28,13 +28,13 @@ class RagEvidencePublishGateTest {
         assertThatCode(() -> gate.validate(preview)).doesNotThrowAnyException();
     }
 
-    @Test void legacyFallbackAndExcludedRunKeepOldPublishSemantics() {
-        RagProperties properties = new RagProperties(); properties.setRequireEvidence(true);
+    @Test void disabledRagBlocksModelCommentPublishing() {
+        RagProperties properties = new RagProperties(); properties.setRequireEvidence(true); properties.setEnabled(false);
         ReviewToolTraceRepository traces = mock(ReviewToolTraceRepository.class);
         RagEvidencePublishGate gate = new RagEvidencePublishGate(properties, traces, mock(JdbcTemplate.class));
         ReviewCommentPreviewEntity preview = preview("MIMO", 7L, 7L);
-        when(traces.findByReviewApiRunIdAndToolName(7L, "rag.context.assemble")).thenReturn(List.of());
-        assertThatCode(() -> gate.validate(preview)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> gate.validate(preview)).isInstanceOf(ReviewRequestInvalidException.class)
+                .hasMessageContaining("RAG is not configured");
     }
 
     @Test void disabledEvidenceRequirementAndNonModelBypass() {

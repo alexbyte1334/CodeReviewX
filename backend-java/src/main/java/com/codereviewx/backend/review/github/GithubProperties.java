@@ -31,6 +31,7 @@ public class GithubProperties {
         this.token = token;
     }
 
+
     public int getTimeoutSeconds() {
         return timeoutSeconds;
     }
