@@ -6,7 +6,7 @@ ALTER TABLE rag_retrieval_trace
 
 ALTER TABLE rag_retrieval_trace
     ADD CONSTRAINT fk_rag_retrieval_trace_review_run
-        FOREIGN KEY (review_api_run_id) REFERENCES review_api_run(id) ON DELETE CASCADE;
+        FOREIGN KEY (review_api_run_id) REFERENCES review_api_run(id);
 
 ALTER TABLE review_issue_evidence
     ADD CONSTRAINT fk_review_issue_evidence_chunk
