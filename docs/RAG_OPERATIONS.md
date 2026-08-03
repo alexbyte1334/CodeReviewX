@@ -17,7 +17,7 @@ in URLs, traces, or database rows.
 
 Production smoke requests use separate timeout budgets. GET requests use
 `RAG_SMOKE_GET_TIMEOUT_SECONDS=30` and up to three shell-managed retries. Index/publish POST
-requests use `RAG_SMOKE_POST_TIMEOUT_SECONDS=30`, while the synchronous MiMo
+requests use `RAG_SMOKE_POST_TIMEOUT_SECONDS=30`, while the synchronous model
 review POST uses `RAG_SMOKE_REVIEW_TIMEOUT_SECONDS=180`. Index and review POST
 requests are intentionally never retried because they are non-idempotent and a
 client timeout does not prove that the server rolled back task creation.

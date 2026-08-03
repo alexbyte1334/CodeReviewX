@@ -2,7 +2,7 @@ import type { IssueSource } from '../types/reviewTask';
 
 const SOURCE_LABELS: Record<IssueSource, string> = {
   MOCK: 'Historical Mock',
-  MIMO: 'Xiaomi MiMo',
+  MIMO: 'Configured model',
   SEMGREP: 'Semgrep',
   DEPENDENCY: 'Dependency Scan',
   LLM: 'LLM',

@@ -31,4 +31,4 @@ None.
 
 ## Excludes
 
-This gate does not cover MiMo finding generation, finding quality, evidence-validation pass rate, grounded finding precision, or network model latency.
+This gate does not cover model finding generation, finding quality, evidence-validation pass rate, grounded finding precision, or network model latency.

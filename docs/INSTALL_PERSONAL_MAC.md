@@ -25,9 +25,9 @@
 
 ## 模型
 
-模型必须支持 OpenAI-compatible `POST /chat/completions`。向导提供 OpenAI、DeepSeek、Qwen、Moonshot、智谱、MiMo 和自定义端点预设。
+模型必须支持 OpenAI-compatible `POST /chat/completions`。向导提供 OpenAI、DeepSeek、Qwen、Moonshot、智谱和自定义端点预设。
 
-Planner、Executor、Gatekeeper 默认使用同一个 Base URL、模型和 API Key。
+结构化评审的各阶段默认使用同一个 Base URL、模型和 API Key。
 
 ## RAG 与降级模式
 

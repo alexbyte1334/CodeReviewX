@@ -6,8 +6,8 @@ describe('providerLabels', () => {
     expect(formatIssueSourceLabel('MOCK')).toBe('Historical Mock');
   });
 
-  it('maps MIMO to Xiaomi MiMo', () => {
-    expect(formatIssueSourceLabel('MIMO')).toBe('Xiaomi MiMo');
+  it('maps the legacy model source to a generic label', () => {
+    expect(formatIssueSourceLabel('MIMO')).toBe('Configured model');
   });
 
   it('maps dependency scan findings', () => {

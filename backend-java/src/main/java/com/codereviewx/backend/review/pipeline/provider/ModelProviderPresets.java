@@ -13,7 +13,7 @@ public final class ModelProviderPresets {
         presets.put("qwen", Map.of("label", "Qwen", "baseUrl", "https://dashscope.aliyuncs.com/compatible-mode/v1", "model", "qwen-plus"));
         presets.put("moonshot", Map.of("label", "Moonshot", "baseUrl", "https://api.moonshot.cn/v1", "model", "moonshot-v1-8k"));
         presets.put("zhipu", Map.of("label", "智谱", "baseUrl", "https://open.bigmodel.cn/api/paas/v4", "model", "glm-4-flash"));
-        presets.put("mimo", Map.of("label", "MiMo", "baseUrl", "https://api.xiaomimimo.com/v1", "model", "mimo-v2.5-pro"));
+        presets.put("mimo", Map.of("label", "Legacy compatible model", "baseUrl", "https://api.xiaomimimo.com/v1", "model", "mimo-v2.5-pro"));
         presets.put("custom", Map.of("label", "Custom OpenAI-compatible", "baseUrl", "", "model", ""));
         return presets;
     }
